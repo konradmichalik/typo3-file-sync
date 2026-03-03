@@ -1,0 +1,12 @@
+#!/bin/bash
+
+. .ddev/.setup/scripts/utils.sh
+
+pre_setup 14
+
+#_progress " ├─ Install additional composer packages"
+#  composer req x/y:'^1.0' \
+#          --no-progress -n -d $BASE_PATH
+#_done
+
+post_setup
