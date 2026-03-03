@@ -1,0 +1,16 @@
+{
+	"name": "test/sitepackage",
+	"description": "typo3-file-sync testing sitepackage",
+	"license": "GPL-2.0-or-later",
+	"type": "typo3-cms-extension",
+	"require": {
+		"konradmichalik/typo3-file-sync": "*",
+		"typo3/cms-fluid-styled-content": "*"
+	},
+	"extra": {
+		"typo3/cms": {
+			"extension-key": "sitepackage"
+		}
+	},
+	"version": "1.0.0"
+}
