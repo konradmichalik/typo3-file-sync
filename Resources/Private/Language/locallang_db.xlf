@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.0" xmlns:t3="http://typo3.org/schemas/xliff">
+	<file source-language="en" datatype="plaintext" original="messages" date="2025-01-01T00:00:00Z" product-name="typo3_file_sync">
+		<header />
+		<body>
+			<trans-unit id="sys_file_storage.file_sync">
+				<source>File Sync</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.enable">
+				<source>Enable</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.resources">
+				<source>Resources</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.missing">
+				<source>Missing files</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.delete">
+				<source>Delete files</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.remote_instance">
+				<source>Remote TYPO3 instance</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.url">
+				<source>URL</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.placeholder_image">
+				<source>Placeholder image</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.colors">
+				<source>Background color, text color</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.no_missing">
+				<source>No missing files found!</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.missing_files">
+				<source>%d files are marked missing!</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.reset">
+				<source>Reset missing files</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.no_delete">
+				<source>No files found!</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.delete_files">
+				<source>Delete %d file(s) from "%s"</source>
+			</trans-unit>
+		</body>
+	</file>
+</xliff>

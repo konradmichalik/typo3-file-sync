@@ -1,0 +1,20 @@
+<T3DataStructure>
+    <sheets>
+        <sDEF>
+            <ROOT>
+                <TCEforms>
+                    <sheetTitle>LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.resources</sheetTitle>
+                </TCEforms>
+                <type>array</type>
+                <el>
+                    <resources>
+                        <title />
+                        <type>array</type>
+                        <section>1</section>
+                        <el />
+                    </resources>
+                </el>
+            </ROOT>
+        </sDEF>
+    </sheets>
+</T3DataStructure>

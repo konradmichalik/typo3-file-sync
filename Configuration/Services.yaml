@@ -1,0 +1,49 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    KonradMichalik\Typo3FileSync\:
+        resource: '../Classes/*'
+
+    KonradMichalik\Typo3FileSync\EventListener\ResourceStorageInitializationEventListener:
+        tags:
+            -   name: psr.logger_aware
+            -   name: event.listener
+                identifier: 'fileSyncResourceStorageInitializationEventListener'
+                event: TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent
+
+    KonradMichalik\Typo3FileSync\EventListener\FileProcessingEventEventListener:
+        tags:
+            -   name: event.listener
+                identifier: 'fileSyncFileProcessingEventEventListener'
+                event: TYPO3\CMS\Core\Resource\Event\BeforeFileProcessingEvent
+
+    KonradMichalik\Typo3FileSync\EventListener\FlexFormDataStructureParsedEventListener:
+        tags:
+            -   name: event.listener
+                identifier: 'fileSyncFlexFormDataStructureParsedEventListener'
+                event: TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent
+
+    KonradMichalik\Typo3FileSync\Form\Element\ShowDeleteFiles:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Hooks\DeleteFiles:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Repository\FileRepository:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Command\DeleteCommand:
+        tags:
+            - name: 'console.command'
+              command: 'file-sync:delete'
+
+    KonradMichalik\Typo3FileSync\Command\ResetCommand:
+        tags:
+            - name: 'console.command'
+              command: 'file-sync:reset'
