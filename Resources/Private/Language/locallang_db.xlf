@@ -45,6 +45,21 @@
 			<trans-unit id="sys_file_storage.file_sync.delete_files">
 				<source>Delete %d file(s) from "%s"</source>
 			</trans-unit>
+			<trans-unit id="filelist.sync_status.remote_instance">
+				<source>Synced from remote instance</source>
+			</trans-unit>
+			<trans-unit id="filelist.sync_status.placeholder_image">
+				<source>Generated as placeholder image</source>
+			</trans-unit>
+			<trans-unit id="filelist.sync_status.unknown">
+				<source>Synced via: %s</source>
+			</trans-unit>
+			<trans-unit id="sys_file_metadata.file_sync.status">
+				<source>Sync Status</source>
+			</trans-unit>
+			<trans-unit id="sys_file_metadata.file_sync.synced_at">
+				<source>Synced at: %s</source>
+			</trans-unit>
 		</body>
 	</file>
 </xliff>

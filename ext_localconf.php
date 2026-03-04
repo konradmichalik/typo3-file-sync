@@ -26,6 +26,12 @@ call_user_func(static function (): void {
         'class' => KonradMichalik\Typo3FileSync\Form\Element\ShowDeleteFiles::class,
     ];
 
+    $GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'][1700000003] = [
+        'nodeName' => 'showSyncStatus',
+        'priority' => 40,
+        'class' => KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus::class,
+    ];
+
     if (empty($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'])) {
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [];
     }
