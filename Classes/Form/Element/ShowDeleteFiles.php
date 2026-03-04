@@ -50,18 +50,21 @@ final class ShowDeleteFiles extends AbstractFormElement
             $html[] = '</div>';
             $html[] = '</div>';
         } else {
-            $this->pageRenderer->loadJavaScriptModule('@konradmichalik/typo3-file-sync/form/submit-interceptor.js');
+            $this->pageRenderer->loadJavaScriptModule('@konradmichalik/typo3-file-sync/form/storage-actions.js');
             foreach ($rows as $row) {
                 $html[] = '<div class="form-group">';
                 $html[] = '<div class="form-control-wrap">';
-                $html[] = '<a class="btn btn-default t3js-editform-submitButton" data-name="_save_tx_typo3_file_sync_delete" data-form="EditDocumentController" data-value="' . $row['tx_typo3_file_sync_identifier'] . '">';
+                $html[] = '<button type="button" class="btn btn-default t3js-file-sync-action"'
+                    . ' data-action="delete-files"'
+                    . ' data-storage-uid="' . (int)$this->data['vanillaUid'] . '"'
+                    . ' data-identifier="' . htmlspecialchars($row['tx_typo3_file_sync_identifier']) . '">';
                 $html[] = $this->iconFactory->getIcon('actions-edit-delete', IconSize::SMALL) . ' ';
                 $html[] = sprintf(
                     $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.delete_files'),
                     $row['count'],
                     $languageService->sL($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'][$row['tx_typo3_file_sync_identifier']]['title'] ?? $row['tx_typo3_file_sync_identifier'])
                 );
-                $html[] = '</a>';
+                $html[] = '</button>';
                 $html[] = '</div>';
                 $html[] = '</div>';
             }

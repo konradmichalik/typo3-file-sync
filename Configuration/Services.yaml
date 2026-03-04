@@ -29,9 +29,6 @@ services:
     KonradMichalik\Typo3FileSync\Form\Element\ShowDeleteFiles:
         public: true
 
-    KonradMichalik\Typo3FileSync\Hooks\DeleteFiles:
-        public: true
-
     KonradMichalik\Typo3FileSync\Repository\FileRepository:
         public: true
 

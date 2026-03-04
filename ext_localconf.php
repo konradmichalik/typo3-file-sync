@@ -3,12 +3,6 @@
 defined('TYPO3') || die('Access denied.');
 
 call_user_func(static function (): void {
-    $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['processDatamapClass']['typo3_file_sync_missing'] =
-        \KonradMichalik\Typo3FileSync\Hooks\ResetMissingFiles::class;
-
-    $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['processDatamapClass']['typo3_file_sync_delete'] =
-        \KonradMichalik\Typo3FileSync\Hooks\DeleteFiles::class;
-
     $GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'][1700000001] = [
         'nodeName' => 'showMissingFiles',
         'priority' => 40,

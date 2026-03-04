@@ -63,12 +63,14 @@ final class ShowMissingFiles extends AbstractFormElement
                 . '</span>'
                 . '</div>';
         } else {
-            $this->pageRenderer->loadJavaScriptModule('@konradmichalik/typo3-file-sync/form/submit-interceptor.js');
+            $this->pageRenderer->loadJavaScriptModule('@konradmichalik/typo3-file-sync/form/storage-actions.js');
             $html[] = '<div class="form-control-wrap">';
-            $html[] = '<a class="btn btn-default t3js-editform-submitButton" data-name="_save_tx_typo3_file_sync_missing" data-form="EditDocumentController" data-value="1">';
+            $html[] = '<button type="button" class="btn btn-default t3js-file-sync-action"'
+                . ' data-action="reset-missing"'
+                . ' data-storage-uid="' . (int)$this->data['vanillaUid'] . '">';
             $html[] = $this->iconFactory->getIcon('actions-database-reload', IconSize::SMALL);
             $html[] = ' ' . $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.reset');
-            $html[] = '</a>';
+            $html[] = '</button>';
             $html[] = '</div>';
             $html[] = '<div class="form-text">';
             $html[] = '<span class="badge badge-danger">'
