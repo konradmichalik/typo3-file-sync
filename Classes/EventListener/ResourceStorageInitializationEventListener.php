@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
 use TYPO3\CMS\Core\Resource\Exception\InvalidConfigurationException;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
@@ -54,8 +55,7 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
             return;
         }
 
-        $closure = \Closure::bind(static fn () => $storage->driver, null, ResourceStorage::class);
-        $originalDriverObject = $closure();
+        $originalDriverObject = self::getOriginalDriver($storage);
 
         if ($originalDriverObject instanceof FileSyncDriver) {
             return;
@@ -87,5 +87,16 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
         $driverObject->initialize();
 
         $storage->setDriver($driverObject);
+    }
+
+    /**
+     * TYPO3 core deliberately keeps the driver private with no public accessor.
+     *
+     * @see ResourceStorage::$driver (private)
+     * @see ResourceStorage::getDriver() (protected)
+     */
+    private static function getOriginalDriver(ResourceStorage $storage): DriverInterface
+    {
+        return \Closure::bind(static fn () => $storage->driver, null, ResourceStorage::class)();
     }
 }
