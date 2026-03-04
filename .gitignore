@@ -14,3 +14,4 @@ phpstan.xml
 .phpunit.result.cache
 composer.lock
 REQUIREMENTS.md
+IDEAS.md
