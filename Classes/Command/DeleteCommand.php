@@ -15,23 +15,21 @@ namespace KonradMichalik\Typo3FileSync\Command;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Service\StorageService;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use TYPO3\CMS\Core\Localization\LanguageService;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 
-class DeleteCommand extends AbstractCommand
+class DeleteCommand extends Command
 {
-    protected readonly FileRepository $fileRepository;
-    protected readonly LanguageService $languageService;
-
-    public function __construct(?string $name = null, ?FileRepository $fileRepository = null, ?LanguageService $languageService = null)
-    {
-        parent::__construct($name);
-
-        $this->fileRepository = $fileRepository ?? GeneralUtility::makeInstance(FileRepository::class);
-        $this->languageService = $languageService ?? $GLOBALS['LANG'];
+    public function __construct(
+        private readonly StorageService $storageService,
+        private readonly FileRepository $fileRepository,
+        private readonly LanguageServiceFactory $languageServiceFactory,
+    ) {
+        parent::__construct();
     }
 
     public function configure(): void
@@ -72,13 +70,15 @@ class DeleteCommand extends AbstractCommand
             $identifiers = array_column($rows, 'tx_typo3_file_sync_identifier');
         }
 
-        $enabledStorages = $this->getEnabledStorages();
+        $enabledStorages = $this->storageService->getEnabledStorages();
         if ($storage !== null) {
             $storage = (int)$storage;
             $enabledStorages = [
                 $storage => $enabledStorages[$storage] ?? [],
             ];
         }
+
+        $languageService = $this->languageServiceFactory->create('default');
 
         foreach ($enabledStorages as $storageRow) {
             foreach ($identifiers as $identifier) {
@@ -88,7 +88,7 @@ class DeleteCommand extends AbstractCommand
                     $output->writeln(sprintf(
                         'Deleted %d file(s) from "%s" resource in storage "%s" (uid: %d)',
                         $count,
-                        $this->languageService->sL($resourceTitle),
+                        $languageService->sL($resourceTitle),
                         $storageRow['name'] ?? 'unknown',
                         $storageRow['uid'] ?? 0
                     ));

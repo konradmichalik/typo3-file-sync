@@ -13,24 +13,20 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Command;
 
-use Doctrine\DBAL\ArrayParameterType;
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Service\StorageService;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-class ResetCommand extends AbstractCommand
+class ResetCommand extends Command
 {
-    protected readonly Connection $connection;
-
-    public function __construct(?string $name = null, ?Connection $connection = null)
-    {
-        parent::__construct($name);
-
-        $this->connection = $connection ?? GeneralUtility::makeInstance(ConnectionPool::class)->getConnectionForTable('sys_file');
+    public function __construct(
+        private readonly StorageService $storageService,
+        private readonly FileRepository $fileRepository,
+    ) {
+        parent::__construct();
     }
 
     public function configure(): void
@@ -48,7 +44,7 @@ class ResetCommand extends AbstractCommand
     {
         $storage = $input->getOption('storage');
 
-        $enabledStorages = $this->getEnabledStorages();
+        $enabledStorages = $this->storageService->getEnabledStorages();
         if ($storage !== null) {
             $storage = (int)$storage;
             $enabledStorages = [
@@ -56,48 +52,16 @@ class ResetCommand extends AbstractCommand
             ];
         }
 
-        $queryBuilder = $this->connection->createQueryBuilder();
-        $expressionBuilder = $queryBuilder->expr();
-        $queryBuilder->getRestrictions()->removeAll();
-        $queryBuilder->getConcreteQueryBuilder()->select('COUNT(*) AS count', 'f.storage', 's.name');
-        $statement = $queryBuilder->from('sys_file', 'f')
-            ->leftJoin(
-                'f',
-                'sys_file_storage',
-                's',
-                $expressionBuilder->eq('s.uid', $queryBuilder->quoteIdentifier('f.storage'))
-            )
-            ->where(
-                $expressionBuilder->in(
-                    'f.storage',
-                    $queryBuilder->createNamedParameter(array_keys($enabledStorages), ArrayParameterType::INTEGER)
-                ),
-                $expressionBuilder->eq(
-                    'f.missing',
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER)
-                )
-            )
-            ->groupBy('f.storage')
-            ->orderBy('f.storage')
-            ->executeQuery();
-
-        while ($row = $statement->fetchAssociative()) {
-            $updateQueryBuilder = $this->connection->createQueryBuilder();
-            $updateQueryBuilder->update('sys_file')
-                ->where(
-                    $updateQueryBuilder->expr()->eq(
-                        'storage',
-                        $updateQueryBuilder->createNamedParameter($row['storage'], ParameterType::INTEGER)
-                    )
-                )
-                ->set('missing', 0, true, ParameterType::INTEGER)
-                ->executeStatement();
-            $output->writeln(sprintf(
-                'Reset %d file(s) in storage "%s" (uid: %d)',
-                $row['count'],
-                $row['name'],
-                $row['storage']
-            ));
+        foreach ($enabledStorages as $storageRow) {
+            $count = $this->fileRepository->resetMissing((int)($storageRow['uid'] ?? 0));
+            if ($count > 0) {
+                $output->writeln(sprintf(
+                    'Reset %d file(s) in storage "%s" (uid: %d)',
+                    $count,
+                    $storageRow['name'] ?? 'unknown',
+                    $storageRow['uid'] ?? 0
+                ));
+            }
         }
 
         return 0;

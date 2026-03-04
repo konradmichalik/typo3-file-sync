@@ -99,6 +99,24 @@ final class FileRepository
             ->executeStatement();
     }
 
+    public function resetMissing(int $storageUid): int
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        return $queryBuilder->update('sys_file')
+            ->where(
+                $queryBuilder->expr()->eq(
+                    'storage',
+                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER)
+                ),
+                $queryBuilder->expr()->eq(
+                    'missing',
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER)
+                )
+            )
+            ->set('missing', 0, true, ParameterType::INTEGER)
+            ->executeStatement();
+    }
+
     public function deleteByIdentifier(string $identifier, ?int $storage = null): int
     {
         $rows = $this->findByIdentifier($identifier, $storage);

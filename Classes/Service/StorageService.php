@@ -11,25 +11,27 @@ declare(strict_types=1);
  * file that was distributed with this source code.
  */
 
-namespace KonradMichalik\Typo3FileSync\Command;
+namespace KonradMichalik\Typo3FileSync\Service;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
 use KonradMichalik\Typo3FileSync\Configuration;
-use Symfony\Component\Console\Command\Command;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-abstract class AbstractCommand extends Command
+final class StorageService
 {
+    public function __construct(
+        private readonly ConnectionPool $connectionPool,
+    ) {}
+
     /**
      * @return array<int, array{uid: int, name: string}>
      */
-    protected function getEnabledStorages(): array
+    public function getEnabledStorages(): array
     {
         $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'] ?? ['0' => '']);
 
-        $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)->getQueryBuilderForTable('sys_file_storage');
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
         $expressionBuilder = $queryBuilder->expr();
         $rows = $queryBuilder->select('uid', 'name')
             ->from('sys_file_storage')
