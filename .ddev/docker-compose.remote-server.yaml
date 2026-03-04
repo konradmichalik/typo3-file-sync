@@ -1,0 +1,10 @@
+#
+# Make the fake remote server hostname resolvable inside the web container.
+# Without this, requests from PHP (FileSyncDriver) to the remote URL fail
+# because the hostname resolves to the Traefik router IP which is not
+# reachable from within the container network.
+#
+services:
+  web:
+    extra_hosts:
+      - "remote.typo3-file-sync.ddev.site:127.0.0.1"

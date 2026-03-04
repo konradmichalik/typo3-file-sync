@@ -20,10 +20,10 @@ ExtensionManagementUtility::addTypoScript(
 $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'][1] = [
     [
         'identifier' => 'remote_instance',
-        'config' => 'http://remote.typo3-file-sync.ddev.site',
+        'configuration' => 'http://remote.typo3-file-sync.ddev.site',
     ],
     [
         'identifier' => 'placeholder_image',
-        'config' => '#CCCCCC, #969696',
+        'configuration' => '#CCCCCC, #969696',
     ],
 ];
