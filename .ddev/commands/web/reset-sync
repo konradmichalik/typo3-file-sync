@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+## Description: Reset file sync state (delete synced files for re-testing).
+## Usage: reset-sync [version]
+## Example: "ddev reset-sync 13" or "ddev reset-sync all"
+
+. .ddev/.setup/scripts/utils.sh
+
+TYPO3=${1}
+
+run_reset() {
+    local version=$1
+    local TYPO3_PATH="/var/www/html/.Build/${version}"
+
+    if [ ! -d "$TYPO3_PATH" ]; then
+        message red "TYPO3 instance not found for version ${version}"
+        return 1
+    fi
+
+    message magenta "[TYPO3 v${version}] Resetting file sync..."
+
+    cd "$TYPO3_PATH"
+    /usr/bin/php vendor/bin/typo3 file-sync:delete --all
+    /usr/bin/php vendor/bin/typo3 cache:flush
+
+    message green "[TYPO3 v${version}] File sync reset. Visit the frontend to trigger sync again."
+}
+
+if [ "$TYPO3" == "all" ]; then
+    mapfile -t versions < <(get_supported_typo3_versions)
+    for version in "${versions[@]}"; do
+        run_reset "$version"
+    done
+elif [ -n "$TYPO3" ]; then
+    if ! check_typo3_version "$TYPO3"; then
+        exit 1
+    fi
+    run_reset "$TYPO3"
+else
+    TYPO3=$(get_lowest_supported_typo3_versions)
+    run_reset "$TYPO3"
+fi
