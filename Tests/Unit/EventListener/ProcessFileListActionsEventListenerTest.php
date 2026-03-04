@@ -20,10 +20,11 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Backend\Template\Components\Buttons\GenericButton;
 use TYPO3\CMS\Backend\Template\Components\ComponentGroup;
+use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
-use TYPO3\CMS\Core\Imaging\{Icon, IconFactory};
+use TYPO3\CMS\Core\Imaging\{Icon, IconFactory, IconRegistry};
 use TYPO3\CMS\Core\Localization\LanguageService;
 use TYPO3\CMS\Core\Resource\{AbstractFile, Folder};
 use TYPO3\CMS\Filelist\Event\ProcessFileListActionsEvent;
@@ -48,8 +49,15 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
         $icon = $this->createMock(Icon::class);
         $icon->method('render')->willReturn('<span class="icon"></span>');
 
-        $iconFactory = $this->createMock(IconFactory::class);
-        $iconFactory->method('getIcon')->willReturn($icon);
+        $cache = $this->createMock(FrontendInterface::class);
+        $cache->method('get')->willReturn($icon);
+
+        $iconFactory = new IconFactory(
+            $this->createMock(\Psr\EventDispatcher\EventDispatcherInterface::class),
+            $this->createMock(IconRegistry::class),
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $cache,
+        );
 
         $this->queryResult = $this->createMock(\Doctrine\DBAL\Result::class);
 
