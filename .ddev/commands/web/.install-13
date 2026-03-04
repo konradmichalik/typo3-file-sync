@@ -4,9 +4,10 @@
 
 pre_setup 13
 
-#_progress " ├─ Install additional composer packages"
-#  composer req x/y:'^1.0' \
-#          --no-progress -n -d $BASE_PATH
-#_done
+_progress " ├─ Install test sitepackage"
+  composer config repositories.fixtures path "packages/$EXTENSION_KEY/Tests/Acceptance/Fixtures/packages/*" --working-dir "$BASE_PATH"
+  composer req test/sitepackage:'*@dev' \
+          --no-progress -n -d $BASE_PATH
+_done
 
 post_setup
