@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -15,15 +15,18 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 
 use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
+use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollectionFactory, RemoteResourceInterface};
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
-use TYPO3\CMS\Core\Resource\ResourceFactory;
-use TYPO3\CMS\Core\Resource\StorageRepository;
+use ReflectionClass;
+use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+/**
+ * RemoteResourceCollectionFactoryTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 #[CoversClass(RemoteResourceCollectionFactory::class)]
 final class RemoteResourceCollectionFactoryTest extends TestCase
 {
@@ -52,7 +55,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
             ['identifier' => 'test_handler', 'configuration' => null],
         ]);
 
-        self::assertNotNull($collection);
+        self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
 
     #[Test]
@@ -63,7 +66,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
             ['identifier' => '', 'configuration' => null],
         ]);
 
-        self::assertNotNull($collection);
+        self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
 
     #[Test]
@@ -80,26 +83,32 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
     private function createFactory(): RemoteResourceCollectionFactory
     {
         $storageRepository = $this->createMock(StorageRepository::class);
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         return new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository);
     }
 }
 
 /**
+ * TestRemoteResource.
+ *
  * @internal
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
  */
 class TestRemoteResource implements RemoteResourceInterface
 {
-    public function __construct(mixed $configuration = null) {}
+    public function __construct(
+        private readonly mixed $configuration = null, // @phpstan-ignore property.onlyWritten
+    ) {}
 
     public function hasFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): bool
     {
         return false;
     }
 
-    public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null)
+    public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed
     {
         return false;
     }

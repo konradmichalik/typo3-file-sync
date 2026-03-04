@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -13,25 +13,28 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 
+use Error;
 use KonradMichalik\Typo3FileSync\Exception\MissingInterfaceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
+use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollection, RemoteResourceInterface};
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use TYPO3\CMS\Core\Resource\File;
-use TYPO3\CMS\Core\Resource\ResourceFactory;
-use TYPO3\CMS\Core\Resource\ResourceStorage;
-use TYPO3\CMS\Core\Resource\StorageRepository;
+use ReflectionClass;
+use stdClass;
+use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepository};
 
+/**
+ * RemoteResourceCollectionTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 #[CoversClass(RemoteResourceCollection::class)]
 final class RemoteResourceCollectionTest extends TestCase
 {
     protected function tearDown(): void
     {
-        $reflection = new \ReflectionClass(RemoteResourceCollection::class);
+        $reflection = new ReflectionClass(RemoteResourceCollection::class);
         $property = $reflection->getProperty('fileIdentifierCache');
         $property->setValue(null, []);
     }
@@ -58,8 +61,8 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
             [
@@ -68,14 +71,14 @@ final class RemoteResourceCollectionTest extends TestCase
             ],
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
         // updateIdentifier() is called before returning content, which fails
         // on the uninitialized FileRepository. The mock expectations above
         // verify that handler2 was selected and invoked.
-        $this->expectException(\Error::class);
+        $this->expectException(Error::class);
         $collection->get('/test.jpg', 'fileadmin/test.jpg');
     }
 
@@ -96,14 +99,14 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
             [['identifier' => 'handler1', 'handler' => $handler]],
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
@@ -133,8 +136,8 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
             [
@@ -143,21 +146,21 @@ final class RemoteResourceCollectionTest extends TestCase
             ],
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
         // handler1 returns false → skipped, handler2 returns content → selected.
         // updateIdentifier() fails on uninitialized FileRepository. Mock expectations
         // verify handler2 was called after handler1 was skipped.
-        $this->expectException(\Error::class);
+        $this->expectException(Error::class);
         $collection->get('/test.jpg', 'fileadmin/test.jpg');
     }
 
     #[Test]
     public function getThrowsExceptionForInvalidResourceType(): void
     {
-        $invalidHandler = new \stdClass();
+        $invalidHandler = new stdClass();
 
         $fileObject = $this->createMock(File::class);
         $fileObject->method('getUid')->willReturn(1);
@@ -170,14 +173,14 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
-            [['identifier' => 'invalid', 'handler' => $invalidHandler]],
+            [['identifier' => 'invalid', 'handler' => $invalidHandler]], // @phpstan-ignore argument.type
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
@@ -194,14 +197,14 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
             [],
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
@@ -227,21 +230,21 @@ final class RemoteResourceCollectionTest extends TestCase
         $storageRepository = $this->createMock(StorageRepository::class);
         $storageRepository->method('getStorageObject')->willReturn($storage);
 
-        $resourceFactory = (new \ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new \ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         $collection = new RemoteResourceCollection(
             [['identifier' => 'test_handler', 'handler' => $handler]],
             $storageRepository,
             $resourceFactory,
-            $fileRepository
+            $fileRepository,
         );
         $collection->setLogger(new NullLogger());
 
         // updateIdentifier() is called on the uninitialized FileRepository, which
         // throws an Error (accessing uninitialized $connectionPool). This confirms
         // the code path reaches updateIdentifier after getFile() succeeds.
-        $this->expectException(\Error::class);
+        $this->expectException(Error::class);
         $collection->get('/test.jpg', 'fileadmin/test.jpg');
     }
 }
