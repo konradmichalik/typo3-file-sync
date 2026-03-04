@@ -75,6 +75,20 @@ Fetches missing files from a remote TYPO3 instance via HTTP(S). A `HEAD` request
 'configuration' => 'https://production.example.com',
 ```
 
+#### Basic Auth
+
+If the remote instance is protected by `.htaccess` or similar, credentials can be included in the URL:
+
+```
+https://user:password@production.example.com
+```
+
+For environment variable support (works in both backend and PHP configuration), use `%env()%` placeholders:
+
+```
+https://%env(REMOTE_USER)%:%env(REMOTE_PASS)%@production.example.com
+```
+
 ### Placeholder Image
 
 Generates local placeholder images with configurable colors. Supports GD-based formats (`jpg`, `png`, `gif`, `webp`, `avif`) and `svg`.

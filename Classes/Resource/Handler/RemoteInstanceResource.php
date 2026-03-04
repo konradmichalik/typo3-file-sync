@@ -23,21 +23,28 @@ final class RemoteInstanceResource implements RemoteResourceInterface
 {
     protected readonly RequestFactory $requestFactory;
     protected readonly string $url;
+    /** @var array<string, mixed> */
+    protected readonly array $requestOptions;
 
     public function __construct(array|string|null $configuration, ?RequestFactory $requestFactory = null)
     {
         $this->requestFactory = $requestFactory ?? GeneralUtility::makeInstance(RequestFactory::class);
 
         $baseUrl = is_array($configuration) ? ($configuration['url'] ?? '') : (string)$configuration;
+        $baseUrl = self::resolveEnvPlaceholders($baseUrl);
         $urlParts = parse_url($baseUrl);
         $urlParts['scheme'] = $urlParts['scheme'] ?? ($_SERVER['REQUEST_SCHEME'] ?? 'https');
         $this->url = rtrim($this->buildUrl($urlParts), '/') . '/';
+
+        $this->requestOptions = isset($urlParts['user'], $urlParts['pass'])
+            ? ['auth' => [$urlParts['user'], $urlParts['pass']]]
+            : [];
     }
 
     public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
     {
         try {
-            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'), 'HEAD');
+            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'), 'HEAD', $this->requestOptions);
 
             return $response->getStatusCode() === 200;
         } catch (TransferException) {
@@ -51,7 +58,7 @@ final class RemoteInstanceResource implements RemoteResourceInterface
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): string|false
     {
         try {
-            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'));
+            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'), 'GET', $this->requestOptions);
 
             return $response->getBody()->getContents();
         } catch (TransferException) {
@@ -62,6 +69,13 @@ final class RemoteInstanceResource implements RemoteResourceInterface
     /**
      * @param array<string, string|int> $urlParts
      */
+    private static function resolveEnvPlaceholders(string $value): string
+    {
+        return preg_replace_callback('/%env\(([^)]+)\)%/', static function (array $matches): string {
+            return getenv($matches[1]) ?: '';
+        }, $value);
+    }
+
     private function buildUrl(array $urlParts): string
     {
         $scheme = isset($urlParts['scheme']) ? $urlParts['scheme'] . '://' : '';
