@@ -33,4 +33,6 @@ final class Configuration
     public const FIELD_RESOURCES = 'tx_typo3_file_sync_resources';
 
     public const FIELD_IDENTIFIER = 'tx_typo3_file_sync_identifier';
+
+    public const FIELD_TSTAMP = 'tx_typo3_file_sync_tstamp';
 }

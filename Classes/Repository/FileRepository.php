@@ -109,6 +109,7 @@ final readonly class FileRepository
                 ),
             )
             ->set(Configuration::FIELD_IDENTIFIER, $identifier)
+            ->set(Configuration::FIELD_TSTAMP, (string) time())
             ->executeStatement();
     }
 

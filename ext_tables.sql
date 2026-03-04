@@ -2,7 +2,8 @@
 # Table structure for table 'sys_file'
 #
 CREATE TABLE sys_file (
-    tx_typo3_file_sync_identifier varchar(255) DEFAULT '' NOT NULL
+    tx_typo3_file_sync_identifier varchar(255) DEFAULT '' NOT NULL,
+    tx_typo3_file_sync_tstamp int(11) DEFAULT '0' NOT NULL
 );
 
 #
