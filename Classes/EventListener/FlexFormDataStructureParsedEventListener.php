@@ -27,7 +27,7 @@ final class FlexFormDataStructureParsedEventListener
     {
         $identifier = $event->getIdentifier();
         if (($identifier['tableName'] ?? '') !== 'sys_file_storage'
-            || ($identifier['fieldName'] ?? '') !== 'tx_typo3_file_sync_resources'
+            || ($identifier['fieldName'] ?? '') !== Configuration::FIELD_RESOURCES
         ) {
             return;
         }
@@ -35,7 +35,7 @@ final class FlexFormDataStructureParsedEventListener
         $dataStructure = $event->getDataStructure();
         $dataStructure['sheets']['sDEF']['ROOT']['el']['resources']['el'] = [];
 
-        foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'] ?? [] as $resource => $configuration) {
+        foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? [] as $resource => $configuration) {
             if (($configuration['title'] ?? '') === ''
                 || !isset($configuration['config'])
                 || ($configuration['handler'] ?? '') === ''

@@ -63,12 +63,12 @@ final class ShowDeleteFiles extends AbstractFormElement
                 $html[] = '<button type="button" class="btn btn-default t3js-file-sync-action"'
                     .' data-action="delete-files"'
                     .' data-storage-uid="'.(int) $this->data['vanillaUid'].'"'
-                    .' data-identifier="'.htmlspecialchars($row['tx_typo3_file_sync_identifier'], \ENT_QUOTES).'">';
+                    .' data-identifier="'.htmlspecialchars($row[Configuration::FIELD_IDENTIFIER], \ENT_QUOTES).'">';
                 $html[] = $this->iconFactory->getIcon('actions-edit-delete', IconSize::SMALL).' ';
                 $html[] = sprintf(
                     $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.delete_files'),
                     $row['count'],
-                    $languageService->sL($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'][$row['tx_typo3_file_sync_identifier']]['title'] ?? $row['tx_typo3_file_sync_identifier']),
+                    $languageService->sL($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER][$row[Configuration::FIELD_IDENTIFIER]]['title'] ?? $row[Configuration::FIELD_IDENTIFIER]),
                 );
                 $html[] = '</button>';
                 $html[] = '</div>';

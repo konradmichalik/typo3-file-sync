@@ -76,7 +76,7 @@ class DeleteCommand extends Command
         $storageUid = null !== $storage ? (int) $storage : null;
         if (true === $all) {
             $rows = $this->fileRepository->countByIdentifier($storageUid);
-            $identifiers = array_column($rows, 'tx_typo3_file_sync_identifier');
+            $identifiers = array_column($rows, Configuration::FIELD_IDENTIFIER);
         }
 
         $enabledStorages = $this->storageService->getEnabledStorages();
@@ -116,7 +116,7 @@ class DeleteCommand extends Command
             return;
         }
 
-        $resourceTitle = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'][$identifier]['title'] ?? $identifier;
+        $resourceTitle = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER][$identifier]['title'] ?? $identifier;
         $output->writeln(sprintf(
             'Deleted %d file(s) from "%s" resource in storage "%s" (uid: %d)',
             $count,

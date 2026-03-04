@@ -33,7 +33,7 @@ final readonly class StorageService
      */
     public function getEnabledStorages(): array
     {
-        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'] ?? ['0' => '']);
+        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? ['0' => '']);
 
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
         $expressionBuilder = $queryBuilder->expr();
@@ -42,7 +42,7 @@ final readonly class StorageService
             ->where(
                 $expressionBuilder->or(
                     $expressionBuilder->eq(
-                        'tx_typo3_file_sync_enable',
+                        Configuration::FIELD_ENABLE,
                         $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
                     ),
                     $expressionBuilder->in(

@@ -44,10 +44,10 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
         $storage = $event->getStorage();
         $storageRecord = $storage->getStorageRecord();
         $isLocalDriver = 'Local' === $storageRecord['driver'];
-        $isRecordEnabled = ($storageRecord['tx_typo3_file_sync_enable'] ?? 0) > 0
-            && ($storageRecord['tx_typo3_file_sync_resources'] ?? '') !== '';
-        $isStorageConfigured = isset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()])
-            && [] !== $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()];
+        $isRecordEnabled = ($storageRecord[Configuration::FIELD_ENABLE] ?? 0) > 0
+            && ($storageRecord[Configuration::FIELD_RESOURCES] ?? '') !== '';
+        $isStorageConfigured = isset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()])
+            && [] !== $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()];
 
         if (!$isLocalDriver || (!$isRecordEnabled && !$isStorageConfigured)) {
             if ($storage->getUid() > 0) {
@@ -72,11 +72,11 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
 
         if ($isRecordEnabled) {
             $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromFlexForm(
-                $storageRecord['tx_typo3_file_sync_resources'],
+                $storageRecord[Configuration::FIELD_RESOURCES],
             );
         } else {
             $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromConfiguration(
-                $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()],
+                $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()],
             );
         }
 

@@ -15,6 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Repository;
 
 use Doctrine\DBAL\ParameterType;
 use InvalidArgumentException;
+use KonradMichalik\Typo3FileSync\Configuration;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\{AbstractFile, File, ProcessedFileRepository, StorageRepository};
 
@@ -40,15 +41,15 @@ final readonly class FileRepository
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
         $expressionBuilder = $queryBuilder->expr();
-        $queryBuilder->getConcreteQueryBuilder()->select('COUNT(*) AS count', 'tx_typo3_file_sync_identifier');
+        $queryBuilder->getConcreteQueryBuilder()->select('COUNT(*) AS count', Configuration::FIELD_IDENTIFIER);
         $queryBuilder->from('sys_file')
             ->where(
                 $expressionBuilder->neq(
-                    'tx_typo3_file_sync_identifier',
+                    Configuration::FIELD_IDENTIFIER,
                     $queryBuilder->createNamedParameter(''),
                 ),
             )
-            ->groupBy('tx_typo3_file_sync_identifier');
+            ->groupBy(Configuration::FIELD_IDENTIFIER);
 
         if (null !== $storage) {
             $queryBuilder->andWhere(
@@ -76,11 +77,11 @@ final readonly class FileRepository
             ->from('sys_file')
             ->where(
                 $expressionBuilder->eq(
-                    'tx_typo3_file_sync_identifier',
+                    Configuration::FIELD_IDENTIFIER,
                     $queryBuilder->createNamedParameter($identifier),
                 ),
             )
-            ->groupBy('tx_typo3_file_sync_identifier', 'identifier', 'storage');
+            ->groupBy(Configuration::FIELD_IDENTIFIER, 'identifier', 'storage');
 
         if (null !== $storage) {
             $queryBuilder->andWhere(
@@ -107,7 +108,7 @@ final readonly class FileRepository
                     $queryBuilder->createNamedParameter($file->getUid(), ParameterType::INTEGER),
                 ),
             )
-            ->set('tx_typo3_file_sync_identifier', $identifier)
+            ->set(Configuration::FIELD_IDENTIFIER, $identifier)
             ->executeStatement();
     }
 
