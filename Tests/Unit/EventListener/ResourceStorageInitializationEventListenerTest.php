@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -15,12 +15,19 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\EventListener;
 
 use KonradMichalik\Typo3FileSync\EventListener\ResourceStorageInitializationEventListener;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use ReflectionClass;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
+
+
+/**
+ * ResourceStorageInitializationEventListenerTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 
 #[CoversClass(ResourceStorageInitializationEventListener::class)]
 final class ResourceStorageInitializationEventListenerTest extends TestCase
@@ -30,7 +37,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
     {
         $this->expectNotToPerformAssertions();
 
-        $factory = (new \ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
+        $factory = (new ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
 
         $storage = $this->createMock(ResourceStorage::class);
         $storage->method('getStorageRecord')->willReturn([
@@ -53,7 +60,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
     {
         $this->expectNotToPerformAssertions();
 
-        $factory = (new \ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
+        $factory = (new ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
 
         $storage = $this->createMock(ResourceStorage::class);
         $storage->method('getStorageRecord')->willReturn([

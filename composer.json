@@ -41,7 +41,7 @@
 	},
 	"extra": {
 		"konradmichalik/php-cs-fixer-preset": {
-			"copyright": 2025
+			"copyright": 2026
 		},
 		"typo3/cms": {
 			"extension-key": "typo3_file_sync",

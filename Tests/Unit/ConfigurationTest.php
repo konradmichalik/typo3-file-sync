@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,9 +14,15 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
+
+
+/**
+ * ConfigurationTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 
 #[CoversClass(Configuration::class)]
 final class ConfigurationTest extends TestCase

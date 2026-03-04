@@ -2,16 +2,25 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
+ *
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 use Psr\Log\LogLevel;
 use TYPO3\CMS\Core\Log\Writer\FileWriter;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
-defined('TYPO3') or die();
+defined('TYPO3') || exit;
 
 ExtensionManagementUtility::addTypoScript(
     'sitepackage',
     'setup',
-    '@import "EXT:sitepackage/Configuration/TypoScript/setup.typoscript"'
+    '@import "EXT:sitepackage/Configuration/TypoScript/setup.typoscript"',
 );
 
 // Configure file sync on default storage (uid=1):
@@ -32,7 +41,7 @@ $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'][1] = [
 $GLOBALS['TYPO3_CONF_VARS']['LOG']['KonradMichalik']['Typo3FileSync']['writerConfiguration'] = [
     LogLevel::DEBUG => [
         FileWriter::class => [
-            'logFile' => \TYPO3\CMS\Core\Core\Environment::getVarPath() . '/log/typo3_file_sync.log',
+            'logFile' => TYPO3\CMS\Core\Core\Environment::getVarPath().'/log/typo3_file_sync.log',
         ],
     ],
 ];

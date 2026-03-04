@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,11 +14,18 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
 use KonradMichalik\Typo3FileSync\Resource\Handler\PlaceholderImageResource;
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Resource\FileInterface;
+
+use function function_exists;
+
+
+/**
+ * PlaceholderImageResourceTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 
 #[CoversClass(PlaceholderImageResource::class)]
 final class PlaceholderImageResourceTest extends TestCase
@@ -74,7 +81,7 @@ final class PlaceholderImageResourceTest extends TestCase
         $fileObject->method('getExtension')->willReturn($extension);
 
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertTrue($resource->hasFile('/test.' . $extension, 'fileadmin/test.' . $extension, $fileObject));
+        self::assertTrue($resource->hasFile('/test.'.$extension, 'fileadmin/test.'.$extension, $fileObject));
     }
 
     #[Test]
