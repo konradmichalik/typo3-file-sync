@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -16,10 +16,16 @@ namespace KonradMichalik\Typo3FileSync\Form\Element;
 use Doctrine\DBAL\ParameterType;
 use TYPO3\CMS\Backend\Form\Element\AbstractFormElement;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Imaging\IconFactory;
-use TYPO3\CMS\Core\Imaging\IconSize;
+use TYPO3\CMS\Core\Imaging\{IconFactory, IconSize};
 use TYPO3\CMS\Core\Page\PageRenderer;
 
+use function sprintf;
+
+/**
+ * ShowMissingFiles.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 final class ShowMissingFiles extends AbstractFormElement
 {
     public function __construct(
@@ -42,12 +48,12 @@ final class ShowMissingFiles extends AbstractFormElement
             ->where(
                 $expressionBuilder->eq(
                     'storage',
-                    $queryBuilder->createNamedParameter($this->data['vanillaUid'], ParameterType::INTEGER)
+                    $queryBuilder->createNamedParameter($this->data['vanillaUid'], ParameterType::INTEGER),
                 ),
                 $expressionBuilder->eq(
                     'missing',
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER)
-                )
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
             )
             ->executeQuery()
             ->fetchOne();
@@ -56,29 +62,29 @@ final class ShowMissingFiles extends AbstractFormElement
         $html[] = '<div class="form-group">';
 
         $languageService = $this->getLanguageService();
-        if ($count === 0) {
+        if (0 === (int) $count) {
             $html[] = '<div class="form-text">';
             $html[] = '<span class="badge badge-success">'
-                . $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.no_missing')
-                . '</span>'
-                . '</div>';
+                .$languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.no_missing')
+                .'</span>'
+                .'</div>';
         } else {
             $this->pageRenderer->loadJavaScriptModule('@konradmichalik/typo3-file-sync/form/storage-actions.js');
             $html[] = '<div class="form-control-wrap">';
             $html[] = '<button type="button" class="btn btn-default t3js-file-sync-action"'
-                . ' data-action="reset-missing"'
-                . ' data-storage-uid="' . (int)$this->data['vanillaUid'] . '">';
+                .' data-action="reset-missing"'
+                .' data-storage-uid="'.(int) $this->data['vanillaUid'].'">';
             $html[] = $this->iconFactory->getIcon('actions-database-reload', IconSize::SMALL);
-            $html[] = ' ' . $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.reset');
+            $html[] = ' '.$languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.reset');
             $html[] = '</button>';
             $html[] = '</div>';
             $html[] = '<div class="form-text">';
             $html[] = '<span class="badge badge-danger">'
-                . sprintf(
+                .sprintf(
                     $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.missing_files'),
-                    $count
+                    $count,
                 )
-                . '</span>';
+                .'</span>';
             $html[] = '</div>';
         }
 

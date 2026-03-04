@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -16,10 +16,16 @@ namespace KonradMichalik\Typo3FileSync\Command;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Service\StorageService;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Input\{InputInterface, InputOption};
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function sprintf;
+
+/**
+ * ResetCommand.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 class ResetCommand extends Command
 {
     public function __construct(
@@ -36,7 +42,7 @@ class ResetCommand extends Command
                 'storage',
                 's',
                 InputOption::VALUE_OPTIONAL,
-                'Reset files from a specific storage only'
+                'Reset files from a specific storage only',
             );
     }
 
@@ -45,21 +51,21 @@ class ResetCommand extends Command
         $storage = $input->getOption('storage');
 
         $enabledStorages = $this->storageService->getEnabledStorages();
-        if ($storage !== null) {
-            $storage = (int)$storage;
+        if (null !== $storage) {
+            $storageUid = (int) $storage;
             $enabledStorages = [
-                $storage => $enabledStorages[$storage] ?? [],
+                $storageUid => $enabledStorages[$storageUid] ?? ['uid' => $storageUid, 'name' => ''],
             ];
         }
 
         foreach ($enabledStorages as $storageRow) {
-            $count = $this->fileRepository->resetMissing((int)($storageRow['uid'] ?? 0));
+            $count = $this->fileRepository->resetMissing($storageRow['uid']);
             if ($count > 0) {
                 $output->writeln(sprintf(
                     'Reset %d file(s) in storage "%s" (uid: %d)',
                     $count,
-                    $storageRow['name'] ?? 'unknown',
-                    $storageRow['uid'] ?? 0
+                    $storageRow['name'],
+                    $storageRow['uid'],
                 ));
             }
         }

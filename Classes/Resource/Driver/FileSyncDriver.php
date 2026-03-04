@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,24 +14,29 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Resource\Driver;
 
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection;
-use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
-use TYPO3\CMS\Core\Resource\Driver\LocalDriver;
+use TYPO3\CMS\Core\Resource\Driver\{DriverInterface, LocalDriver};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function dirname;
+use function is_resource;
+
+/**
+ * FileSyncDriver.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 final class FileSyncDriver extends LocalDriver
 {
     protected readonly DriverInterface $originalDriverObject;
-    protected readonly RemoteResourceCollection $remoteResourceCollection;
 
     /**
      * @param array<string, mixed> $configuration
      */
-    public function __construct(array $configuration, DriverInterface $originalDriverObject, RemoteResourceCollection $remoteResourceCollection)
+    public function __construct(array $configuration, DriverInterface $originalDriverObject, protected readonly RemoteResourceCollection $remoteResourceCollection)
     {
         parent::__construct($configuration);
 
         $this->originalDriverObject = $originalDriverObject;
-        $this->remoteResourceCollection = $remoteResourceCollection;
     }
 
     public function fileExists(string $fileIdentifier): bool
@@ -49,13 +54,18 @@ final class FileSyncDriver extends LocalDriver
 
         $folderIdentifier = rtrim($folderIdentifier, '/');
         $pathinfo = pathinfo($folderIdentifier);
-        if (!empty($pathinfo['basename']) && !empty($pathinfo['extension'])) {
+        if ('' !== $pathinfo['basename'] && isset($pathinfo['extension']) && '' !== $pathinfo['extension']) {
             $this->ensureFileExists($folderIdentifier);
         }
 
         return false;
     }
 
+    /**
+     * @param non-empty-string $identifier
+     *
+     * @return non-empty-string|null
+     */
     public function getPublicUrl(string $identifier): ?string
     {
         $this->ensureFileExists($identifier);
@@ -78,14 +88,18 @@ final class FileSyncDriver extends LocalDriver
     }
 
     /**
-     * @param array<int, string> $propertiesToExtract
-     * @return array<string, mixed>
+     * @param list<string> $propertiesToExtract
+     *
+     * @return array<non-empty-string, mixed>
      */
     public function getFileInfoByIdentifier(string $fileIdentifier, array $propertiesToExtract = []): array
     {
         $this->ensureFileExists($fileIdentifier);
 
-        return $this->originalDriverObject->getFileInfoByIdentifier($fileIdentifier, $propertiesToExtract);
+        /** @var array<non-empty-string, mixed> $result */
+        $result = $this->originalDriverObject->getFileInfoByIdentifier($fileIdentifier, $propertiesToExtract);
+
+        return $result;
     }
 
     /**
@@ -113,24 +127,24 @@ final class FileSyncDriver extends LocalDriver
     protected function ensureFileExists(string $fileIdentifier): bool
     {
         $absoluteFilePath = $this->getAbsolutePath($fileIdentifier, false);
-        if (empty($absoluteFilePath) || file_exists($absoluteFilePath)) {
+        if ('' === $absoluteFilePath || file_exists($absoluteFilePath)) {
             return true;
         }
 
         $fileName = basename($absoluteFilePath);
-        if (empty($fileName)) {
+        if ('' === $fileName) {
             return true;
         }
 
-        $filePath = $this->originalDriverObject->getPublicUrl($fileIdentifier);
+        $filePath = '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
 
-        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $filePath);
-        if ($fileContent !== null) {
+        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $filePath ?? '');
+        if (null !== $fileContent) {
             $absoluteFilePath = $this->getAbsolutePath($fileIdentifier);
             GeneralUtility::mkdir_deep(dirname($absoluteFilePath));
             file_put_contents($absoluteFilePath, $fileContent);
 
-            if (is_resource($fileContent) && get_resource_type($fileContent) === 'stream') {
+            if (is_resource($fileContent) && 'stream' === get_resource_type($fileContent)) {
                 fclose($fileContent);
             }
         }
@@ -142,13 +156,15 @@ final class FileSyncDriver extends LocalDriver
     {
         $relativeFilePath = ltrim($this->canonicalizeAndCheckFileIdentifier($fileIdentifier, $callOriginalDriver), '/');
 
-        return $this->absoluteBasePath . $relativeFilePath;
+        return $this->absoluteBasePath.$relativeFilePath;
     }
 
     protected function canonicalizeAndCheckFileIdentifier(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
-        return $callOriginalDriver
-            ? $this->originalDriverObject->canonicalizeAndCheckFileIdentifier($fileIdentifier)
-            : parent::canonicalizeAndCheckFileIdentifier($fileIdentifier);
+        if ($callOriginalDriver && $this->originalDriverObject instanceof LocalDriver) {
+            return $this->originalDriverObject->canonicalizeAndCheckFileIdentifier($fileIdentifier);
+        }
+
+        return parent::canonicalizeAndCheckFileIdentifier($fileIdentifier);
     }
 }

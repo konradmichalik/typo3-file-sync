@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,22 +14,32 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Controller;
 
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\{ResponseInterface, ServerRequestInterface};
 use TYPO3\CMS\Backend\Attribute\AsController;
 use TYPO3\CMS\Core\Http\JsonResponse;
 
+use function is_array;
+use function sprintf;
+
+/**
+ * StorageController.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 #[AsController]
-final class StorageController
+final readonly class StorageController
 {
     public function __construct(
-        private readonly FileRepository $fileRepository,
+        private FileRepository $fileRepository,
     ) {}
 
     public function resetMissingAction(ServerRequestInterface $request): ResponseInterface
     {
         $body = $request->getParsedBody();
-        $storageUid = (int)($body['storageUid'] ?? 0);
+        if (!is_array($body)) {
+            return new JsonResponse(['success' => false, 'message' => 'Invalid request body'], 400);
+        }
+        $storageUid = (int) ($body['storageUid'] ?? 0);
 
         if ($storageUid <= 0) {
             return new JsonResponse(['success' => false, 'message' => 'Invalid storage UID'], 400);
@@ -47,10 +57,13 @@ final class StorageController
     public function deleteFilesAction(ServerRequestInterface $request): ResponseInterface
     {
         $body = $request->getParsedBody();
-        $storageUid = (int)($body['storageUid'] ?? 0);
-        $identifier = (string)($body['identifier'] ?? '');
+        if (!is_array($body)) {
+            return new JsonResponse(['success' => false, 'message' => 'Invalid request body'], 400);
+        }
+        $storageUid = (int) ($body['storageUid'] ?? 0);
+        $identifier = (string) ($body['identifier'] ?? '');
 
-        if ($storageUid <= 0 || $identifier === '') {
+        if ($storageUid <= 0 || '' === $identifier) {
             return new JsonResponse(['success' => false, 'message' => 'Invalid storage UID or identifier'], 400);
         }
 

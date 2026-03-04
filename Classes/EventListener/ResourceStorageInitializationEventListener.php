@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -13,17 +13,24 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\EventListener;
 
+use Closure;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
-use Psr\Log\LoggerAwareInterface;
-use Psr\Log\LoggerAwareTrait;
+use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
 use TYPO3\CMS\Core\Resource\Exception\InvalidConfigurationException;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function sprintf;
+
+/**
+ * ResourceStorageInitializationEventListener.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 final class ResourceStorageInitializationEventListener implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
@@ -36,19 +43,21 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
     {
         $storage = $event->getStorage();
         $storageRecord = $storage->getStorageRecord();
-        $isLocalDriver = $storageRecord['driver'] === 'Local';
-        $isRecordEnabled = !empty($storageRecord['tx_typo3_file_sync_enable']) && !empty($storageRecord['tx_typo3_file_sync_resources']);
-        $isStorageConfigured = !empty($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()]);
+        $isLocalDriver = 'Local' === $storageRecord['driver'];
+        $isRecordEnabled = ($storageRecord['tx_typo3_file_sync_enable'] ?? 0) > 0
+            && ($storageRecord['tx_typo3_file_sync_resources'] ?? '') !== '';
+        $isStorageConfigured = isset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()])
+            && [] !== $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()];
 
         if (!$isLocalDriver || (!$isRecordEnabled && !$isStorageConfigured)) {
             if ($storage->getUid() > 0) {
-                $this->logger->info(
+                $this->logger?->info(
                     sprintf('No file sync support for storage %s (%d) configured', $storage->getName(), $storage->getUid()),
                     [
                         'isLocalDriver' => $isLocalDriver,
                         'isRecordEnabled' => $isRecordEnabled,
                         'isStorageConfigured' => $isStorageConfigured,
-                    ]
+                    ],
                 );
             }
 
@@ -63,19 +72,20 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
 
         if ($isRecordEnabled) {
             $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromFlexForm(
-                $storageRecord['tx_typo3_file_sync_resources']
+                $storageRecord['tx_typo3_file_sync_resources'],
             );
         } else {
             $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromConfiguration(
-                $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()]
+                $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['storages'][$storage->getUid()],
             );
         }
 
+        /** @var FileSyncDriver $driverObject */
         $driverObject = GeneralUtility::makeInstance(
             FileSyncDriver::class,
             $storage->getConfiguration(),
             $originalDriverObject,
-            $remoteResourceCollection
+            $remoteResourceCollection,
         );
         $driverObject->setStorageUid($storageRecord['uid']);
         $driverObject->mergeConfigurationCapabilities($storage->getCapabilities());
@@ -97,6 +107,6 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
      */
     private static function getOriginalDriver(ResourceStorage $storage): DriverInterface
     {
-        return \Closure::bind(static fn () => $storage->driver, null, ResourceStorage::class)();
+        return Closure::bind(static fn () => $storage->driver, null, ResourceStorage::class)();
     }
 }

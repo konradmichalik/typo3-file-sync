@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -16,10 +16,16 @@ namespace KonradMichalik\Typo3FileSync\Form\Element;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use TYPO3\CMS\Backend\Form\Element\AbstractFormElement;
-use TYPO3\CMS\Core\Imaging\IconFactory;
-use TYPO3\CMS\Core\Imaging\IconSize;
+use TYPO3\CMS\Core\Imaging\{IconFactory, IconSize};
 use TYPO3\CMS\Core\Page\PageRenderer;
 
+use function sprintf;
+
+/**
+ * ShowDeleteFiles.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
 final class ShowDeleteFiles extends AbstractFormElement
 {
     public function __construct(
@@ -41,12 +47,12 @@ final class ShowDeleteFiles extends AbstractFormElement
         $html[] = '<div class="row">';
 
         $languageService = $this->getLanguageService();
-        if (empty($rows)) {
+        if ([] === $rows) {
             $html[] = '<div class="form-group">';
             $html[] = '<div class="form-text">';
             $html[] = '<span class="badge badge-success">'
-                . $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.no_delete')
-                . '</span>';
+                .$languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.no_delete')
+                .'</span>';
             $html[] = '</div>';
             $html[] = '</div>';
         } else {
@@ -55,14 +61,14 @@ final class ShowDeleteFiles extends AbstractFormElement
                 $html[] = '<div class="form-group">';
                 $html[] = '<div class="form-control-wrap">';
                 $html[] = '<button type="button" class="btn btn-default t3js-file-sync-action"'
-                    . ' data-action="delete-files"'
-                    . ' data-storage-uid="' . (int)$this->data['vanillaUid'] . '"'
-                    . ' data-identifier="' . htmlspecialchars($row['tx_typo3_file_sync_identifier']) . '">';
-                $html[] = $this->iconFactory->getIcon('actions-edit-delete', IconSize::SMALL) . ' ';
+                    .' data-action="delete-files"'
+                    .' data-storage-uid="'.(int) $this->data['vanillaUid'].'"'
+                    .' data-identifier="'.htmlspecialchars($row['tx_typo3_file_sync_identifier'], \ENT_QUOTES).'">';
+                $html[] = $this->iconFactory->getIcon('actions-edit-delete', IconSize::SMALL).' ';
                 $html[] = sprintf(
                     $languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.delete_files'),
                     $row['count'],
-                    $languageService->sL($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'][$row['tx_typo3_file_sync_identifier']]['title'] ?? $row['tx_typo3_file_sync_identifier'])
+                    $languageService->sL($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'][$row['tx_typo3_file_sync_identifier']]['title'] ?? $row['tx_typo3_file_sync_identifier']),
                 );
                 $html[] = '</button>';
                 $html[] = '</div>';

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -19,22 +19,35 @@ use TYPO3\CMS\Core\Http\RequestFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-final class RemoteInstanceResource implements RemoteResourceInterface
-{
-    protected readonly RequestFactory $requestFactory;
-    protected readonly string $url;
-    /** @var array<string, mixed> */
-    protected readonly array $requestOptions;
+use function is_array;
 
+/**
+ * RemoteInstanceResource.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
+final readonly class RemoteInstanceResource implements RemoteResourceInterface
+{
+    private RequestFactory $requestFactory;
+    private string $url;
+    /** @var array<string, mixed> */
+    private array $requestOptions;
+
+    /**
+     * @param array<string, mixed>|string|null $configuration
+     */
     public function __construct(array|string|null $configuration, ?RequestFactory $requestFactory = null)
     {
         $this->requestFactory = $requestFactory ?? GeneralUtility::makeInstance(RequestFactory::class);
 
-        $baseUrl = is_array($configuration) ? ($configuration['url'] ?? '') : (string)$configuration;
+        $baseUrl = is_array($configuration) ? ($configuration['url'] ?? '') : (string) $configuration;
         $baseUrl = self::resolveEnvPlaceholders($baseUrl);
         $urlParts = parse_url($baseUrl);
-        $urlParts['scheme'] = $urlParts['scheme'] ?? ($_SERVER['REQUEST_SCHEME'] ?? 'https');
-        $this->url = rtrim($this->buildUrl($urlParts), '/') . '/';
+        if (!is_array($urlParts)) {
+            $urlParts = [];
+        }
+        $urlParts['scheme'] ??= 'https';
+        $this->url = rtrim($this->buildUrl($urlParts), '/').'/';
 
         $this->requestOptions = isset($urlParts['user'], $urlParts['pass'])
             ? ['auth' => [$urlParts['user'], $urlParts['pass']]]
@@ -44,9 +57,9 @@ final class RemoteInstanceResource implements RemoteResourceInterface
     public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
     {
         try {
-            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'), 'HEAD', $this->requestOptions);
+            $response = $this->requestFactory->request($this->url.ltrim($filePath, '/'), 'HEAD', $this->requestOptions);
 
-            return $response->getStatusCode() === 200;
+            return 200 === $response->getStatusCode();
         } catch (TransferException) {
             return false;
         }
@@ -55,10 +68,10 @@ final class RemoteInstanceResource implements RemoteResourceInterface
     /**
      * @return string|false
      */
-    public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): string|false
+    public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
         try {
-            $response = $this->requestFactory->request($this->url . ltrim($filePath, '/'), 'GET', $this->requestOptions);
+            $response = $this->requestFactory->request($this->url.ltrim($filePath, '/'), 'GET', $this->requestOptions);
 
             return $response->getBody()->getContents();
         } catch (TransferException) {
@@ -66,23 +79,21 @@ final class RemoteInstanceResource implements RemoteResourceInterface
         }
     }
 
-    /**
-     * @param array<string, string|int> $urlParts
-     */
     private static function resolveEnvPlaceholders(string $value): string
     {
-        return preg_replace_callback('/%env\(([^)]+)\)%/', static function (array $matches): string {
-            return getenv($matches[1]) ?: '';
-        }, $value);
+        return preg_replace_callback('/%env\(([^)]+)\)%/', static fn (array $matches): string => getenv($matches[1]) ?: '', $value) ?? $value;
     }
 
+    /**
+     * @param array{scheme?: string, host?: string, port?: int, path?: string} $urlParts
+     */
     private function buildUrl(array $urlParts): string
     {
-        $scheme = isset($urlParts['scheme']) ? $urlParts['scheme'] . '://' : '';
+        $scheme = isset($urlParts['scheme']) ? $urlParts['scheme'].'://' : '';
         $host = $urlParts['host'] ?? '';
-        $port = isset($urlParts['port']) ? ':' . $urlParts['port'] : '';
+        $port = isset($urlParts['port']) ? ':'.$urlParts['port'] : '';
         $path = $urlParts['path'] ?? '';
 
-        return $scheme . $host . $port . $path;
+        return $scheme.$host.$port.$path;
     }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,19 +14,24 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Resource;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Exception\MissingInterfaceException;
-use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
+use KonradMichalik\Typo3FileSync\Exception\{MissingInterfaceException, UnknownResourceException};
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use TYPO3\CMS\Core\Resource\ResourceFactory;
-use TYPO3\CMS\Core\Resource\StorageRepository;
+use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-final class RemoteResourceCollectionFactory
+use function is_array;
+
+/**
+ * RemoteResourceCollectionFactory.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
+final readonly class RemoteResourceCollectionFactory
 {
     public function __construct(
-        private readonly StorageRepository $storageRepository,
-        private readonly ResourceFactory $resourceFactory,
-        private readonly FileRepository $fileRepository,
+        private StorageRepository $storageRepository,
+        private ResourceFactory $resourceFactory,
+        private FileRepository $fileRepository,
     ) {}
 
     /**
@@ -37,28 +42,23 @@ final class RemoteResourceCollectionFactory
         $remoteResources = [];
 
         foreach ($configuration as $resource) {
-            if (empty($resource['identifier'])) {
+            if (($resource['identifier'] ?? '') === '') {
                 continue;
             }
 
             $extConf = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'] ?? [];
             if (!isset($extConf[$resource['identifier']]['handler'])) {
-                throw new UnknownResourceException(
-                    'Unexpected File Sync Resource configuration "' . $resource['identifier'] . '"',
-                    1519788775
-                );
+                throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$resource['identifier'].'"', 1519788775);
             }
 
-            $handler = GeneralUtility::makeInstance(
+            /** @var object $handler */
+            $handler = GeneralUtility::makeInstance( // @phpstan-ignore argument.templateType
                 $extConf[$resource['identifier']]['handler'],
-                $resource['configuration'] ?? null
+                $resource['configuration'] ?? null,
             );
 
             if (!$handler instanceof RemoteResourceInterface) {
-                throw new MissingInterfaceException(
-                    'Resource handler for "' . $resource['identifier'] . '" doesn\'t implement ' . RemoteResourceInterface::class,
-                    1556472885
-                );
+                throw new MissingInterfaceException('Resource handler for "'.$resource['identifier'].'" doesn\'t implement '.RemoteResourceInterface::class, 1556472885);
             }
 
             $remoteResources[] = [
@@ -72,7 +72,7 @@ final class RemoteResourceCollectionFactory
             $remoteResources,
             $this->storageRepository,
             $this->resourceFactory,
-            $this->fileRepository
+            $this->fileRepository,
         );
     }
 
@@ -81,8 +81,8 @@ final class RemoteResourceCollectionFactory
         $configuration = [];
         $resourcesConfiguration = GeneralUtility::xml2array($flexForm);
 
-        foreach ((array)($resourcesConfiguration['data']['sDEF']['lDEF']['resources']['el'] ?? []) as $resource) {
-            if (empty($resource)) {
+        foreach ((array) ($resourcesConfiguration['data']['sDEF']['lDEF']['resources']['el'] ?? []) as $resource) {
+            if (!is_array($resource) || [] === $resource) {
                 continue;
             }
 
@@ -90,10 +90,7 @@ final class RemoteResourceCollectionFactory
             $extConf = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY]['resourceHandler'] ?? [];
 
             if (!isset($extConf[$identifier])) {
-                throw new UnknownResourceException(
-                    'Unexpected File Sync Resource configuration "' . $identifier . '"',
-                    1528326468
-                );
+                throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$identifier.'"', 1528326468);
             }
 
             $configuration[] = [

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -13,15 +13,19 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Service;
 
-use Doctrine\DBAL\ArrayParameterType;
-use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\{ArrayParameterType, ParameterType};
 use KonradMichalik\Typo3FileSync\Configuration;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 
-final class StorageService
+/**
+ * StorageService.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
+final readonly class StorageService
 {
     public function __construct(
-        private readonly ConnectionPool $connectionPool,
+        private ConnectionPool $connectionPool,
     ) {}
 
     /**
@@ -39,18 +43,21 @@ final class StorageService
                 $expressionBuilder->or(
                     $expressionBuilder->eq(
                         'tx_typo3_file_sync_enable',
-                        $queryBuilder->createNamedParameter(1, ParameterType::INTEGER)
+                        $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
                     ),
                     $expressionBuilder->in(
                         'uid',
-                        $queryBuilder->createNamedParameter($configuredStorages, ArrayParameterType::INTEGER)
-                    )
-                )
+                        $queryBuilder->createNamedParameter($configuredStorages, ArrayParameterType::INTEGER),
+                    ),
+                ),
             )
             ->orderBy('uid')
             ->executeQuery()
             ->fetchAllAssociative();
 
-        return array_combine(array_map('intval', array_column($rows, 'uid')), $rows);
+        /** @var array<int, array{uid: int, name: string}> $result */
+        $result = array_combine(array_map(intval(...), array_column($rows, 'uid')), $rows);
+
+        return $result;
     }
 }

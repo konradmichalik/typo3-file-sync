@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
  *
- * (c) 2025 Konrad Michalik <hej@konradmichalik.dev>
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -14,17 +14,23 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Repository;
 
 use Doctrine\DBAL\ParameterType;
+use InvalidArgumentException;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Resource\FileInterface;
-use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
-use TYPO3\CMS\Core\Resource\StorageRepository;
+use TYPO3\CMS\Core\Resource\{AbstractFile, File, ProcessedFileRepository, StorageRepository};
 
-final class FileRepository
+use function count;
+
+/**
+ * FileRepository.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ */
+final readonly class FileRepository
 {
     public function __construct(
-        protected readonly ConnectionPool $connectionPool,
-        protected readonly ProcessedFileRepository $processedFileRepository,
-        protected readonly StorageRepository $storageRepository,
+        private ConnectionPool $connectionPool,
+        private ProcessedFileRepository $processedFileRepository,
+        private StorageRepository $storageRepository,
     ) {}
 
     /**
@@ -39,21 +45,24 @@ final class FileRepository
             ->where(
                 $expressionBuilder->neq(
                     'tx_typo3_file_sync_identifier',
-                    $queryBuilder->createNamedParameter('')
-                )
+                    $queryBuilder->createNamedParameter(''),
+                ),
             )
             ->groupBy('tx_typo3_file_sync_identifier');
 
-        if ($storage !== null) {
+        if (null !== $storage) {
             $queryBuilder->andWhere(
                 $expressionBuilder->eq(
                     'storage',
-                    $queryBuilder->createNamedParameter($storage, ParameterType::INTEGER)
-                )
+                    $queryBuilder->createNamedParameter($storage, ParameterType::INTEGER),
+                ),
             );
         }
 
-        return $queryBuilder->executeQuery()->fetchAllAssociative();
+        /** @var array<int, array{count: int, tx_typo3_file_sync_identifier: string}> $rows */
+        $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
+
+        return $rows;
     }
 
     /**
@@ -68,32 +77,35 @@ final class FileRepository
             ->where(
                 $expressionBuilder->eq(
                     'tx_typo3_file_sync_identifier',
-                    $queryBuilder->createNamedParameter($identifier)
-                )
+                    $queryBuilder->createNamedParameter($identifier),
+                ),
             )
             ->groupBy('tx_typo3_file_sync_identifier', 'identifier', 'storage');
 
-        if ($storage !== null) {
+        if (null !== $storage) {
             $queryBuilder->andWhere(
                 $expressionBuilder->eq(
                     'storage',
-                    $queryBuilder->createNamedParameter($storage, ParameterType::INTEGER)
-                )
+                    $queryBuilder->createNamedParameter($storage, ParameterType::INTEGER),
+                ),
             );
         }
 
-        return $queryBuilder->executeQuery()->fetchAllAssociative();
+        /** @var array<int, array{storage: int, identifier: string}> $rows */
+        $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
+
+        return $rows;
     }
 
-    public function updateIdentifier(FileInterface $file, string $identifier): void
+    public function updateIdentifier(AbstractFile $file, string $identifier): void
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
         $queryBuilder->update('sys_file')
             ->where(
                 $queryBuilder->expr()->eq(
                     'uid',
-                    $queryBuilder->createNamedParameter($file->getUid(), ParameterType::INTEGER)
-                )
+                    $queryBuilder->createNamedParameter($file->getUid(), ParameterType::INTEGER),
+                ),
             )
             ->set('tx_typo3_file_sync_identifier', $identifier)
             ->executeStatement();
@@ -102,16 +114,17 @@ final class FileRepository
     public function resetMissing(int $storageUid): int
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+
         return $queryBuilder->update('sys_file')
             ->where(
                 $queryBuilder->expr()->eq(
                     'storage',
-                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER)
+                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER),
                 ),
                 $queryBuilder->expr()->eq(
                     'missing',
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER)
-                )
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
             )
             ->set('missing', 0, true, ParameterType::INTEGER)
             ->executeStatement();
@@ -122,9 +135,9 @@ final class FileRepository
         $rows = $this->findByIdentifier($identifier, $storage);
         foreach ($rows as $row) {
             try {
-                $storage = $this->storageRepository->getStorageObject((int)$row['storage']);
-                $file = $storage->getFileByIdentifier($row['identifier']);
-                if (!$file) {
+                $storageObject = $this->storageRepository->getStorageObject(max(0, $row['storage']));
+                $file = $storageObject->getFileByIdentifier($row['identifier']);
+                if (!$file instanceof File) {
                     continue;
                 }
 
@@ -138,7 +151,7 @@ final class FileRepository
                 if (@unlink($absolutePath)) {
                     $this->updateIdentifier($file, '');
                 }
-            } catch (\InvalidArgumentException) {
+            } catch (InvalidArgumentException) {
                 continue;
             }
         }
