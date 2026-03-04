@@ -31,7 +31,7 @@ call_user_func(static function (): void {
     }
     $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = array_merge(
         [
-            'remote_instance' => [
+            KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier::RemoteInstance->value => [
                 'title' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.remote_instance',
                 'config' => [
                     'label' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.url',
@@ -42,7 +42,7 @@ call_user_func(static function (): void {
                 ],
                 'handler' => KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource::class,
             ],
-            'placeholder_image' => [
+            KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier::PlaceholderImage->value => [
                 'title' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.placeholder_image',
                 'config' => [
                     'label' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.colors',

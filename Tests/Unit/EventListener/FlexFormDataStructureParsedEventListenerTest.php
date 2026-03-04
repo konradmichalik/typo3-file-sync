@@ -14,24 +14,23 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\EventListener;
 
 use KonradMichalik\Typo3FileSync\EventListener\FlexFormDataStructureParsedEventListener;
+use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent;
-
 
 /**
  * FlexFormDataStructureParsedEventListenerTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  */
-
 #[CoversClass(FlexFormDataStructureParsedEventListener::class)]
 final class FlexFormDataStructureParsedEventListenerTest extends TestCase
 {
     protected function setUp(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [
-            'remote_instance' => [
+            ResourceIdentifier::RemoteInstance->value => [
                 'title' => 'Remote Instance',
                 'config' => ['label' => 'URL', 'config' => ['type' => 'input']],
                 'handler' => 'SomeHandler',
@@ -98,9 +97,9 @@ final class FlexFormDataStructureParsedEventListenerTest extends TestCase
         $result = $event->getDataStructure();
         $resources = $result['sheets']['sDEF']['ROOT']['el']['resources']['el'];
 
-        self::assertArrayHasKey('remote_instance', $resources);
-        self::assertSame('Remote Instance', $resources['remote_instance']['title']);
-        self::assertSame('array', $resources['remote_instance']['type']);
+        self::assertArrayHasKey(ResourceIdentifier::RemoteInstance->value, $resources);
+        self::assertSame('Remote Instance', $resources[ResourceIdentifier::RemoteInstance->value]['title']);
+        self::assertSame('array', $resources[ResourceIdentifier::RemoteInstance->value]['type']);
     }
 
     #[Test]
@@ -135,6 +134,6 @@ final class FlexFormDataStructureParsedEventListenerTest extends TestCase
         $resources = $result['sheets']['sDEF']['ROOT']['el']['resources']['el'];
 
         self::assertArrayNotHasKey('incomplete', $resources);
-        self::assertArrayHasKey('remote_instance', $resources);
+        self::assertArrayHasKey(ResourceIdentifier::RemoteInstance->value, $resources);
     }
 }

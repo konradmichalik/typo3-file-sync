@@ -11,6 +11,7 @@ declare(strict_types=1);
  * file that was distributed with this source code.
  */
 
+use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use Psr\Log\LogLevel;
 use TYPO3\CMS\Core\Log\Writer\FileWriter;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
@@ -28,11 +29,11 @@ ExtensionManagementUtility::addTypoScript(
 // 2. Fall back to placeholder images if remote is unavailable
 $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'][1] = [
     [
-        'identifier' => 'remote_instance',
+        'identifier' => ResourceIdentifier::RemoteInstance->value,
         'configuration' => 'http://remote.typo3-file-sync.ddev.site',
     ],
     [
-        'identifier' => 'placeholder_image',
+        'identifier' => ResourceIdentifier::PlaceholderImage->value,
         'configuration' => '#CCCCCC, #969696',
     ],
 ];
