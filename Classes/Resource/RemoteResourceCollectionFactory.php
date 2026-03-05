@@ -40,6 +40,10 @@ final readonly class RemoteResourceCollectionFactory
      */
     public function createFromConfiguration(array $configuration): RemoteResourceCollection
     {
+        if (isset($configuration['identifier'])) {
+            $configuration = [$configuration];
+        }
+
         $remoteResources = [];
 
         foreach ($configuration as $resource) {
