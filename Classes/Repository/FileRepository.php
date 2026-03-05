@@ -111,6 +111,7 @@ final readonly class FileRepository
             )
             ->set(Configuration::FIELD_IDENTIFIER, $identifier)
             ->set(Configuration::FIELD_TSTAMP, (string) time())
+            ->set('missing', 0, true, ParameterType::INTEGER)
             ->executeStatement();
     }
 
