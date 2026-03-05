@@ -16,6 +16,8 @@ namespace KonradMichalik\Typo3FileSync\Resource;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Exception\{MissingInterfaceException, UnknownResourceException};
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use Psr\Log\LoggerAwareInterface;
+use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -64,6 +66,10 @@ final readonly class RemoteResourceCollectionFactory
 
             if (!$handler instanceof RemoteResourceInterface) {
                 throw new MissingInterfaceException('Resource handler for "'.$resource['identifier'].'" doesn\'t implement '.RemoteResourceInterface::class, 1556472885);
+            }
+
+            if ($handler instanceof LoggerAwareInterface) {
+                $handler->setLogger(GeneralUtility::makeInstance(LogManager::class)->getLogger($handler::class));
             }
 
             $remoteResources[] = [

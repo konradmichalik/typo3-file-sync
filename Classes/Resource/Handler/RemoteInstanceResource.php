@@ -15,11 +15,13 @@ namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
 use GuzzleHttp\Exception\TransferException;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
+use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Http\RequestFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function is_array;
+use function sprintf;
 
 /**
  * RemoteInstanceResource.
@@ -27,10 +29,12 @@ use function is_array;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final readonly class RemoteInstanceResource implements RemoteResourceInterface
+final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResourceInterface
 {
-    private RequestFactory $requestFactory;
-    private string $url;
+    use LoggerAwareTrait;
+
+    private readonly RequestFactory $requestFactory;
+    private readonly string $url;
     /** @var array<string, mixed> */
     private array $requestOptions;
 
@@ -57,11 +61,25 @@ final readonly class RemoteInstanceResource implements RemoteResourceInterface
 
     public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
     {
+        $url = $this->url.ltrim($filePath, '/');
         try {
-            $response = $this->requestFactory->request($this->url.ltrim($filePath, '/'), 'HEAD', $this->requestOptions);
+            $response = $this->requestFactory->request($url, 'HEAD', $this->requestOptions);
+            $statusCode = $response->getStatusCode();
 
-            return 200 === $response->getStatusCode();
-        } catch (TransferException) {
+            if (200 !== $statusCode) {
+                $this->logger?->debug(
+                    sprintf('HEAD %s returned HTTP %d', $url, $statusCode),
+                );
+
+                return false;
+            }
+
+            return true;
+        } catch (TransferException $e) {
+            $this->logger?->warning(
+                sprintf('HEAD %s failed: %s', $url, $e->getMessage()),
+            );
+
             return false;
         }
     }
@@ -71,11 +89,16 @@ final readonly class RemoteInstanceResource implements RemoteResourceInterface
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
+        $url = $this->url.ltrim($filePath, '/');
         try {
-            $response = $this->requestFactory->request($this->url.ltrim($filePath, '/'), 'GET', $this->requestOptions);
+            $response = $this->requestFactory->request($url, 'GET', $this->requestOptions);
 
             return $response->getBody()->getContents();
-        } catch (TransferException) {
+        } catch (TransferException $e) {
+            $this->logger?->warning(
+                sprintf('GET %s failed: %s', $url, $e->getMessage()),
+            );
+
             return false;
         }
     }
