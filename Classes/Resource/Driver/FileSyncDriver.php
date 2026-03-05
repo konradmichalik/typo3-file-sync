@@ -49,7 +49,7 @@ final class FileSyncDriver extends LocalDriver
 
     public function folderExists(string $folderIdentifier): bool
     {
-        if (parent::folderExists($folderIdentifier)) {
+        if ($this->originalDriverObject->folderExists($folderIdentifier)) {
             return true;
         }
 
