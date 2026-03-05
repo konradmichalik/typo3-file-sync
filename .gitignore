@@ -12,6 +12,5 @@ php-cs-fixer.xml
 phpstan.xml
 .Build/
 .phpunit.result.cache
-composer.lock
 REQUIREMENTS.md
 IDEAS.md
