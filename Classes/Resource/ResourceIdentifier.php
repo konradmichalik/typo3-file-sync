@@ -17,6 +17,7 @@ namespace KonradMichalik\Typo3FileSync\Resource;
  * ResourceIdentifier.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 enum ResourceIdentifier: string
 {

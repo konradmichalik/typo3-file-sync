@@ -17,13 +17,12 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 
-
 /**
  * ConfigurationTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 #[CoversClass(Configuration::class)]
 final class ConfigurationTest extends TestCase
 {

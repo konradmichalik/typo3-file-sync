@@ -25,6 +25,7 @@ use function sprintf;
  * StorageController.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[AsController]
 final readonly class StorageController

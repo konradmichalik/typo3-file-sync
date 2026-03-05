@@ -25,6 +25,7 @@ use function sprintf;
  * ResetCommand.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 class ResetCommand extends Command
 {

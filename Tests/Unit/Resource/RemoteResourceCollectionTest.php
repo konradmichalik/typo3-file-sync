@@ -28,6 +28,7 @@ use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepo
  * RemoteResourceCollectionTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[CoversClass(RemoteResourceCollection::class)]
 final class RemoteResourceCollectionTest extends TestCase

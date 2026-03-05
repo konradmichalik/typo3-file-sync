@@ -20,13 +20,12 @@ use TYPO3\CMS\Core\Resource\FileInterface;
 
 use function function_exists;
 
-
 /**
  * PlaceholderImageResourceTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 #[CoversClass(PlaceholderImageResource::class)]
 final class PlaceholderImageResourceTest extends TestCase
 {

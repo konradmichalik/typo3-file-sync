@@ -30,6 +30,7 @@ use function sprintf;
  * RemoteResourceCollection.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final class RemoteResourceCollection implements LoggerAwareInterface
 {

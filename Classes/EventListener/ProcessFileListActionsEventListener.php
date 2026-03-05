@@ -30,6 +30,7 @@ use function sprintf;
  * ProcessFileListActionsEventListener.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final readonly class ProcessFileListActionsEventListener
 {

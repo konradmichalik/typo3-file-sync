@@ -25,6 +25,7 @@ use function is_array;
  * RemoteInstanceResource.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final readonly class RemoteInstanceResource implements RemoteResourceInterface
 {

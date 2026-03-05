@@ -22,13 +22,12 @@ use ReflectionClass;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
 
-
 /**
  * ResourceStorageInitializationEventListenerTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 #[CoversClass(ResourceStorageInitializationEventListener::class)]
 final class ResourceStorageInitializationEventListenerTest extends TestCase
 {

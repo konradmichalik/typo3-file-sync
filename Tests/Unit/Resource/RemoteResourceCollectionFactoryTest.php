@@ -26,6 +26,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * RemoteResourceCollectionFactoryTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[CoversClass(RemoteResourceCollectionFactory::class)]
 final class RemoteResourceCollectionFactoryTest extends TestCase
@@ -96,6 +97,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
  * @internal
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 class TestRemoteResource implements RemoteResourceInterface
 {

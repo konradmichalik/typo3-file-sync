@@ -17,6 +17,7 @@ namespace KonradMichalik\Typo3FileSync;
  * Configuration.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final class Configuration
 {

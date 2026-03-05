@@ -15,11 +15,10 @@ namespace KonradMichalik\Typo3FileSync\Exception;
 
 use RuntimeException;
 
-
 /**
  * UnknownResourceException.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 class UnknownResourceException extends RuntimeException {}

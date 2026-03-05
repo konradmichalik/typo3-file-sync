@@ -23,6 +23,7 @@ use TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent;
  * FlexFormDataStructureParsedEventListenerTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[CoversClass(FlexFormDataStructureParsedEventListener::class)]
 final class FlexFormDataStructureParsedEventListenerTest extends TestCase

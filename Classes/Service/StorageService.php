@@ -21,6 +21,7 @@ use TYPO3\CMS\Core\Database\ConnectionPool;
  * StorageService.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final readonly class StorageService
 {

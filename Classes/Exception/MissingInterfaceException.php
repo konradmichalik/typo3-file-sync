@@ -15,11 +15,10 @@ namespace KonradMichalik\Typo3FileSync\Exception;
 
 use RuntimeException;
 
-
 /**
  * MissingInterfaceException.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 class MissingInterfaceException extends RuntimeException {}

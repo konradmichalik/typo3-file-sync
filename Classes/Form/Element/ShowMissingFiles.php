@@ -25,6 +25,7 @@ use function sprintf;
  * ShowMissingFiles.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final class ShowMissingFiles extends AbstractFormElement
 {

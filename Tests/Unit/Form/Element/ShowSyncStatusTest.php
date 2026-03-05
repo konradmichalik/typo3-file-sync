@@ -33,6 +33,7 @@ use function defined;
  * ShowSyncStatusTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[CoversClass(ShowSyncStatus::class)]
 final class ShowSyncStatusTest extends TestCase

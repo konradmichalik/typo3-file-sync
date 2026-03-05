@@ -20,13 +20,12 @@ use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Http\RequestFactory;
 
-
 /**
  * RemoteInstanceResourceTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 #[CoversClass(RemoteInstanceResource::class)]
 final class RemoteInstanceResourceTest extends TestCase
 {

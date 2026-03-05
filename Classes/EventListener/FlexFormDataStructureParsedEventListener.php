@@ -20,6 +20,7 @@ use TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent;
  * FlexFormDataStructureParsedEventListener.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final class FlexFormDataStructureParsedEventListener
 {

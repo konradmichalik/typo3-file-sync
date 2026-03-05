@@ -33,6 +33,7 @@ use TYPO3\CMS\Filelist\Event\ProcessFileListActionsEvent;
  * ProcessFileListActionsEventListenerTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 #[CoversClass(ProcessFileListActionsEventListener::class)]
 final class ProcessFileListActionsEventListenerTest extends TestCase

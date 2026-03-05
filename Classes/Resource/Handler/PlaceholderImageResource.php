@@ -28,6 +28,7 @@ use function strlen;
  * PlaceholderImageResource.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
 final class PlaceholderImageResource implements RemoteResourceInterface
 {
