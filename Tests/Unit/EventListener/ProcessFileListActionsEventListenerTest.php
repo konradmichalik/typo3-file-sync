@@ -102,7 +102,7 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertFalse($event->hasAction('file-sync-status'));
+        self::assertFalse($this->eventHasAction($event, 'file-sync-status'));
     }
 
     #[Test]
@@ -115,7 +115,7 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertFalse($event->hasAction('file-sync-status'));
+        self::assertFalse($this->eventHasAction($event, 'file-sync-status'));
     }
 
     #[Test]
@@ -127,7 +127,7 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertFalse($event->hasAction('file-sync-status'));
+        self::assertFalse($this->eventHasAction($event, 'file-sync-status'));
     }
 
     #[Test]
@@ -140,9 +140,8 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertTrue($event->hasAction('file-sync-status'));
-        $action = $event->getAction('file-sync-status');
-        self::assertInstanceOf(GenericButton::class, $action);
+        self::assertTrue($this->eventHasAction($event, 'file-sync-status'));
+        self::assertInstanceOf(GenericButton::class, $this->eventGetAction($event, 'file-sync-status'));
     }
 
     #[Test]
@@ -155,9 +154,8 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertTrue($event->hasAction('file-sync-status'));
-        $action = $event->getAction('file-sync-status');
-        self::assertInstanceOf(GenericButton::class, $action);
+        self::assertTrue($this->eventHasAction($event, 'file-sync-status'));
+        self::assertInstanceOf(GenericButton::class, $this->eventGetAction($event, 'file-sync-status'));
     }
 
     #[Test]
@@ -170,9 +168,8 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
 
         ($this->listener)($event);
 
-        self::assertTrue($event->hasAction('file-sync-status'));
-        $action = $event->getAction('file-sync-status');
-        self::assertInstanceOf(GenericButton::class, $action);
+        self::assertTrue($this->eventHasAction($event, 'file-sync-status'));
+        self::assertInstanceOf(GenericButton::class, $this->eventGetAction($event, 'file-sync-status'));
     }
 
     private function createFileMockWithUid(int $uid): AbstractFile
@@ -183,12 +180,38 @@ final class ProcessFileListActionsEventListenerTest extends TestCase
         return $file;
     }
 
+    private function eventHasAction(ProcessFileListActionsEvent $event, string $name): bool
+    {
+        // @phpstan-ignore function.alreadyNarrowedType
+        if (method_exists($event, 'hasAction')) {
+            return $event->hasAction($name);
+        }
+
+        return isset($event->getActionItems()[$name]); // @phpstan-ignore method.notFound
+    }
+
+    private function eventGetAction(ProcessFileListActionsEvent $event, string $name): mixed
+    {
+        // @phpstan-ignore function.alreadyNarrowedType
+        if (method_exists($event, 'getAction')) {
+            return $event->getAction($name);
+        }
+
+        return $event->getActionItems()[$name] ?? null; // @phpstan-ignore method.notFound
+    }
+
     private function createEvent(Folder|AbstractFile $resource): ProcessFileListActionsEvent
     {
-        $primary = new ComponentGroup('primary');
-        $secondary = new ComponentGroup('secondary');
-        $request = $this->createMock(ServerRequestInterface::class);
+        if (class_exists(ComponentGroup::class)) {
+            // TYPO3 v14+
+            $primary = new ComponentGroup('primary');
+            $secondary = new ComponentGroup('secondary');
+            $request = $this->createMock(ServerRequestInterface::class);
 
-        return new ProcessFileListActionsEvent($primary, $secondary, $resource, $request);
+            return new ProcessFileListActionsEvent($primary, $secondary, $resource, $request);
+        }
+
+        // TYPO3 v13
+        return new ProcessFileListActionsEvent($resource, []); // @phpstan-ignore arguments.count, argument.type, argument.type
     }
 }
