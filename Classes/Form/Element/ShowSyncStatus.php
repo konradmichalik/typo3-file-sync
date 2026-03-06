@@ -13,12 +13,10 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Form\Element;
 
-use Doctrine\DBAL\ParameterType;
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use TYPO3\CMS\Backend\Form\Element\AbstractFormElement;
-use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Imaging\{IconFactory, IconSize};
 
 use function sprintf;
 
@@ -33,8 +31,7 @@ final class ShowSyncStatus extends AbstractFormElement
     private const LLL_PREFIX = 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:';
 
     public function __construct(
-        protected readonly ConnectionPool $connectionPool,
-        protected readonly IconFactory $iconFactory,
+        protected readonly FileRepository $fileRepository,
     ) {}
 
     /**
@@ -53,7 +50,7 @@ final class ShowSyncStatus extends AbstractFormElement
             return $result;
         }
 
-        $syncData = $this->fetchSyncData($fileUid);
+        $syncData = $this->fileRepository->findSyncData($fileUid);
         if ('' === $syncData['identifier']) {
             return $result;
         }
@@ -83,64 +80,34 @@ final class ShowSyncStatus extends AbstractFormElement
         return 0;
     }
 
-    /**
-     * @return array{identifier: string, tstamp: int}
-     */
-    private function fetchSyncData(int $fileUid): array
-    {
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
-
-        $row = $queryBuilder
-            ->select(Configuration::FIELD_IDENTIFIER, Configuration::FIELD_TSTAMP)
-            ->from('sys_file')
-            ->where(
-                $queryBuilder->expr()->eq(
-                    'uid',
-                    $queryBuilder->createNamedParameter($fileUid, ParameterType::INTEGER),
-                ),
-            )
-            ->executeQuery()
-            ->fetchAssociative();
-
-        if (false === $row) {
-            return ['identifier' => '', 'tstamp' => 0];
-        }
-
-        return [
-            'identifier' => (string) ($row[Configuration::FIELD_IDENTIFIER] ?? ''),
-            'tstamp' => (int) ($row[Configuration::FIELD_TSTAMP] ?? 0),
-        ];
-    }
-
     private function renderSyncInfo(string $identifier, int $tstamp): string
     {
         $resolvedIdentifier = ResourceIdentifier::tryFrom($identifier);
         $languageService = $this->getLanguageService();
 
-        [$iconIdentifier, $labelKey] = match ($resolvedIdentifier) {
-            ResourceIdentifier::RemoteInstance => ['actions-cloud', 'filelist.sync_status.remote_instance'],
-            ResourceIdentifier::PlaceholderImage => ['actions-image', 'filelist.sync_status.placeholder_image'],
-            default => ['actions-synchronize', 'filelist.sync_status.unknown'],
+        $labelKey = match ($resolvedIdentifier) {
+            ResourceIdentifier::RemoteInstance => 'filelist.sync_status.remote_instance',
+            ResourceIdentifier::PlaceholderImage => 'filelist.sync_status.placeholder_image',
+            default => 'filelist.sync_status.unknown',
         };
 
-        $label = $languageService->sL(self::LLL_PREFIX.$labelKey);
-
+        $handlerLabel = $languageService->sL(self::LLL_PREFIX.$labelKey);
         if (null === $resolvedIdentifier) {
-            $label = sprintf($label, $identifier);
+            $handlerLabel = sprintf($handlerLabel, $identifier);
         }
 
-        $icon = $this->iconFactory->getIcon($iconIdentifier, IconSize::SMALL);
-
-        $badgeText = htmlspecialchars($label, \ENT_QUOTES);
+        $generalLabel = htmlspecialchars($languageService->sL(self::LLL_PREFIX.'filelist.sync_status.label'), \ENT_QUOTES);
+        $badgeText = htmlspecialchars($handlerLabel, \ENT_QUOTES);
+        $titleAttr = '';
 
         if ($tstamp > 0) {
-            $formattedDate = date('d.m.Y H:i', $tstamp);
-            $badgeText .= ' &middot; '.htmlspecialchars($formattedDate, \ENT_QUOTES);
+            $titleAttr = ' title="'.htmlspecialchars(date('d.m.Y H:i', $tstamp), \ENT_QUOTES).'"';
         }
 
         return '<div class="form-group">'
-            .'<span class="badge badge-info d-inline-flex align-items-center gap-1">'
-            .$icon.$badgeText
+            .'<strong>'.$generalLabel.'</strong>'
+            .' <span class="badge" style="background-color:#198754;color:#fff"'.$titleAttr.'>'
+            .$badgeText
             .'</span>'
             .'</div>';
     }

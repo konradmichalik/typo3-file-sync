@@ -99,6 +99,35 @@ final readonly class FileRepository
         return $rows;
     }
 
+    /**
+     * @return array{identifier: string, tstamp: int}
+     */
+    public function findSyncData(int $fileUid): array
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+
+        $row = $queryBuilder
+            ->select(Configuration::FIELD_IDENTIFIER, Configuration::FIELD_TSTAMP)
+            ->from('sys_file')
+            ->where(
+                $queryBuilder->expr()->eq(
+                    'uid',
+                    $queryBuilder->createNamedParameter($fileUid, ParameterType::INTEGER),
+                ),
+            )
+            ->executeQuery()
+            ->fetchAssociative();
+
+        if (false === $row) {
+            return ['identifier' => '', 'tstamp' => 0];
+        }
+
+        return [
+            'identifier' => (string) ($row[Configuration::FIELD_IDENTIFIER] ?? ''),
+            'tstamp' => (int) ($row[Configuration::FIELD_TSTAMP] ?? 0),
+        ];
+    }
+
     public function updateIdentifier(AbstractFile $file, string $identifier): void
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
