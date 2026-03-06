@@ -35,6 +35,7 @@ final readonly class RemoteResourceCollectionFactory
         private StorageRepository $storageRepository,
         private ResourceFactory $resourceFactory,
         private FileRepository $fileRepository,
+        private LogManager $logManager,
     ) {}
 
     /**
@@ -69,7 +70,7 @@ final readonly class RemoteResourceCollectionFactory
             }
 
             if ($handler instanceof LoggerAwareInterface) {
-                $handler->setLogger(GeneralUtility::makeInstance(LogManager::class)->getLogger($handler::class));
+                $handler->setLogger($this->logManager->getLogger($handler::class));
             }
 
             $remoteResources[] = [

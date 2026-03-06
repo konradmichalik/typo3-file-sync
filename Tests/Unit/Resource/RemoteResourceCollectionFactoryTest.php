@@ -19,6 +19,7 @@ use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollectionFactory, Remo
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -87,7 +88,9 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
         $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
-        return new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository);
+        $logManager = (new ReflectionClass(LogManager::class))->newInstanceWithoutConstructor();
+
+        return new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $logManager);
     }
 }
 
