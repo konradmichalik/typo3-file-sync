@@ -13,18 +13,20 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Form\Element;
 
+use Doctrine\DBAL\ParameterType;
 use KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
-use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
-use TYPO3\CMS\Core\Imaging\{Icon, IconFactory, IconRegistry};
 use TYPO3\CMS\Core\Localization\LanguageService;
+use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
+use TYPO3\CMS\Core\Resource\StorageRepository;
 
 use function define;
 use function defined;
@@ -45,20 +47,6 @@ final class ShowSyncStatusTest extends TestCase
 
     protected function setUp(): void
     {
-        $icon = $this->createMock(Icon::class);
-        $icon->method('render')->willReturn('<span class="icon"></span>');
-        $icon->method('__toString')->willReturn('<span class="icon"></span>');
-
-        $cache = $this->createMock(FrontendInterface::class);
-        $cache->method('get')->willReturn($icon);
-
-        $iconFactory = new IconFactory(
-            $this->createMock(\Psr\EventDispatcher\EventDispatcherInterface::class),
-            $this->createMock(IconRegistry::class),
-            $this->createMock(\Psr\Container\ContainerInterface::class),
-            $cache,
-        );
-
         $this->queryResult = $this->createMock(\Doctrine\DBAL\Result::class);
 
         $expressionBuilder = $this->createMock(ExpressionBuilder::class);
@@ -75,13 +63,19 @@ final class ShowSyncStatusTest extends TestCase
         $connectionPool = $this->createMock(ConnectionPool::class);
         $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
 
+        $fileRepository = new FileRepository(
+            $connectionPool,
+            $this->createMock(ProcessedFileRepository::class),
+            $this->createMock(StorageRepository::class),
+        );
+
         $languageService = $this->createMock(LanguageService::class);
         $languageService->method('sL')->willReturnCallback(
             static fn (string $key): string => match (true) {
-                str_contains($key, 'remote_instance') => 'Synced from remote instance',
-                str_contains($key, 'placeholder_image') => 'Generated as placeholder image',
-                str_contains($key, 'synced_at') => 'Synced at: %s',
-                str_contains($key, 'sync_status.unknown') => 'Synced via: %s',
+                str_contains($key, 'sync_status.label') => 'File Sync',
+                str_contains($key, 'remote_instance') => 'Remote Instance',
+                str_contains($key, 'placeholder_image') => 'Placeholder Image',
+                str_contains($key, 'sync_status.unknown') => '%s',
                 str_contains($key, 'file_sync.status') => 'Sync Status',
                 default => $key,
             },
@@ -94,7 +88,7 @@ final class ShowSyncStatusTest extends TestCase
             define('LF', "\n");
         }
 
-        $this->element = new ShowSyncStatus($connectionPool, $iconFactory);
+        $this->element = new ShowSyncStatus($fileRepository);
     }
 
     protected function tearDown(): void
@@ -151,9 +145,10 @@ final class ShowSyncStatusTest extends TestCase
 
         $result = $this->element->render();
 
-        self::assertStringContainsString('badge badge-info', $result['html']);
-        self::assertStringContainsString('Synced from remote instance', $result['html']);
-        self::assertStringContainsString('&middot;', $result['html']);
+        self::assertStringContainsString('File Sync', $result['html']);
+        self::assertStringContainsString('Remote Instance', $result['html']);
+        self::assertStringContainsString('background-color:#198754', $result['html']);
+        self::assertStringContainsString('title="', $result['html']);
     }
 
     #[Test]
@@ -168,7 +163,7 @@ final class ShowSyncStatusTest extends TestCase
 
         $result = $this->element->render();
 
-        self::assertStringContainsString('Generated as placeholder image', $result['html']);
+        self::assertStringContainsString('Placeholder Image', $result['html']);
     }
 
     #[Test]
@@ -183,7 +178,7 @@ final class ShowSyncStatusTest extends TestCase
 
         $result = $this->element->render();
 
-        self::assertStringContainsString('Synced via: my_custom_handler', $result['html']);
+        self::assertStringContainsString('my_custom_handler', $result['html']);
     }
 
     #[Test]
@@ -198,8 +193,8 @@ final class ShowSyncStatusTest extends TestCase
 
         $result = $this->element->render();
 
-        self::assertStringContainsString('Synced from remote instance', $result['html']);
-        self::assertStringNotContainsString('&middot;', $result['html']);
+        self::assertStringContainsString('Remote Instance', $result['html']);
+        self::assertStringNotContainsString('title="', $result['html']);
     }
 
     #[Test]
@@ -214,7 +209,7 @@ final class ShowSyncStatusTest extends TestCase
 
         $result = $this->element->render();
 
-        self::assertStringContainsString('Synced from remote instance', $result['html']);
+        self::assertStringContainsString('Remote Instance', $result['html']);
     }
 
     private function setElementData(string $tableName, int $fileUid, bool $directUid = false): void
