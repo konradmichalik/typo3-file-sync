@@ -24,7 +24,6 @@ use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
 use TYPO3\CMS\Core\Localization\LanguageService;
-use TYPO3\CMS\Core\Resource\{ProcessedFileRepository, StorageRepository};
 
 use function define;
 use function defined;
@@ -61,11 +60,9 @@ final class ShowSyncStatusTest extends TestCase
         $connectionPool = $this->createMock(ConnectionPool::class);
         $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
 
-        $fileRepository = new FileRepository(
-            $connectionPool,
-            $this->createMock(ProcessedFileRepository::class),
-            $this->createMock(StorageRepository::class),
-        );
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $connectionPoolProperty = (new ReflectionClass(FileRepository::class))->getProperty('connectionPool');
+        $connectionPoolProperty->setValue($fileRepository, $connectionPool);
 
         $languageService = $this->createMock(LanguageService::class);
         $languageService->method('sL')->willReturnCallback(
