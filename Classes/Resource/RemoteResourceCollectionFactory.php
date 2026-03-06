@@ -38,7 +38,7 @@ final readonly class RemoteResourceCollectionFactory
     ) {}
 
     /**
-     * @param array<int, array{identifier?: string, configuration?: mixed}> $configuration
+     * @param array<int|string, mixed> $configuration
      */
     public function createFromConfiguration(array $configuration): RemoteResourceCollection
     {
