@@ -26,12 +26,6 @@ services:
                 identifier: 'fileSyncFlexFormDataStructureParsedEventListener'
                 event: TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent
 
-    KonradMichalik\Typo3FileSync\EventListener\ProcessFileListActionsEventListener:
-        tags:
-            -   name: event.listener
-                identifier: 'fileSyncProcessFileListActionsEventListener'
-                event: TYPO3\CMS\Filelist\Event\ProcessFileListActionsEvent
-
     KonradMichalik\Typo3FileSync\Form\Element\ShowDeleteFiles:
         public: true
 
