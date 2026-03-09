@@ -68,40 +68,31 @@ final class RemoteResourceCollection implements LoggerAwareInterface
 
         foreach ($this->resources as $resource) {
             $file = $this->fileIdentifierCache[$filePath];
-            if ($resource['handler']->hasFile($fileIdentifier, $filePath, $file)) {
-                $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);
-                if (false === $fileContent) {
-                    $this->logger?->debug(
-                        sprintf('Resource "%s" returned empty content', $resource['identifier']),
-                        [
-                            'fileIdentifier' => $fileIdentifier,
-                            'filePath' => $filePath,
-                        ],
-                    );
-                    continue;
-                }
-                if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
-                    throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
-                }
-
-                $this->fileRepository->updateIdentifier($file, $resource['identifier']);
+            $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);
+            if (false === $fileContent) {
                 $this->logger?->debug(
-                    sprintf('Resource "%s" found file', $resource['identifier']),
+                    sprintf('Resource "%s" couldn\'t handle file', $resource['identifier']),
                     [
                         'fileIdentifier' => $fileIdentifier,
                         'filePath' => $filePath,
                     ],
                 );
-
-                return $fileContent;
+                continue;
             }
+            if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
+                throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
+            }
+
+            $this->fileRepository->updateIdentifier($file, $resource['identifier']);
             $this->logger?->debug(
-                sprintf('Resource "%s" couldn\'t handle file', $resource['identifier']),
+                sprintf('Resource "%s" found file', $resource['identifier']),
                 [
                     'fileIdentifier' => $fileIdentifier,
                     'filePath' => $filePath,
                 ],
             );
+
+            return $fileContent;
         }
 
         return null;

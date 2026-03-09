@@ -65,18 +65,14 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         $this->textColor = $configuration['textColor'] ?? '#969696';
     }
 
-    public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
-    {
-        return $fileObject instanceof FileInterface
-            && in_array($fileObject->getExtension(), $this->allowedFileExtensions, true);
-    }
-
     /**
      * @return string|false
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
-        if (!$fileObject instanceof FileInterface) {
+        if (!$fileObject instanceof FileInterface
+            || !in_array($fileObject->getExtension(), $this->allowedFileExtensions, true)
+        ) {
             return false;
         }
 

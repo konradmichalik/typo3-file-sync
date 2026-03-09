@@ -36,11 +36,9 @@ final class RemoteResourceCollectionTest extends TestCase
     public function getReturnsContentFromFirstMatchingHandler(): void
     {
         $handler1 = $this->createMock(RemoteResourceInterface::class);
-        $handler1->method('hasFile')->willReturn(false);
-        $handler1->expects(self::never())->method('getFile');
+        $handler1->expects(self::once())->method('getFile')->willReturn(false);
 
         $handler2 = $this->createMock(RemoteResourceInterface::class);
-        $handler2->method('hasFile')->willReturn(true);
         $handler2->expects(self::once())->method('getFile')->willReturn('file-content');
 
         $fileObject = $this->createMock(File::class);
@@ -80,7 +78,7 @@ final class RemoteResourceCollectionTest extends TestCase
     public function getReturnsNullWhenNoHandlerMatches(): void
     {
         $handler = $this->createMock(RemoteResourceInterface::class);
-        $handler->method('hasFile')->willReturn(false);
+        $handler->method('getFile')->willReturn(false);
 
         $fileObject = $this->createMock(File::class);
         $fileObject->method('getUid')->willReturn(1);
@@ -113,11 +111,9 @@ final class RemoteResourceCollectionTest extends TestCase
     public function getSkipsHandlerReturningFalse(): void
     {
         $handler1 = $this->createMock(RemoteResourceInterface::class);
-        $handler1->method('hasFile')->willReturn(true);
         $handler1->expects(self::once())->method('getFile')->willReturn(false);
 
         $handler2 = $this->createMock(RemoteResourceInterface::class);
-        $handler2->method('hasFile')->willReturn(true);
         $handler2->expects(self::once())->method('getFile')->willReturn('content-from-handler2');
 
         $fileObject = $this->createMock(File::class);
@@ -182,7 +178,6 @@ final class RemoteResourceCollectionTest extends TestCase
     public function getUpdatesIdentifierOnSuccess(): void
     {
         $handler = $this->createMock(RemoteResourceInterface::class);
-        $handler->method('hasFile')->willReturn(true);
         $handler->expects(self::once())->method('getFile')->willReturn('file-content');
 
         $fileObject = $this->createMock(File::class);

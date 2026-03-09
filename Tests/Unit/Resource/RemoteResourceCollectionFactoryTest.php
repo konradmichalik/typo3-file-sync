@@ -110,11 +110,6 @@ class TestRemoteResource implements RemoteResourceInterface
         private readonly mixed $configuration = null, // @phpstan-ignore property.onlyWritten
     ) {}
 
-    public function hasFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): bool
-    {
-        return false;
-    }
-
     public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed
     {
         return false;

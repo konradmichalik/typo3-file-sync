@@ -30,40 +30,6 @@ use TYPO3\CMS\Core\Http\RequestFactory;
 final class RemoteInstanceResourceTest extends TestCase
 {
     #[Test]
-    public function hasFileReturnsTrueOnSuccessfulHeadRequest(): void
-    {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
-            ->with('https://example.com/fileadmin/test.jpg', 'HEAD')
-            ->willReturn(new Response(200));
-
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
-        self::assertTrue($resource->hasFile('/test.jpg', 'fileadmin/test.jpg'));
-    }
-
-    #[Test]
-    public function hasFileReturnsFalseOn404(): void
-    {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
-            ->willReturn(new Response(404));
-
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
-        self::assertFalse($resource->hasFile('/test.jpg', 'fileadmin/test.jpg'));
-    }
-
-    #[Test]
-    public function hasFileReturnsFalseOnConnectionException(): void
-    {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
-            ->willThrowException(new ConnectException('Connection refused', new Request('HEAD', '')));
-
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
-        self::assertFalse($resource->hasFile('/test.jpg', 'fileadmin/test.jpg'));
-    }
-
-    #[Test]
     public function getFileReturnsBodyContent(): void
     {
         $body = 'file-content-binary-data';
@@ -77,7 +43,18 @@ final class RemoteInstanceResourceTest extends TestCase
     }
 
     #[Test]
-    public function getFileReturnsFalseOnException(): void
+    public function getFileReturnsFalseOn404(): void
+    {
+        $requestFactory = $this->createMock(RequestFactory::class);
+        $requestFactory->method('request')
+            ->willReturn(new Response(404));
+
+        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
+        self::assertFalse($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function getFileReturnsFalseOnConnectionException(): void
     {
         $requestFactory = $this->createMock(RequestFactory::class);
         $requestFactory->method('request')
@@ -107,11 +84,11 @@ final class RemoteInstanceResourceTest extends TestCase
         $requestFactory = $this->createMock(RequestFactory::class);
         $requestFactory->expects(self::once())
             ->method('request')
-            ->with($expectedUrl, 'HEAD')
+            ->with($expectedUrl)
             ->willReturn(new Response(200));
 
         $resource = new RemoteInstanceResource($input, $requestFactory);
-        $resource->hasFile('/test.jpg', 'fileadmin/test.jpg');
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
     }
 
     #[Test]
@@ -119,10 +96,10 @@ final class RemoteInstanceResourceTest extends TestCase
     {
         $requestFactory = $this->createMock(RequestFactory::class);
         $requestFactory->method('request')
-            ->with('https://production.example.com/fileadmin/test.jpg', 'HEAD')
-            ->willReturn(new Response(200));
+            ->with('https://production.example.com/fileadmin/test.jpg')
+            ->willReturn(new Response(200, [], 'content'));
 
         $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $requestFactory);
-        self::assertTrue($resource->hasFile('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertIsString($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 }

@@ -23,8 +23,6 @@ use TYPO3\CMS\Core\Resource\FileInterface;
  */
 interface RemoteResourceInterface
 {
-    public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool;
-
     /**
      * @return resource|string|false
      */

@@ -59,31 +59,6 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
             : [];
     }
 
-    public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
-    {
-        $url = $this->url.ltrim($filePath, '/');
-        try {
-            $response = $this->requestFactory->request($url, 'HEAD', $this->requestOptions);
-            $statusCode = $response->getStatusCode();
-
-            if (200 !== $statusCode) {
-                $this->logger?->debug(
-                    sprintf('HEAD %s returned HTTP %d', $url, $statusCode),
-                );
-
-                return false;
-            }
-
-            return true;
-        } catch (TransferException $e) {
-            $this->logger?->warning(
-                sprintf('HEAD %s failed: %s', $url, $e->getMessage()),
-            );
-
-            return false;
-        }
-    }
-
     /**
      * @return string|false
      */
@@ -92,6 +67,15 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
         $url = $this->url.ltrim($filePath, '/');
         try {
             $response = $this->requestFactory->request($url, 'GET', $this->requestOptions);
+            $statusCode = $response->getStatusCode();
+
+            if (200 !== $statusCode) {
+                $this->logger?->debug(
+                    sprintf('GET %s returned HTTP %d', $url, $statusCode),
+                );
+
+                return false;
+            }
 
             return $response->getBody()->getContents();
         } catch (TransferException $e) {

@@ -30,30 +30,34 @@ use function function_exists;
 final class PlaceholderImageResourceTest extends TestCase
 {
     #[Test]
-    public function hasFileReturnsTrueForImageFileObject(): void
+    public function getFileReturnsContentForImageFileObject(): void
     {
         $fileObject = $this->createMock(FileInterface::class);
-        $fileObject->method('getExtension')->willReturn('jpg');
+        $fileObject->method('getExtension')->willReturn('svg');
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 10],
+            ['height', 10],
+        ]);
 
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertTrue($resource->hasFile('/test.jpg', 'fileadmin/test.jpg', $fileObject));
+        self::assertIsString($resource->getFile('/test.svg', 'fileadmin/test.svg', $fileObject));
     }
 
     #[Test]
-    public function hasFileReturnsFalseForNonImageExtension(): void
+    public function getFileReturnsFalseForNonImageExtension(): void
     {
         $fileObject = $this->createMock(FileInterface::class);
         $fileObject->method('getExtension')->willReturn('pdf');
 
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertFalse($resource->hasFile('/test.pdf', 'fileadmin/test.pdf', $fileObject));
+        self::assertFalse($resource->getFile('/test.pdf', 'fileadmin/test.pdf', $fileObject));
     }
 
     #[Test]
-    public function hasFileReturnsFalseWithoutFileObject(): void
+    public function getFileReturnsFalseWithoutFileObject(): void
     {
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertFalse($resource->hasFile('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertFalse($resource->getFile('/test.png', 'fileadmin/test.png'));
     }
 
     /**
@@ -74,13 +78,17 @@ final class PlaceholderImageResourceTest extends TestCase
 
     #[Test]
     #[DataProvider('supportedExtensionsDataProvider')]
-    public function hasFileReturnsTrueForAllSupportedExtensions(string $extension): void
+    public function getFileReturnsContentForAllSupportedExtensions(string $extension): void
     {
         $fileObject = $this->createMock(FileInterface::class);
         $fileObject->method('getExtension')->willReturn($extension);
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 10],
+            ['height', 10],
+        ]);
 
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertTrue($resource->hasFile('/test.'.$extension, 'fileadmin/test.'.$extension, $fileObject));
+        self::assertNotFalse($resource->getFile('/test.'.$extension, 'fileadmin/test.'.$extension, $fileObject));
     }
 
     #[Test]
@@ -129,13 +137,6 @@ final class PlaceholderImageResourceTest extends TestCase
         self::assertIsArray($imageInfo);
         self::assertSame(100, $imageInfo[0]);
         self::assertSame(50, $imageInfo[1]);
-    }
-
-    #[Test]
-    public function getFileReturnsFalseWithoutFileObject(): void
-    {
-        $resource = new PlaceholderImageResource('#CCCCCC, #969696');
-        self::assertFalse($resource->getFile('/test.png', 'fileadmin/test.png'));
     }
 
     #[Test]
