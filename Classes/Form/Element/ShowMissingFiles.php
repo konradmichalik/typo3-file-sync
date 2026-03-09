@@ -13,9 +13,8 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Form\Element;
 
-use Doctrine\DBAL\ParameterType;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use TYPO3\CMS\Backend\Form\Element\AbstractFormElement;
-use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Imaging\{IconFactory, IconSize};
 use TYPO3\CMS\Core\Page\PageRenderer;
 
@@ -30,7 +29,7 @@ use function sprintf;
 final class ShowMissingFiles extends AbstractFormElement
 {
     public function __construct(
-        protected readonly ConnectionPool $connectionPool,
+        protected readonly FileRepository $fileRepository,
         protected readonly IconFactory $iconFactory,
         protected readonly PageRenderer $pageRenderer,
     ) {}
@@ -42,28 +41,13 @@ final class ShowMissingFiles extends AbstractFormElement
     {
         $result = $this->initializeResultArray();
 
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
-        $expressionBuilder = $queryBuilder->expr();
-        $count = $queryBuilder->count('*')
-            ->from('sys_file')
-            ->where(
-                $expressionBuilder->eq(
-                    'storage',
-                    $queryBuilder->createNamedParameter($this->data['vanillaUid'], ParameterType::INTEGER),
-                ),
-                $expressionBuilder->eq(
-                    'missing',
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
-                ),
-            )
-            ->executeQuery()
-            ->fetchOne();
+        $count = $this->fileRepository->countMissing((int) $this->data['vanillaUid']);
 
         $html = [];
         $html[] = '<div class="form-group">';
 
         $languageService = $this->getLanguageService();
-        if (0 === (int) $count) {
+        if (0 === $count) {
             $html[] = '<div class="form-text">';
             $html[] = '<span class="badge badge-success">'
                 .$languageService->sL('LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.no_missing')

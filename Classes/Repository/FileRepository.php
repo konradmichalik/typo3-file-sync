@@ -144,6 +144,27 @@ final readonly class FileRepository
             ->executeStatement();
     }
 
+    public function countMissing(int $storageUid): int
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $expressionBuilder = $queryBuilder->expr();
+
+        return (int) $queryBuilder->count('*')
+            ->from('sys_file')
+            ->where(
+                $expressionBuilder->eq(
+                    'storage',
+                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER),
+                ),
+                $expressionBuilder->eq(
+                    'missing',
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
+            )
+            ->executeQuery()
+            ->fetchOne();
+    }
+
     public function resetMissing(int $storageUid): int
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
