@@ -21,4 +21,4 @@ use RuntimeException;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-class UnknownResourceException extends RuntimeException {}
+final class UnknownResourceException extends RuntimeException {}

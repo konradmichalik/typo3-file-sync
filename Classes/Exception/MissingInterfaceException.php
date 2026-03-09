@@ -21,4 +21,4 @@ use RuntimeException;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-class MissingInterfaceException extends RuntimeException {}
+final class MissingInterfaceException extends RuntimeException {}

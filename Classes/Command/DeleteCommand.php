@@ -30,7 +30,7 @@ use function sprintf;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-class DeleteCommand extends Command
+final class DeleteCommand extends Command
 {
     public function __construct(
         private readonly StorageService $storageService,

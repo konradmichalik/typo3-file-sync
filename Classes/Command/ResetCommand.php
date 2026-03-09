@@ -27,7 +27,7 @@ use function sprintf;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-class ResetCommand extends Command
+final class ResetCommand extends Command
 {
     public function __construct(
         private readonly StorageService $storageService,
