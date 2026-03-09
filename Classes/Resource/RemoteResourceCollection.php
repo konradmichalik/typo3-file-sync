@@ -15,7 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Resource;
 
 use Doctrine\DBAL\ParameterType;
 use InvalidArgumentException;
-use KonradMichalik\Typo3FileSync\Exception\{MissingInterfaceException, UnknownResourceException};
+use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Database\ConnectionPool;
@@ -67,10 +67,6 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         );
 
         foreach ($this->resources as $resource) {
-            if (!$resource['handler'] instanceof RemoteResourceInterface) { // @phpstan-ignore instanceof.alwaysTrue
-                throw new MissingInterfaceException('Remote resource of type '.$resource['handler']::class.' doesn\'t implement '.RemoteResourceInterface::class, 1519680070);
-            }
-
             $file = $this->fileIdentifierCache[$filePath];
             if ($resource['handler']->hasFile($fileIdentifier, $filePath, $file)) {
                 $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);

@@ -14,14 +14,12 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 
 use Error;
-use KonradMichalik\Typo3FileSync\Exception\MissingInterfaceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
-use stdClass;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepository};
 
@@ -152,38 +150,6 @@ final class RemoteResourceCollectionTest extends TestCase
         // updateIdentifier() fails on uninitialized FileRepository. Mock expectations
         // verify handler2 was called after handler1 was skipped.
         $this->expectException(Error::class);
-        $collection->get('/test.jpg', 'fileadmin/test.jpg');
-    }
-
-    #[Test]
-    public function getThrowsExceptionForInvalidResourceType(): void
-    {
-        $invalidHandler = new stdClass();
-
-        $fileObject = $this->createMock(File::class);
-        $fileObject->method('getUid')->willReturn(1);
-
-        $storage = $this->createMock(ResourceStorage::class);
-        $storage->method('getUid')->willReturn(1);
-        $storage->method('isWithinProcessingFolder')->willReturn(false);
-        $storage->method('getFileByIdentifier')->willReturn($fileObject);
-
-        $storageRepository = $this->createMock(StorageRepository::class);
-        $storageRepository->method('getStorageObject')->willReturn($storage);
-
-        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
-
-        $collection = new RemoteResourceCollection(
-            [['identifier' => 'invalid', 'handler' => $invalidHandler]], // @phpstan-ignore argument.type
-            $storageRepository,
-            $resourceFactory,
-            $fileRepository,
-            $this->createMock(ConnectionPool::class),
-        );
-        $collection->setLogger(new NullLogger());
-
-        $this->expectException(MissingInterfaceException::class);
         $collection->get('/test.jpg', 'fileadmin/test.jpg');
     }
 
