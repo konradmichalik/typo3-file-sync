@@ -22,6 +22,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
 use stdClass;
+use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepository};
 
 /**
@@ -33,13 +34,6 @@ use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepo
 #[CoversClass(RemoteResourceCollection::class)]
 final class RemoteResourceCollectionTest extends TestCase
 {
-    protected function tearDown(): void
-    {
-        $reflection = new ReflectionClass(RemoteResourceCollection::class);
-        $property = $reflection->getProperty('fileIdentifierCache');
-        $property->setValue(null, []);
-    }
-
     #[Test]
     public function getReturnsContentFromFirstMatchingHandler(): void
     {
@@ -73,6 +67,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 
@@ -108,6 +103,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 
@@ -148,6 +144,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 
@@ -182,6 +179,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 
@@ -206,6 +204,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 
@@ -239,6 +238,7 @@ final class RemoteResourceCollectionTest extends TestCase
             $storageRepository,
             $resourceFactory,
             $fileRepository,
+            $this->createMock(ConnectionPool::class),
         );
         $collection->setLogger(new NullLogger());
 

@@ -17,6 +17,7 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Exception\{MissingInterfaceException, UnknownResourceException};
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use Psr\Log\LoggerAwareInterface;
+use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -35,6 +36,7 @@ final readonly class RemoteResourceCollectionFactory
         private StorageRepository $storageRepository,
         private ResourceFactory $resourceFactory,
         private FileRepository $fileRepository,
+        private ConnectionPool $connectionPool,
         private LogManager $logManager,
     ) {}
 
@@ -85,6 +87,7 @@ final readonly class RemoteResourceCollectionFactory
             $this->storageRepository,
             $this->resourceFactory,
             $this->fileRepository,
+            $this->connectionPool,
         );
     }
 

@@ -39,7 +39,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
     /**
      * @var array<string, AbstractFile|null>
      */
-    protected static array $fileIdentifierCache = [];
+    protected array $fileIdentifierCache = [];
 
     /**
      * @param array<int, array{identifier: string, handler: RemoteResourceInterface}> $resources
@@ -49,6 +49,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         protected readonly StorageRepository $storageRepository,
         protected readonly ResourceFactory $resourceFactory,
         protected readonly FileRepository $fileRepository,
+        protected readonly ConnectionPool $connectionPool,
     ) {}
 
     /**
@@ -56,7 +57,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
      */
     public function get(string $fileIdentifier, string $filePath): mixed
     {
-        if ($this->fileCanBeReProcessed($fileIdentifier, $filePath) || null === static::$fileIdentifierCache[$filePath]) {
+        if ($this->fileCanBeReProcessed($fileIdentifier, $filePath) || null === $this->fileIdentifierCache[$filePath]) {
             return null;
         }
 
@@ -70,7 +71,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
                 throw new MissingInterfaceException('Remote resource of type '.$resource['handler']::class.' doesn\'t implement '.RemoteResourceInterface::class, 1519680070);
             }
 
-            $file = static::$fileIdentifierCache[$filePath];
+            $file = $this->fileIdentifierCache[$filePath];
             if ($resource['handler']->hasFile($fileIdentifier, $filePath, $file)) {
                 $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);
                 if (false === $fileContent) {
@@ -112,17 +113,17 @@ final class RemoteResourceCollection implements LoggerAwareInterface
 
     protected function fileCanBeReProcessed(string $fileIdentifier, string $filePath): bool
     {
-        if (!array_key_exists($filePath, static::$fileIdentifierCache)) {
-            static::$fileIdentifierCache[$filePath] = null;
+        if (!array_key_exists($filePath, $this->fileIdentifierCache)) {
+            $this->fileIdentifierCache[$filePath] = null;
             $localPath = '' !== $filePath ? $filePath : null;
             $storage = $this->storageRepository->getStorageObject(0, [], $localPath);
             if (0 !== $storage->getUid()) {
-                static::$fileIdentifierCache[$filePath] = $this->getFileObjectFromStorage($storage, $fileIdentifier);
+                $this->fileIdentifierCache[$filePath] = $this->getFileObjectFromStorage($storage, $fileIdentifier);
             }
         }
 
-        return static::$fileIdentifierCache[$filePath] instanceof ProcessedFile
-            && static::$fileIdentifierCache[$filePath]->getOriginalFile()->exists();
+        return $this->fileIdentifierCache[$filePath] instanceof ProcessedFile
+            && $this->fileIdentifierCache[$filePath]->getOriginalFile()->exists();
     }
 
     protected function getFileObjectFromStorage(ResourceStorage $storage, string $fileIdentifier): ?AbstractFile
@@ -134,7 +135,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
                 return null;
             }
         } else {
-            $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)->getQueryBuilderForTable('sys_file_processedfile');
+            $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
             $expressionBuilder = $queryBuilder->expr();
             $databaseRow = $queryBuilder->select('*')
                 ->from('sys_file_processedfile')
