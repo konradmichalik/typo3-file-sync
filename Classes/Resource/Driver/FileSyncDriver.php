@@ -125,16 +125,16 @@ final class FileSyncDriver extends LocalDriver
         return true;
     }
 
-    protected function ensureFileExists(string $fileIdentifier): bool
+    protected function ensureFileExists(string $fileIdentifier): void
     {
         $absoluteFilePath = $this->getAbsolutePath($fileIdentifier, false);
         if ('' === $absoluteFilePath || file_exists($absoluteFilePath)) {
-            return true;
+            return;
         }
 
         $fileName = basename($absoluteFilePath);
         if ('' === $fileName) {
-            return true;
+            return;
         }
 
         $filePath = '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
@@ -149,8 +149,6 @@ final class FileSyncDriver extends LocalDriver
                 fclose($fileContent);
             }
         }
-
-        return true;
     }
 
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
