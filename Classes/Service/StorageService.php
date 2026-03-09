@@ -34,7 +34,7 @@ final readonly class StorageService
      */
     public function getEnabledStorages(): array
     {
-        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? ['0' => '']);
+        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? []);
 
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
         $expressionBuilder = $queryBuilder->expr();
