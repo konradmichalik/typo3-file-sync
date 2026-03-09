@@ -95,6 +95,7 @@ final class ShowSyncStatusTest extends TestCase
     public function renderReturnsEmptyWhenFileSyncNotConfigured(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [];
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [];
 
         $this->setElementData('sys_file_metadata', 42);
 

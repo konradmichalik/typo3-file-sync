@@ -63,8 +63,13 @@ final class ShowSyncStatus extends AbstractFormElement
     private function isFileSyncConfigured(): bool
     {
         $storages = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? [];
+        if ([] !== $storages) {
+            return true;
+        }
 
-        return [] !== $storages;
+        $handlers = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? [];
+
+        return [] !== $handlers;
     }
 
     private function resolveFileUid(): int
