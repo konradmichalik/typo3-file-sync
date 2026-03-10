@@ -143,7 +143,7 @@ final class ShowSyncStatusTest extends TestCase
 
         self::assertStringContainsString('File Sync', $result['html']);
         self::assertStringContainsString('Remote Instance', $result['html']);
-        self::assertStringContainsString('background-color:#198754', $result['html']);
+        self::assertStringContainsString('badge badge-success', $result['html']);
         self::assertStringContainsString('title="', $result['html']);
     }
 
@@ -223,7 +223,7 @@ final class ShowSyncStatusTest extends TestCase
                     'label' => 'Sync Status',
                     'config' => [
                         'type' => 'user',
-                        'renderType' => 'showSyncStatus',
+                        'renderType' => 'fileSyncShowSyncStatus',
                     ],
                 ],
             ],

@@ -14,25 +14,29 @@ declare(strict_types=1);
 defined('TYPO3') || exit('Access denied.');
 
 call_user_func(static function (): void {
-    $GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'][1700000001] = [
-        'nodeName' => 'showMissingFiles',
+    $nodeRegistry = &$GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'];
+
+    $nodeRegistry[1700000001] ??= [
+        'nodeName' => 'fileSyncShowMissingFiles',
         'priority' => 40,
         'class' => KonradMichalik\Typo3FileSync\Form\Element\ShowMissingFiles::class,
     ];
 
-    $GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'][1700000002] = [
-        'nodeName' => 'showDeleteFiles',
+    $nodeRegistry[1700000002] ??= [
+        'nodeName' => 'fileSyncShowDeleteFiles',
         'priority' => 40,
         'class' => KonradMichalik\Typo3FileSync\Form\Element\ShowDeleteFiles::class,
     ];
 
-    $GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'][1700000003] = [
-        'nodeName' => 'showSyncStatus',
+    $nodeRegistry[1700000003] ??= [
+        'nodeName' => 'fileSyncShowSyncStatus',
         'priority' => 40,
         'class' => KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus::class,
     ];
 
-    if (empty($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'])) {
+    if (!isset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'])
+        || !is_array($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'])
+    ) {
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [];
     }
     $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = array_merge(

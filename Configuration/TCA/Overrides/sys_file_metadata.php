@@ -18,7 +18,7 @@ $tempColumns = [
         'label' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_metadata.file_sync.status',
         'config' => [
             'type' => 'user',
-            'renderType' => 'showSyncStatus',
+            'renderType' => 'fileSyncShowSyncStatus',
         ],
     ],
 ];

@@ -37,7 +37,7 @@ $tempColumns = [
         'displayCond' => 'FIELD:driver:=:Local',
         'config' => [
             'type' => 'user',
-            'renderType' => 'showMissingFiles',
+            'renderType' => 'fileSyncShowMissingFiles',
         ],
     ],
     'tx_typo3_file_sync_delete' => [
@@ -45,7 +45,7 @@ $tempColumns = [
         'displayCond' => 'FIELD:driver:=:Local',
         'config' => [
             'type' => 'user',
-            'renderType' => 'showDeleteFiles',
+            'renderType' => 'fileSyncShowDeleteFiles',
         ],
     ],
 ];
