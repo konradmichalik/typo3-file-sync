@@ -111,7 +111,7 @@ final class ShowSyncStatus extends AbstractFormElement
 
         return '<div class="form-group">'
             .'<strong>'.$generalLabel.'</strong>'
-            .' <span class="badge" style="background-color:#198754;color:#fff"'.$titleAttr.'>'
+            .' <span class="badge badge-success" style="margin-left:8px"'.$titleAttr.'>'
             .$badgeText
             .'</span>'
             .'</div>';
