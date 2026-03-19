@@ -19,7 +19,7 @@ use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Resource\{AbstractFile, ProcessedFile, ResourceFactory, ResourceStorage, StorageRepository};
+use TYPO3\CMS\Core\Resource\{AbstractFile, File, ProcessedFile, ResourceFactory, ResourceStorage, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function array_key_exists;
@@ -57,7 +57,8 @@ final class RemoteResourceCollection implements LoggerAwareInterface
      */
     public function get(string $fileIdentifier, string $filePath): mixed
     {
-        if ($this->fileCanBeReProcessed($fileIdentifier, $filePath) || null === $this->fileIdentifierCache[$filePath]) {
+        $this->resolveFileObject($fileIdentifier, $filePath);
+        if (null === $this->fileIdentifierCache[$filePath]) {
             return null;
         }
 
@@ -83,7 +84,9 @@ final class RemoteResourceCollection implements LoggerAwareInterface
                 throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
             }
 
-            $this->fileRepository->updateIdentifier($file, $resource['identifier']);
+            if ($file instanceof File) {
+                $this->fileRepository->updateIdentifier($file, $resource['identifier']);
+            }
             $this->logger?->debug(
                 sprintf('Resource "%s" found file', $resource['identifier']),
                 [
@@ -98,19 +101,18 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         return null;
     }
 
-    protected function fileCanBeReProcessed(string $fileIdentifier, string $filePath): bool
+    protected function resolveFileObject(string $fileIdentifier, string $filePath): void
     {
-        if (!array_key_exists($filePath, $this->fileIdentifierCache)) {
-            $this->fileIdentifierCache[$filePath] = null;
-            $localPath = '' !== $filePath ? $filePath : null;
-            $storage = $this->storageRepository->getStorageObject(0, [], $localPath);
-            if (0 !== $storage->getUid()) {
-                $this->fileIdentifierCache[$filePath] = $this->getFileObjectFromStorage($storage, $fileIdentifier);
-            }
+        if (array_key_exists($filePath, $this->fileIdentifierCache)) {
+            return;
         }
 
-        return $this->fileIdentifierCache[$filePath] instanceof ProcessedFile
-            && $this->fileIdentifierCache[$filePath]->getOriginalFile()->exists();
+        $this->fileIdentifierCache[$filePath] = null;
+        $localPath = '' !== $filePath ? $filePath : null;
+        $storage = $this->storageRepository->getStorageObject(0, [], $localPath);
+        if (0 !== $storage->getUid()) {
+            $this->fileIdentifierCache[$filePath] = $this->getFileObjectFromStorage($storage, $fileIdentifier);
+        }
     }
 
     protected function getFileObjectFromStorage(ResourceStorage $storage, string $fileIdentifier): ?AbstractFile
