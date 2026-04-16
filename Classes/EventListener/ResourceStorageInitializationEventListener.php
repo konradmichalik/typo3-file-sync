@@ -52,7 +52,7 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
 
         if (!$isLocalDriver || (!$isRecordEnabled && !$isStorageConfigured)) {
             if ($storage->getUid() > 0) {
-                $this->logger?->info(
+                $this->logger?->debug(
                     sprintf('No file sync support for storage %s (%d) configured', $storage->getName(), $storage->getUid()),
                     [
                         'isLocalDriver' => $isLocalDriver,
