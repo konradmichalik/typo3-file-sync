@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Resources/Public/Icons/Extension.svg" width="128" alt="Extension icon" />
+![Extension icon](Resources/Public/Icons/Extension.png)
 
 # TYPO3 extension `typo3_file_sync`
 
