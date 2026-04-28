@@ -17,7 +17,7 @@ use Doctrine\DBAL\ParameterType;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Resource\{AbstractFile, File, ProcessedFileRepository, StorageRepository};
+use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, StorageRepository};
 
 use function count;
 
@@ -128,7 +128,7 @@ final readonly class FileRepository
         ];
     }
 
-    public function updateIdentifier(AbstractFile $file, string $identifier): void
+    public function updateIdentifier(File $file, string $identifier): void
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
         $queryBuilder->update('sys_file')
