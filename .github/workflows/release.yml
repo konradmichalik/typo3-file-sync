@@ -6,5 +6,9 @@ on:
       - '*'
 
 jobs:
-  release:
-    uses: konradmichalik/reusable-github-actions/.github/workflows/release.yml@main
+  ter-publish:
+    uses: konradmichalik/reusable-github-actions/.github/workflows/release-typo3.yml@main
+    secrets:
+      typo3-api-token: ${{ secrets.TYPO3_API_TOKEN }}
+    with:
+      typo3-extension-key: 'typo3_file_sync'
