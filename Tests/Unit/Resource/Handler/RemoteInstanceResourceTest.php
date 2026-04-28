@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
-use TYPO3\CMS\Core\Http\RequestFactory;
 
 /**
  * RemoteInstanceResourceTest.
@@ -33,34 +33,34 @@ final class RemoteInstanceResourceTest extends TestCase
     public function getFileReturnsBodyContent(): void
     {
         $body = 'file-content-binary-data';
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
-            ->with('https://example.com/fileadmin/test.jpg')
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
+            ->with('GET', 'https://example.com/fileadmin/test.jpg')
             ->willReturn(new Response(200, [], $body));
 
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
         self::assertSame($body, $resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 
     #[Test]
     public function getFileReturnsFalseOn404(): void
     {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
             ->willReturn(new Response(404));
 
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
         self::assertFalse($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 
     #[Test]
     public function getFileReturnsFalseOnConnectionException(): void
     {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
             ->willThrowException(new ConnectException('Connection refused', new Request('GET', '')));
 
-        $resource = new RemoteInstanceResource('https://example.com', $requestFactory);
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
         self::assertFalse($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 
@@ -81,25 +81,25 @@ final class RemoteInstanceResourceTest extends TestCase
     #[DataProvider('urlNormalizationDataProvider')]
     public function urlIsNormalizedCorrectly(string $input, string $expectedUrl): void
     {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->expects(self::once())
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
             ->method('request')
-            ->with($expectedUrl)
+            ->with('GET', $expectedUrl)
             ->willReturn(new Response(200));
 
-        $resource = new RemoteInstanceResource($input, $requestFactory);
+        $resource = new RemoteInstanceResource($input, $httpClient);
         $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
     }
 
     #[Test]
     public function constructorAcceptsArrayConfiguration(): void
     {
-        $requestFactory = $this->createMock(RequestFactory::class);
-        $requestFactory->method('request')
-            ->with('https://production.example.com/fileadmin/test.jpg')
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
+            ->with('GET', 'https://production.example.com/fileadmin/test.jpg')
             ->willReturn(new Response(200, [], 'content'));
 
-        $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $requestFactory);
+        $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $httpClient);
         self::assertIsString($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 }

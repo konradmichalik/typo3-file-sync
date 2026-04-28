@@ -13,10 +13,11 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
-use TYPO3\CMS\Core\Http\RequestFactory;
+use TYPO3\CMS\Core\Http\Client\GuzzleClientFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -33,7 +34,7 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
 {
     use LoggerAwareTrait;
 
-    private readonly RequestFactory $requestFactory;
+    private readonly ClientInterface $httpClient;
     private readonly string $url;
     /** @var array<string, mixed> */
     private array $requestOptions;
@@ -41,9 +42,9 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
     /**
      * @param array<string, mixed>|string|null $configuration
      */
-    public function __construct(array|string|null $configuration, ?RequestFactory $requestFactory = null)
+    public function __construct(array|string|null $configuration, ?ClientInterface $httpClient = null)
     {
-        $this->requestFactory = $requestFactory ?? GeneralUtility::makeInstance(RequestFactory::class);
+        $this->httpClient = $httpClient ?? GeneralUtility::makeInstance(GuzzleClientFactory::class)->getClient();
 
         $baseUrl = is_array($configuration) ? ($configuration['url'] ?? '') : (string) $configuration;
         $baseUrl = self::resolveEnvPlaceholders($baseUrl);
@@ -66,7 +67,7 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
     {
         $url = $this->url.ltrim($filePath, '/');
         try {
-            $response = $this->requestFactory->request($url, 'GET', $this->requestOptions);
+            $response = $this->httpClient->request('GET', $url, $this->requestOptions);
             $statusCode = $response->getStatusCode();
 
             if (200 !== $statusCode) {
