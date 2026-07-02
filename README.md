@@ -8,6 +8,7 @@
 [![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/cgl.yml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/tests.yml)
 [![License](https://poser.pugx.org/konradmichalik/typo3-file-sync/license)](LICENSE)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/konradmichalik/typo3-file-sync/badge)](https://securityscorecards.dev/viewer/?uri=github.com/konradmichalik/typo3-file-sync)
 
 </div>
 
