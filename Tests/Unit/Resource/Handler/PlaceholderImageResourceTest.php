@@ -179,6 +179,56 @@ final class PlaceholderImageResourceTest extends TestCase
     }
 
     #[Test]
+    public function gdImageDimensionsAreCappedProportionally(): void
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            self::markTestSkipped('GD extension not available');
+        }
+
+        $fileObject = $this->createMock(FileInterface::class);
+        $fileObject->method('getExtension')->willReturn('gif');
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 40960],
+            ['height', 20480],
+        ]);
+
+        $resource = new PlaceholderImageResource('#FFFFFF, #000000');
+        $result = $resource->getFile('/test.gif', 'fileadmin/test.gif', $fileObject);
+
+        self::assertIsString($result);
+
+        $imageInfo = getimagesizefromstring($result);
+        self::assertIsArray($imageInfo);
+        self::assertSame(4096, $imageInfo[0]);
+        self::assertSame(2048, $imageInfo[1]);
+    }
+
+    #[Test]
+    public function gdImageDimensionsBelowCapAreKept(): void
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            self::markTestSkipped('GD extension not available');
+        }
+
+        $fileObject = $this->createMock(FileInterface::class);
+        $fileObject->method('getExtension')->willReturn('gif');
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 4096],
+            ['height', 4096],
+        ]);
+
+        $resource = new PlaceholderImageResource('#FFFFFF, #000000');
+        $result = $resource->getFile('/test.gif', 'fileadmin/test.gif', $fileObject);
+
+        self::assertIsString($result);
+
+        $imageInfo = getimagesizefromstring($result);
+        self::assertIsArray($imageInfo);
+        self::assertSame(4096, $imageInfo[0]);
+        self::assertSame(4096, $imageInfo[1]);
+    }
+
+    #[Test]
     public function minimumDimensionsAreEnforced(): void
     {
         $fileObject = $this->createMock(FileInterface::class);
