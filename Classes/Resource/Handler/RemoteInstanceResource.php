@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
-use GuzzleHttp\ClientInterface;
+use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\TransferException;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
@@ -33,6 +33,14 @@ use function sprintf;
 final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResourceInterface
 {
     use LoggerAwareTrait;
+
+    /**
+     * Explicit timeouts: fetching runs synchronously within the rendering
+     * process and must never block indefinitely (TYPO3's HTTP default
+     * timeout is 0 = unlimited).
+     */
+    private const DEFAULT_CONNECT_TIMEOUT = 5;
+    private const DEFAULT_TIMEOUT = 15;
 
     private readonly ClientInterface $httpClient;
     private readonly string $url;
@@ -55,9 +63,14 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
         $urlParts['scheme'] ??= 'https';
         $this->url = rtrim($this->buildUrl($urlParts), '/').'/';
 
-        $this->requestOptions = isset($urlParts['user'], $urlParts['pass'])
-            ? ['auth' => [$urlParts['user'], $urlParts['pass']]]
-            : [];
+        $options = is_array($configuration) ? $configuration : [];
+        $this->requestOptions = [
+            RequestOptions::CONNECT_TIMEOUT => (float) ($options['connect_timeout'] ?? self::DEFAULT_CONNECT_TIMEOUT),
+            RequestOptions::TIMEOUT => (float) ($options['timeout'] ?? self::DEFAULT_TIMEOUT),
+        ];
+        if (isset($urlParts['user'], $urlParts['pass'])) {
+            $this->requestOptions[RequestOptions::AUTH] = [$urlParts['user'], $urlParts['pass']];
+        }
     }
 
     /**

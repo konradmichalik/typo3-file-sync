@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
-use GuzzleHttp\ClientInterface;
+use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
@@ -101,5 +101,73 @@ final class RemoteInstanceResourceTest extends TestCase
 
         $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $httpClient);
         self::assertIsString($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function requestUsesDefaultTimeouts(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 5.0,
+                    RequestOptions::TIMEOUT => 15.0,
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function timeoutsAreConfigurableViaArrayConfiguration(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 2.0,
+                    RequestOptions::TIMEOUT => 30.0,
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource(
+            [
+                'url' => 'https://example.com',
+                'connect_timeout' => 2,
+                'timeout' => 30,
+            ],
+            $httpClient,
+        );
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function basicAuthCredentialsAreDetachedFromUrlAndPassedAsRequestOption(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 5.0,
+                    RequestOptions::TIMEOUT => 15.0,
+                    RequestOptions::AUTH => ['user', 'secret'],
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource('https://user:secret@example.com', $httpClient);
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
     }
 }
