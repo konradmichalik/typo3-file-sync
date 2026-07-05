@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
-use GuzzleHttp\ClientInterface;
+use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\TransferException;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
@@ -22,6 +22,7 @@ use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function is_array;
+use function is_resource;
 use function sprintf;
 
 /**
@@ -61,30 +62,57 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
     }
 
     /**
-     * @return string|false
+     * @return resource|false
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
         $url = $this->url.ltrim($filePath, '/');
+
+        // Spool the response into php://temp instead of loading it into a
+        // string: small files stay in memory, large ones spill to disk
+        // rather than exhausting the memory limit.
+        $target = fopen('php://temp', 'w+');
+        if (false === $target) {
+            return false;
+        }
+
         try {
-            $response = $this->httpClient->request('GET', $url, $this->requestOptions);
+            $response = $this->httpClient->request(
+                'GET',
+                $url,
+                [RequestOptions::SINK => $target] + $this->requestOptions,
+            );
             $statusCode = $response->getStatusCode();
 
             if (200 !== $statusCode) {
                 $this->logger?->debug(
                     sprintf('GET %s returned HTTP %d', $url, $statusCode),
                 );
+                $this->close($target);
 
                 return false;
             }
 
-            return $response->getBody()->getContents();
+            rewind($target);
+
+            return $target;
         } catch (TransferException $e) {
             $this->logger?->warning(
                 sprintf('GET %s failed: %s', $url, $e->getMessage()),
             );
+            $this->close($target);
 
             return false;
+        }
+    }
+
+    /**
+     * @param resource $stream
+     */
+    private function close(mixed $stream): void
+    {
+        if (is_resource($stream)) {
+            fclose($stream);
         }
     }
 
