@@ -5,6 +5,10 @@ includes:
 parameters:
 	level: 8
 
+	typo3:
+		requestGetAttributeMapping:
+			backend.user: TYPO3\CMS\Core\Authentication\BackendUserAuthentication
+
 	scanDirectories:
 		- ../../vendor
 	paths:
