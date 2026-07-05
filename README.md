@@ -68,7 +68,7 @@ The array key (`1`) is the UID of the file storage.
 
 ### Remote Instance
 
-Fetches missing files from a remote TYPO3 instance via HTTP(S). A `HEAD` request checks existence before downloading; the file path is appended to the configured base URL.
+Fetches missing files from a remote TYPO3 instance via HTTP(S). The file path is appended to the configured base URL and requested with a `GET`; any non-`200` response is treated as "not available" so the next handler in the chain can take over.
 
 ```php
 'identifier' => 'remote_instance',
@@ -154,14 +154,10 @@ class MyHandler implements RemoteResourceInterface
 {
     public function __construct(array|string|null $configuration) {}
 
-    public function hasFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): bool
+    public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
-        // Return true when this handler can provide the file
-    }
-
-    public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): string|false
-    {
-        // Return file content as string, or false if unavailable
+        // Return the file content as a string or stream resource,
+        // or false if this handler cannot provide the file
     }
 }
 ```
