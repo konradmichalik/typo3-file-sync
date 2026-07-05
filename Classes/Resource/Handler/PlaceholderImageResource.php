@@ -32,6 +32,9 @@ use function strlen;
  */
 final class PlaceholderImageResource implements RemoteResourceInterface
 {
+    private const DEFAULT_BACKGROUND_COLOR = '#CCCCCC';
+    private const DEFAULT_TEXT_COLOR = '#969696';
+
     /**
      * @var list<string>
      */
@@ -56,13 +59,13 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         if (!is_array($configuration)) {
             $colors = GeneralUtility::trimExplode(',', (string) $configuration);
             $configuration = [
-                'backgroundColor' => '#'.ltrim($colors[0] ?? 'CCCCCC', '#'),
-                'textColor' => '#'.ltrim($colors[1] ?? '969696', '#'),
+                'backgroundColor' => $colors[0] ?? '',
+                'textColor' => $colors[1] ?? '',
             ];
         }
 
-        $this->backgroundColor = $configuration['backgroundColor'] ?? '#CCCCCC';
-        $this->textColor = $configuration['textColor'] ?? '#969696';
+        $this->backgroundColor = self::sanitizeColor($configuration['backgroundColor'] ?? '', self::DEFAULT_BACKGROUND_COLOR);
+        $this->textColor = self::sanitizeColor($configuration['textColor'] ?? '', self::DEFAULT_TEXT_COLOR);
     }
 
     /**
@@ -87,6 +90,19 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         }
 
         return $this->generateGdImage($width, $height, $extension);
+    }
+
+    /**
+     * Only accept #RGB / #RRGGBB hex colors and fall back to the default
+     * otherwise. Colors are interpolated verbatim into SVG markup, so an
+     * unvalidated value would allow markup/script injection into the
+     * generated file.
+     */
+    private static function sanitizeColor(string $color, string $fallback): string
+    {
+        $color = '#'.ltrim($color, '#');
+
+        return 1 === preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color) ? $color : $fallback;
     }
 
     private function generateSvg(int $width, int $height): string
