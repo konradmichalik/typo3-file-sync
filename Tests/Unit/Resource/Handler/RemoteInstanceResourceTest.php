@@ -122,10 +122,13 @@ final class RemoteInstanceResourceTest extends TestCase
             ->with(
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
-                [
-                    RequestOptions::CONNECT_TIMEOUT => 5.0,
-                    RequestOptions::TIMEOUT => 15.0,
-                ],
+                self::callback(static function (array $options): bool {
+                    self::assertArrayHasKey(RequestOptions::SINK, $options);
+                    self::assertSame(5.0, $options[RequestOptions::CONNECT_TIMEOUT]);
+                    self::assertSame(15.0, $options[RequestOptions::TIMEOUT]);
+
+                    return true;
+                }),
             )
             ->willReturn(new Response(200));
 
@@ -142,10 +145,13 @@ final class RemoteInstanceResourceTest extends TestCase
             ->with(
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
-                [
-                    RequestOptions::CONNECT_TIMEOUT => 2.0,
-                    RequestOptions::TIMEOUT => 30.0,
-                ],
+                self::callback(static function (array $options): bool {
+                    self::assertArrayHasKey(RequestOptions::SINK, $options);
+                    self::assertSame(2.0, $options[RequestOptions::CONNECT_TIMEOUT]);
+                    self::assertSame(30.0, $options[RequestOptions::TIMEOUT]);
+
+                    return true;
+                }),
             )
             ->willReturn(new Response(200));
 
@@ -169,11 +175,14 @@ final class RemoteInstanceResourceTest extends TestCase
             ->with(
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
-                [
-                    RequestOptions::CONNECT_TIMEOUT => 5.0,
-                    RequestOptions::TIMEOUT => 15.0,
-                    RequestOptions::AUTH => ['user', 'secret'],
-                ],
+                self::callback(static function (array $options): bool {
+                    self::assertArrayHasKey(RequestOptions::SINK, $options);
+                    self::assertSame(5.0, $options[RequestOptions::CONNECT_TIMEOUT]);
+                    self::assertSame(15.0, $options[RequestOptions::TIMEOUT]);
+                    self::assertSame(['user', 'secret'], $options[RequestOptions::AUTH]);
+
+                    return true;
+                }),
             )
             ->willReturn(new Response(200));
 
