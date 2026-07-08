@@ -4,7 +4,7 @@
 
 # TYPO3 extension `typo3_file_sync`
 
-[![Supported TYPO3 versions](https://typo3-badges.dev/badge/typo3_file_sync/typo3/shields.svg)](https://extensions.typo3.org/extension/typo3_file_sync)
+![TYPO3](https://img.shields.io/badge/TYPO3-13.4%20%7C%2014.0-orange.svg)
 [![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/cgl.yml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/tests.yml)
 [![License](https://poser.pugx.org/konradmichalik/typo3-file-sync/license)](LICENSE)
