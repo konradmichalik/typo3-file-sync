@@ -15,8 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Resource\Driver;
 
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
+use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Database\ConnectionPool;
