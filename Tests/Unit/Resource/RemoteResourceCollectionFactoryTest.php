@@ -46,11 +46,16 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
 
         // GeneralUtility::xml2array() relies on a registered "runtime" cache;
         // provide a transient in-memory cache manager for FlexForm parsing tests.
+        // Configuration (not manual `new Backend(...)`) is used deliberately so
+        // CacheManager builds the backend itself with whatever constructor
+        // signature the installed typo3/cms-core version actually has.
         $cacheManager = new \TYPO3\CMS\Core\Cache\CacheManager();
-        $cacheManager->registerCache(new \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend(
-            'runtime',
-            new \TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend(),
-        ));
+        $cacheManager->setCacheConfigurations([
+            'runtime' => [
+                'frontend' => \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend::class,
+                'backend' => \TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend::class,
+            ],
+        ]);
         GeneralUtility::setSingletonInstance(\TYPO3\CMS\Core\Cache\CacheManager::class, $cacheManager);
     }
 
