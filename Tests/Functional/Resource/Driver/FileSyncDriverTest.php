@@ -85,6 +85,63 @@ final class FileSyncDriverTest extends FunctionalTestCase
         self::assertTrue($driver->isCaseSensitiveFileSystem());
     }
 
+    #[Test]
+    public function ensureFileExistsSkipsRemoteFetchWhenLocalFileAlreadyExists(): void
+    {
+        file_put_contents($this->basePath.'already-here.jpg', 'local-content');
+
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::never())->method('getFile');
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn(
+            new File(['uid' => 1, 'identifier' => '/already-here.jpg', 'storage' => 1], $storage),
+        );
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $remoteResourceCollection = new RemoteResourceCollection(
+            [['identifier' => 'stub-handler', 'handler' => $handler]],
+            $storageRepository,
+            $this->get(ResourceFactory::class),
+            $this->get(FileRepository::class),
+            $this->get(ConnectionPool::class),
+        );
+
+        $driver = $this->createDriver($remoteResourceCollection);
+
+        self::assertTrue($driver->fileExists('/already-here.jpg'));
+        self::assertSame('local-content', file_get_contents($this->basePath.'already-here.jpg'));
+    }
+
+    #[Test]
+    public function getFileContentsReturnsFetchedRemoteContent(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        self::assertSame('remote-file-content', $driver->getFileContents('/missing.jpg'));
+    }
+
+    #[Test]
+    public function folderExistsReturnsTrueWhenOriginalDriverReportsFolderExists(): void
+    {
+        mkdir($this->basePath.'subfolder');
+
+        $driver = $this->createDriver($this->createRemoteResourceCollection(false));
+
+        self::assertTrue($driver->folderExists('/subfolder/'));
+    }
+
+    #[Test]
+    public function folderExistsReturnsFalseForNonExistentFolderIdentifier(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection(false));
+
+        self::assertFalse($driver->folderExists('/nonexistent-folder/'));
+    }
+
     private function createDriver(RemoteResourceCollection $remoteResourceCollection): FileSyncDriver
     {
         $configuration = ['basePath' => $this->basePath];
