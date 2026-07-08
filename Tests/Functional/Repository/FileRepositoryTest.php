@@ -81,4 +81,37 @@ final class FileRepositoryTest extends FunctionalTestCase
         self::assertSame(1, $this->subject->resetMissing(1));
         self::assertSame(0, $this->subject->countMissing(1));
     }
+
+    #[Test]
+    public function findByIdentifierReturnsMatchingStorageAndIdentifierPairs(): void
+    {
+        // uid 2's tx_typo3_file_sync_identifier is '/synced/baz.jpg'; the SELECT
+        // returns sys_file.identifier (the file path column, '/foo/baz.jpg'), not
+        // the search key itself — see Classes/Repository/FileRepository.php's
+        // findByIdentifier() select('storage', 'identifier').
+        $result = $this->subject->findByIdentifier('/synced/baz.jpg');
+
+        self::assertSame([['storage' => 1, 'identifier' => '/foo/baz.jpg']], $result);
+    }
+
+    #[Test]
+    public function findByIdentifierReturnsEmptyArrayForUnknownIdentifier(): void
+    {
+        self::assertSame([], $this->subject->findByIdentifier('/does/not/exist.jpg'));
+    }
+
+    #[Test]
+    public function deleteByIdentifierReturnsCountOfMatchingRowsRegardlessOfFilesystemState(): void
+    {
+        // uid 2 matches tx_typo3_file_sync_identifier='/synced/baz.jpg' AND storage=1.
+        // No sys_file_storage fixture is imported anywhere in this test class, so
+        // storageRepository->getStorageObject(1) throws InvalidArgumentException
+        // internally (StorageRepository::fetchRecordDataByUid() — "No storage found
+        // with uid \"1\"."), which deleteByIdentifier()'s loop catches and continues.
+        // deleteByIdentifier() returns count($rows) unconditionally, so this still
+        // returns 1 despite the lookup failure.
+        $count = $this->subject->deleteByIdentifier('/synced/baz.jpg', 1);
+
+        self::assertSame(1, $count);
+    }
 }
