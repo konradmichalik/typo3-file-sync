@@ -83,6 +83,38 @@ final class StorageControllerTest extends TestCase
     }
 
     #[Test]
+    public function resetMissingReturnsSuccessJsonWithAffectedCount(): void
+    {
+        $request = $this->createRequest($this->createBackendUser(true), ['storageUid' => 1]);
+
+        $response = $this->createController($this->createFileRepositoryWithResetMissingReturn(5))->resetMissingAction($request);
+
+        self::assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        self::assertSame(['success' => true, 'message' => 'Reset 5 file(s)', 'count' => 5], $body);
+    }
+
+    #[Test]
+    public function deleteFilesReturns400ForInvalidBody(): void
+    {
+        $request = $this->createRequest($this->createBackendUser(true), null);
+
+        $response = $this->createController()->deleteFilesAction($request);
+
+        self::assertSame(400, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function deleteFilesReturns400ForInvalidStorageUid(): void
+    {
+        $request = $this->createRequest($this->createBackendUser(true), ['storageUid' => 0, 'identifier' => 'remote_instance']);
+
+        $response = $this->createController()->deleteFilesAction($request);
+
+        self::assertSame(400, $response->getStatusCode());
+    }
+
+    #[Test]
     public function deleteFilesReturns403WithoutBackendUser(): void
     {
         $request = $this->createRequest(null, ['storageUid' => 1, 'identifier' => 'remote_instance']);
@@ -123,12 +155,30 @@ final class StorageControllerTest extends TestCase
         $this->createController()->deleteFilesAction($request);
     }
 
-    private function createController(): StorageController
+    private function createController(?FileRepository $fileRepository = null): StorageController
     {
-        /** @var FileRepository $fileRepository */
-        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $fileRepository ??= (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
 
         return new StorageController($fileRepository);
+    }
+
+    private function createFileRepositoryWithResetMissingReturn(int $affectedRows): FileRepository
+    {
+        $queryBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\QueryBuilder::class);
+        $queryBuilder->method('update')->willReturnSelf();
+        $queryBuilder->method('where')->willReturnSelf();
+        $queryBuilder->method('set')->willReturnSelf();
+        $queryBuilder->method('expr')->willReturn($this->createMock(\TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder::class));
+        $queryBuilder->method('createNamedParameter')->willReturn('1');
+        $queryBuilder->method('executeStatement')->willReturn($affectedRows);
+
+        $connectionPool = $this->createMock(\TYPO3\CMS\Core\Database\ConnectionPool::class);
+        $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
+
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        (new ReflectionClass(FileRepository::class))->getProperty('connectionPool')->setValue($fileRepository, $connectionPool);
+
+        return $fileRepository;
     }
 
     private function createBackendUser(bool $isAdmin): BackendUserAuthentication
