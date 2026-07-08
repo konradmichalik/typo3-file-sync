@@ -32,6 +32,11 @@ use TYPO3\CMS\Core\Resource\ResourceStorage;
 #[CoversClass(ResourceStorageInitializationEventListener::class)]
 final class ResourceStorageInitializationEventListenerTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']);
+    }
+
     #[Test]
     public function listenerSkipsNonLocalDriver(): void
     {
@@ -107,24 +112,16 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
     #[Test]
     public function listenerReachesDriverConstructionWhenStorageIsConfigured(): void
     {
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [
-            'test_handler' => [
-                'title' => 'Test Handler',
-                'config' => ['label' => 'Test', 'config' => ['type' => 'input']],
-                'handler' => NullRemoteResource::class,
-            ],
-        ];
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
             1 => [['identifier' => 'test_handler', 'configuration' => null]],
         ];
 
-        $storageRepository = $this->createMock(\TYPO3\CMS\Core\Resource\StorageRepository::class);
-        $resourceFactory = (new ReflectionClass(\TYPO3\CMS\Core\Resource\ResourceFactory::class))->newInstanceWithoutConstructor();
-        $fileRepository = (new ReflectionClass(\KonradMichalik\Typo3FileSync\Repository\FileRepository::class))->newInstanceWithoutConstructor();
-        $connectionPool = $this->createMock(\TYPO3\CMS\Core\Database\ConnectionPool::class);
-        $logManager = (new ReflectionClass(\TYPO3\CMS\Core\Log\LogManager::class))->newInstanceWithoutConstructor();
-
-        $factory = new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager);
+        // The factory is never invoked on this code path: getOriginalDriver()
+        // throws before createFromConfiguration() would be called. Only the
+        // storages GLOBALS entry above is needed to make isStorageConfigured
+        // evaluate to true, so the factory is built without wiring up any of
+        // its real dependencies.
+        $factory = (new ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
 
         $storage = $this->createMock(ResourceStorage::class);
         $storage->method('getStorageRecord')->willReturn([
@@ -152,21 +149,5 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         $this->expectException(Error::class);
         $this->expectExceptionMessage('must not be accessed before initialization');
         $listener($event);
-    }
-}
-
-/**
- * NullRemoteResource.
- *
- * @internal
- *
- * @author Konrad Michalik <hej@konradmichalik.dev>
- * @license GPL-2.0-or-later
- */
-class NullRemoteResource implements \KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface
-{
-    public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed
-    {
-        return false;
     }
 }
