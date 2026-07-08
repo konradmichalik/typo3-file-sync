@@ -4,33 +4,44 @@
 
 # TYPO3 extension `typo3_file_sync`
 
+[![Packagist Downloads](https://img.shields.io/packagist/dt/konradmichalik/typo3-file-sync?color=brightgreen)](https://packagist.org/packages/konradmichalik/typo3-file-sync)
 ![TYPO3](https://img.shields.io/badge/TYPO3-13.4%20%7C%2014.0-orange.svg)
+[![Supported PHP Versions](https://img.shields.io/packagist/dependency-v/konradmichalik/typo3-file-sync/php?logo=php)](https://packagist.org/packages/konradmichalik/typo3-file-sync)
 [![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/cgl.yml)
+[![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/typo3-file-sync?logo=coveralls)](https://coveralls.io/github/konradmichalik/typo3-file-sync)
 [![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/tests.yml)
-[![License](https://poser.pugx.org/konradmichalik/typo3-file-sync/license)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE.md)
 
 </div>
 
-A lightweight TYPO3 extension that synchronizes missing files on demand — either by fetching them from a remote instance or by generating local placeholder images. Inspired by [filefill](https://github.com/IchHabRecht/filefill), this is a leaner reimplementation with TYPO3 v13 + v14 support and self-contained placeholder generation without external service dependencies.
+A lightweight TYPO3 extension that synchronizes missing files on demand — either by fetching them from a remote instance or by generating local placeholder images.
 
-> [!NOTE]
-> Multiple resource handlers can be chained per storage. They are processed in order until one successfully delivers the file.
+> [!TIP]
+> Typical use case: staging systems or local development environments that get refreshed from production on a regular basis (e.g. via a database sync) without copying the full file storage. Missing files are fetched — or replaced with a placeholder — the moment they're actually requested, instead of shipping every asset on each refresh.
 
 ## 🔥 Installation
 
 ### Requirements
 
-* TYPO3 >= 13.4
-* PHP 8.2+
+* TYPO3 13.4 LTS or 14.0+
+* PHP 8.2 – 8.5
 * PHP extension `ext-gd` (for placeholder image generation)
 
 ### Composer
 
 [![Packagist](https://img.shields.io/packagist/v/konradmichalik/typo3-file-sync?label=version&logo=packagist)](https://packagist.org/packages/konradmichalik/typo3-file-sync)
+[![Packagist Downloads](https://img.shields.io/packagist/dt/konradmichalik/typo3-file-sync?color=brightgreen)](https://packagist.org/packages/konradmichalik/typo3-file-sync)
 
 ```bash
 composer require konradmichalik/typo3-file-sync
 ```
+
+### TER
+
+[![TER version](https://typo3-badges.dev/badge/typo3_file_sync/version/shields.svg)](https://extensions.typo3.org/extension/typo3_file_sync)
+[![TER downloads](https://typo3-badges.dev/badge/typo3_file_sync/downloads/shields.svg)](https://extensions.typo3.org/extension/typo3_file_sync)
+
+Download the zip file from [TYPO3 extension repository (TER)](https://extensions.typo3.org/extension/typo3_file_sync).
 
 ### Setup
 
@@ -178,10 +189,14 @@ class MyHandler implements RemoteResourceInterface
 }
 ```
 
+## 🙏 Acknowledgments
+
+This project is inspired by the great [filefill](https://github.com/IchHabRecht/filefill) extension.
+
 ## 🧑‍💻 Contributing
 
 Please have a look at [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## 📜 License
+## ⭐ License
 
-This project is licensed under [GNU General Public License 2.0 (or later)](LICENSE).
+This project is licensed under [GNU General Public License 2.0 (or later)](LICENSE.md).
