@@ -32,7 +32,7 @@
 		"typo3/cms-filelist": "^13.4 || ^14.0",
 		"typo3/cms-fluid": "^13.4 || ^14.0",
 		"typo3/cms-frontend": "^13.4 || ^14.0",
-		"typo3/testing-framework": "^9.0 || ^10.0"
+		"typo3/testing-framework": "^9.5 || ^10.0"
 	},
 	"conflict": {
 		"ichhabrecht/filefill": "*"
