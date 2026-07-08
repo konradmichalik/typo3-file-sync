@@ -323,8 +323,9 @@ final class RemoteResourceCollectionTest extends TestCase
         $collection->setLogger(new NullLogger());
 
         // resourceFactory is reflection-broken (no constructor ran), so calling
-        // getFileObject() on it throws an Error — reaching that call confirms
-        // the sys_file_processedfile row was found and parsed successfully.
+        // getFileObject() on it throws an Error — reaching that call (before
+        // unserialize()/ProcessedFile construction even run) confirms the
+        // sys_file_processedfile row was found and its "original" column read.
         $this->expectException(Error::class);
         $collection->get('/processing/image.jpg', 'fileadmin/_processed_/image.jpg');
     }
