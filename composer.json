@@ -15,20 +15,22 @@
 	"require": {
 		"php": "~8.2.0 || ~8.3.0 || ~8.4.0 || ~8.5.0",
 		"ext-gd": "*",
-		"doctrine/dbal": "^4.0",
+		"doctrine/dbal": "^4.4.3",
 		"guzzlehttp/guzzle": "^7.0",
 		"psr/http-message": "^1.0 || ^2.0",
-		"psr/log": "^3.0.1",
-		"symfony/console": "^7.0",
+		"psr/log": "^3.0.2",
+		"symfony/console": "^7.4.14",
 		"typo3/cms-backend": "^13.4 || ^14.0",
 		"typo3/cms-core": "^13.4 || ^14.0"
 	},
 	"require-dev": {
 		"eliashaeussler/version-bumper": "^2.4 || ^3.0 || ^4.0",
+		"phpunit/phpcov": "^9.0 || ^10.0 || ^11.0",
 		"phpunit/phpunit": "^10.2 || ^11.0 || ^12.0",
 		"typo3/cms-filelist": "^13.4 || ^14.0",
 		"typo3/cms-fluid": "^13.4 || ^14.0",
-		"typo3/cms-frontend": "^13.4 || ^14.0"
+		"typo3/cms-frontend": "^13.4 || ^14.0",
+		"typo3/testing-framework": "^9.5 || ^10.0"
 	},
 	"conflict": {
 		"ichhabrecht/filefill": "*"
@@ -57,7 +59,11 @@
 			"copyright": 2026
 		},
 		"typo3/cms": {
+			"Package": {
+				"providesPackages": {}
+			},
 			"extension-key": "typo3_file_sync",
+			"version": "0.1.4",
 			"web-dir": "public"
 		}
 	},
@@ -66,7 +72,21 @@
 			"@cgl install"
 		],
 		"cgl": "@composer -d Tests/CGL --",
-		"test": "@test:coverage --no-coverage",
-		"test:coverage": "XDEBUG_MODE=coverage phpunit -c phpunit.xml"
+		"coverage:clean": "rm -rf .Build/coverage",
+		"coverage:merge": "phpcov merge --html .Build/coverage/html --clover .Build/coverage/clover.xml --text php://stdout .Build/coverage",
+		"test": [
+			"@test:unit",
+			"@test:functional"
+		],
+		"test:coverage": [
+			"@coverage:clean",
+			"@test:coverage:unit",
+			"@test:coverage:functional",
+			"@coverage:merge"
+		],
+		"test:coverage:functional": "XDEBUG_MODE=coverage phpunit -c phpunit.functional.xml",
+		"test:coverage:unit": "XDEBUG_MODE=coverage phpunit -c phpunit.xml",
+		"test:functional": "phpunit -c phpunit.functional.xml --no-coverage",
+		"test:unit": "phpunit -c phpunit.xml --no-coverage"
 	}
 }
