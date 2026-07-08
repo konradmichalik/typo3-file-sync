@@ -30,16 +30,26 @@ use PHPUnit\Framework\TestCase;
 final class RemoteInstanceResourceTest extends TestCase
 {
     #[Test]
-    public function getFileReturnsBodyContent(): void
+    public function getFileReturnsStreamedBodyContent(): void
     {
         $body = 'file-content-binary-data';
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient->method('request')
-            ->with('GET', 'https://example.com/fileadmin/test.jpg')
-            ->willReturn(new Response(200, [], $body));
+            ->willReturnCallback(static function (string $method, string $url, array $options) use ($body): Response {
+                self::assertSame('GET', $method);
+                self::assertSame('https://example.com/fileadmin/test.jpg', $url);
+                self::assertArrayHasKey(RequestOptions::SINK, $options);
+                fwrite($options[RequestOptions::SINK], $body);
+
+                return new Response(200);
+            });
 
         $resource = new RemoteInstanceResource('https://example.com', $httpClient);
-        self::assertSame($body, $resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+        $result = $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+
+        self::assertIsResource($result);
+        self::assertSame($body, stream_get_contents($result));
+        fclose($result);
     }
 
     #[Test]
@@ -100,7 +110,7 @@ final class RemoteInstanceResourceTest extends TestCase
             ->willReturn(new Response(200, [], 'content'));
 
         $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $httpClient);
-        self::assertIsString($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertIsResource($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
     }
 
     #[Test]
