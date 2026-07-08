@@ -245,4 +245,63 @@ final class PlaceholderImageResourceTest extends TestCase
         self::assertStringContainsString('width="1"', $result);
         self::assertStringContainsString('height="1"', $result);
     }
+
+    #[Test]
+    public function shortHexColorsAreAccepted(): void
+    {
+        $resource = new PlaceholderImageResource('#fff, #000');
+        $result = $resource->getFile('/test.svg', 'fileadmin/test.svg', $this->createSvgFileObject());
+
+        self::assertIsString($result);
+        self::assertStringContainsString('#fff', $result);
+        self::assertStringContainsString('#000', $result);
+    }
+
+    #[Test]
+    public function invalidColorsFallBackToDefaults(): void
+    {
+        $resource = new PlaceholderImageResource('not-a-color, also#invalid');
+        $result = $resource->getFile('/test.svg', 'fileadmin/test.svg', $this->createSvgFileObject());
+
+        self::assertIsString($result);
+        self::assertStringContainsString('#CCCCCC', $result);
+        self::assertStringContainsString('#969696', $result);
+    }
+
+    #[Test]
+    public function maliciousColorInputCannotInjectMarkup(): void
+    {
+        $resource = new PlaceholderImageResource('#fff"/><script>alert(1)</script>, #000');
+        $result = $resource->getFile('/test.svg', 'fileadmin/test.svg', $this->createSvgFileObject());
+
+        self::assertIsString($result);
+        self::assertStringNotContainsString('<script>', $result);
+        self::assertStringContainsString('#CCCCCC', $result);
+    }
+
+    #[Test]
+    public function invalidColorInArrayConfigurationFallsBackToDefault(): void
+    {
+        $resource = new PlaceholderImageResource([
+            'backgroundColor' => '#zzzzzz',
+            'textColor' => '#112233',
+        ]);
+        $result = $resource->getFile('/test.svg', 'fileadmin/test.svg', $this->createSvgFileObject());
+
+        self::assertIsString($result);
+        self::assertStringContainsString('#CCCCCC', $result);
+        self::assertStringContainsString('#112233', $result);
+    }
+
+    private function createSvgFileObject(): FileInterface
+    {
+        $fileObject = $this->createMock(FileInterface::class);
+        $fileObject->method('getExtension')->willReturn('svg');
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 10],
+            ['height', 10],
+        ]);
+
+        return $fileObject;
+    }
 }
