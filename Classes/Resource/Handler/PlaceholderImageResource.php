@@ -166,9 +166,8 @@ final class PlaceholderImageResource implements RemoteResourceInterface
             'avif' => function_exists('imageavif') ? imageavif($image) : imagepng($image),
             default => imagejpeg($image, null, 80),
         };
-        $content = ob_get_clean();
 
-        return false !== $content ? $content : false;
+        return ob_get_clean();
     }
 
     /**
