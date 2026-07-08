@@ -11,15 +11,13 @@
         <env name="COLUMNS" value="300" />
     </php>
     <testsuites>
-        <testsuite name="Tests">
+        <testsuite name="Unit">
             <directory>Tests/Unit</directory>
         </testsuite>
     </testsuites>
     <coverage>
         <report>
-            <clover outputFile=".Build/coverage/clover.xml"/>
-            <html outputDirectory=".Build/coverage/html"/>
-            <text outputFile="php://stdout" showOnlySummary="true"/>
+            <php outputFile=".Build/coverage/unit.cov"/>
         </report>
     </coverage>
     <logging>
