@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
-use GuzzleHttp\ClientInterface;
+use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
@@ -30,16 +30,26 @@ use PHPUnit\Framework\TestCase;
 final class RemoteInstanceResourceTest extends TestCase
 {
     #[Test]
-    public function getFileReturnsBodyContent(): void
+    public function getFileReturnsStreamedBodyContent(): void
     {
         $body = 'file-content-binary-data';
         $httpClient = $this->createMock(ClientInterface::class);
         $httpClient->method('request')
-            ->with('GET', 'https://example.com/fileadmin/test.jpg')
-            ->willReturn(new Response(200, [], $body));
+            ->willReturnCallback(static function (string $method, string $url, array $options) use ($body): Response {
+                self::assertSame('GET', $method);
+                self::assertSame('https://example.com/fileadmin/test.jpg', $url);
+                self::assertArrayHasKey(RequestOptions::SINK, $options);
+                fwrite($options[RequestOptions::SINK], $body);
+
+                return new Response(200);
+            });
 
         $resource = new RemoteInstanceResource('https://example.com', $httpClient);
-        self::assertSame($body, $resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+        $result = $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+
+        self::assertIsResource($result);
+        self::assertSame($body, stream_get_contents($result));
+        fclose($result);
     }
 
     #[Test]
@@ -100,6 +110,74 @@ final class RemoteInstanceResourceTest extends TestCase
             ->willReturn(new Response(200, [], 'content'));
 
         $resource = new RemoteInstanceResource(['url' => 'https://production.example.com'], $httpClient);
-        self::assertIsString($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertIsResource($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function requestUsesDefaultTimeouts(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 5.0,
+                    RequestOptions::TIMEOUT => 15.0,
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function timeoutsAreConfigurableViaArrayConfiguration(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 2.0,
+                    RequestOptions::TIMEOUT => 30.0,
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource(
+            [
+                'url' => 'https://example.com',
+                'connect_timeout' => 2,
+                'timeout' => 30,
+            ],
+            $httpClient,
+        );
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function basicAuthCredentialsAreDetachedFromUrlAndPassedAsRequestOption(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://example.com/fileadmin/test.jpg',
+                [
+                    RequestOptions::CONNECT_TIMEOUT => 5.0,
+                    RequestOptions::TIMEOUT => 15.0,
+                    RequestOptions::AUTH => ['user', 'secret'],
+                ],
+            )
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource('https://user:secret@example.com', $httpClient);
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
     }
 }

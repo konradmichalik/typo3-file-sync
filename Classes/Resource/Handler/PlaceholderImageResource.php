@@ -32,6 +32,16 @@ use function strlen;
  */
 final class PlaceholderImageResource implements RemoteResourceInterface
 {
+    private const DEFAULT_BACKGROUND_COLOR = '#CCCCCC';
+    private const DEFAULT_TEXT_COLOR = '#969696';
+
+    /**
+     * Upper bound for the generated GD canvas: a placeholder for a huge
+     * original (e.g. 30000 x 20000 px metadata) must not exhaust memory —
+     * imagecreatetruecolor() allocates the full bitmap.
+     */
+    private const MAX_DIMENSION = 4096;
+
     /**
      * @var list<string>
      */
@@ -56,13 +66,13 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         if (!is_array($configuration)) {
             $colors = GeneralUtility::trimExplode(',', (string) $configuration);
             $configuration = [
-                'backgroundColor' => '#'.ltrim($colors[0] ?? 'CCCCCC', '#'),
-                'textColor' => '#'.ltrim($colors[1] ?? '969696', '#'),
+                'backgroundColor' => $colors[0] ?? '',
+                'textColor' => $colors[1] ?? '',
             ];
         }
 
-        $this->backgroundColor = $configuration['backgroundColor'] ?? '#CCCCCC';
-        $this->textColor = $configuration['textColor'] ?? '#969696';
+        $this->backgroundColor = self::sanitizeColor($configuration['backgroundColor'] ?? '', self::DEFAULT_BACKGROUND_COLOR);
+        $this->textColor = self::sanitizeColor($configuration['textColor'] ?? '', self::DEFAULT_TEXT_COLOR);
     }
 
     /**
@@ -87,6 +97,19 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         }
 
         return $this->generateGdImage($width, $height, $extension);
+    }
+
+    /**
+     * Only accept #RGB / #RRGGBB hex colors and fall back to the default
+     * otherwise. Colors are interpolated verbatim into SVG markup, so an
+     * unvalidated value would allow markup/script injection into the
+     * generated file.
+     */
+    private static function sanitizeColor(string $color, string $fallback): string
+    {
+        $color = '#'.ltrim($color, '#');
+
+        return 1 === preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color) ? $color : $fallback;
     }
 
     private function generateSvg(int $width, int $height): string
@@ -119,6 +142,11 @@ final class PlaceholderImageResource implements RemoteResourceInterface
             return false;
         }
 
+        // The text overlay always shows the original file dimensions,
+        // even when the canvas is scaled down.
+        $text = sprintf('%d x %d', $width, $height);
+        [$width, $height] = self::capDimensions($width, $height);
+
         $image = imagecreatetruecolor($width, $height);
         if (false === $image) {
             return false;
@@ -129,7 +157,6 @@ final class PlaceholderImageResource implements RemoteResourceInterface
 
         imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $bgColor);
 
-        $text = sprintf('%d x %d', $width, $height);
         $fontSize = max(1, (int) floor($width / 10));
 
         if ($fontSize <= 5) {
@@ -157,6 +184,29 @@ final class PlaceholderImageResource implements RemoteResourceInterface
         };
 
         return ob_get_clean();
+    }
+
+    /**
+     * Scales dimensions down proportionally so that neither side exceeds
+     * MAX_DIMENSION.
+     *
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     *
+     * @return array{int<1, max>, int<1, max>}
+     */
+    private static function capDimensions(int $width, int $height): array
+    {
+        if ($width <= self::MAX_DIMENSION && $height <= self::MAX_DIMENSION) {
+            return [$width, $height];
+        }
+
+        $scale = self::MAX_DIMENSION / max($width, $height);
+
+        return [
+            max(1, (int) round($width * $scale)),
+            max(1, (int) round($height * $scale)),
+        ];
     }
 
     /**

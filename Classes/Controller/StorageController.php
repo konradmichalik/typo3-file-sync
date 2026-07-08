@@ -16,6 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Controller;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use Psr\Http\Message\{ResponseInterface, ServerRequestInterface};
 use TYPO3\CMS\Backend\Attribute\AsController;
+use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Http\JsonResponse;
 
 use function is_array;
@@ -36,6 +37,10 @@ final readonly class StorageController
 
     public function resetMissingAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!$this->isAdmin($request)) {
+            return new JsonResponse(['success' => false, 'message' => 'Insufficient permissions'], 403);
+        }
+
         $body = $request->getParsedBody();
         if (!is_array($body)) {
             return new JsonResponse(['success' => false, 'message' => 'Invalid request body'], 400);
@@ -57,6 +62,10 @@ final readonly class StorageController
 
     public function deleteFilesAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (!$this->isAdmin($request)) {
+            return new JsonResponse(['success' => false, 'message' => 'Insufficient permissions'], 403);
+        }
+
         $body = $request->getParsedBody();
         if (!is_array($body)) {
             return new JsonResponse(['success' => false, 'message' => 'Invalid request body'], 400);
@@ -75,5 +84,17 @@ final readonly class StorageController
             'message' => sprintf('Deleted %d file(s)', $deletedCount),
             'count' => $deletedCount,
         ]);
+    }
+
+    /**
+     * Editing sys_file_storage records is an admin task — both actions
+     * mutate storage-wide state and must not be available to regular
+     * backend users.
+     */
+    private function isAdmin(ServerRequestInterface $request): bool
+    {
+        $backendUser = $request->getAttribute('backend.user');
+
+        return $backendUser instanceof BackendUserAuthentication && $backendUser->isAdmin();
     }
 }
