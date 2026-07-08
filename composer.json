@@ -4,7 +4,6 @@
 	"license": [
 		"GPL-2.0-or-later"
 	],
-	"version": "0.1.4",
 	"type": "typo3-cms-extension",
 	"authors": [
 		{
@@ -62,11 +61,12 @@
 			"copyright": 2026
 		},
 		"typo3/cms": {
-			"extension-key": "typo3_file_sync",
-			"web-dir": "public",
 			"Package": {
 				"providesPackages": {}
-			}
+			},
+			"extension-key": "typo3_file_sync",
+			"version": "0.1.4",
+			"web-dir": "public"
 		}
 	},
 	"scripts": {
