@@ -89,6 +89,9 @@ For environment variable support (works in both backend and PHP configuration), 
 https://%env(REMOTE_USER)%:%env(REMOTE_PASS)%@production.example.com
 ```
 
+> [!WARNING]
+> `%env()%` placeholders resolve **any** environment variable of the process. Since File Sync is configured on `sys_file_storage` records, anyone able to edit a file storage can read arbitrary environment values (e.g. database credentials) by sending them to a remote host. Editing file storages is an admin-level task — keep it restricted to trusted backend administrators.
+
 #### Timeouts
 
 Requests use a connect timeout of `5` seconds and a request timeout of `15` seconds by default, so a slow or unreachable remote instance cannot block page rendering indefinitely. Both can be adjusted via PHP configuration:
