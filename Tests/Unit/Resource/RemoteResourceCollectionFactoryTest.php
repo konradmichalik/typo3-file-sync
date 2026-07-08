@@ -19,6 +19,7 @@ use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollectionFactory, Remo
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use stdClass;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Resource\{ResourceFactory, StorageRepository};
@@ -42,6 +43,15 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
                 'handler' => TestRemoteResource::class,
             ],
         ];
+
+        // GeneralUtility::xml2array() relies on a registered "runtime" cache;
+        // provide a transient in-memory cache manager for FlexForm parsing tests.
+        $cacheManager = new \TYPO3\CMS\Core\Cache\CacheManager();
+        $cacheManager->registerCache(new \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend(
+            'runtime',
+            new \TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend(),
+        ));
+        GeneralUtility::setSingletonInstance(\TYPO3\CMS\Core\Cache\CacheManager::class, $cacheManager);
     }
 
     protected function tearDown(): void
@@ -83,6 +93,114 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function createFromConfigurationThrowsWhenHandlerDoesNotImplementInterface(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler']['broken_handler'] = [
+            'title' => 'Broken Handler',
+            'config' => ['label' => 'Test', 'config' => ['type' => 'input']],
+            'handler' => stdClass::class,
+        ];
+
+        $factory = $this->createFactory();
+
+        $this->expectException(\KonradMichalik\Typo3FileSync\Exception\MissingInterfaceException::class);
+        $factory->createFromConfiguration([
+            ['identifier' => 'broken_handler', 'configuration' => null],
+        ]);
+    }
+
+    #[Test]
+    public function createFromConfigurationSetsLoggerOnLoggerAwareHandler(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler']['logger_aware_handler'] = [
+            'title' => 'Logger Aware Handler',
+            'config' => ['label' => 'Test', 'config' => ['type' => 'input']],
+            'handler' => TestLoggerAwareRemoteResource::class,
+        ];
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $connectionPool = $this->createMock(ConnectionPool::class);
+
+        $logManager = $this->createMock(LogManager::class);
+        $logManager->expects(self::once())->method('getLogger')->willReturn(new \Psr\Log\NullLogger());
+
+        $factory = new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager);
+        $factory->createFromConfiguration([
+            ['identifier' => 'logger_aware_handler', 'configuration' => null],
+        ]);
+    }
+
+    #[Test]
+    public function createFromFlexFormBuildsCollectionFromParsedXml(): void
+    {
+        $flexForm = <<<'XML'
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<T3FlexForms>
+    <data>
+        <sheet index="sDEF">
+            <language index="lDEF">
+                <field index="resources">
+                    <el>
+                        <numIndex index="0">
+                            <test_handler>
+                                <el>
+                                    <test_handler>
+                                        <vDEF>test-config</vDEF>
+                                    </test_handler>
+                                </el>
+                            </test_handler>
+                        </numIndex>
+                    </el>
+                </field>
+            </language>
+        </sheet>
+    </data>
+</T3FlexForms>
+XML;
+
+        $factory = $this->createFactory();
+        $collection = $factory->createFromFlexForm($flexForm);
+
+        self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
+    }
+
+    #[Test]
+    public function createFromFlexFormThrowsOnUnknownIdentifier(): void
+    {
+        $flexForm = <<<'XML'
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<T3FlexForms>
+    <data>
+        <sheet index="sDEF">
+            <language index="lDEF">
+                <field index="resources">
+                    <el>
+                        <numIndex index="0">
+                            <nonexistent_handler>
+                                <el>
+                                    <nonexistent_handler>
+                                        <vDEF></vDEF>
+                                    </nonexistent_handler>
+                                </el>
+                            </nonexistent_handler>
+                        </numIndex>
+                    </el>
+                </field>
+            </language>
+        </sheet>
+    </data>
+</T3FlexForms>
+XML;
+
+        $factory = $this->createFactory();
+
+        $this->expectException(UnknownResourceException::class);
+        $factory->createFromFlexForm($flexForm);
+    }
+
     private function createFactory(): RemoteResourceCollectionFactory
     {
         $storageRepository = $this->createMock(StorageRepository::class);
@@ -109,6 +227,24 @@ class TestRemoteResource implements RemoteResourceInterface
     public function __construct(
         private readonly mixed $configuration = null, // @phpstan-ignore property.onlyWritten
     ) {}
+
+    public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed
+    {
+        return false;
+    }
+}
+
+/**
+ * TestLoggerAwareRemoteResource.
+ *
+ * @internal
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
+ */
+class TestLoggerAwareRemoteResource implements RemoteResourceInterface, \Psr\Log\LoggerAwareInterface
+{
+    use \Psr\Log\LoggerAwareTrait;
 
     public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed
     {
