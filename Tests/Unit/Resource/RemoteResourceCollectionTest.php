@@ -175,6 +175,74 @@ final class RemoteResourceCollectionTest extends TestCase
     }
 
     #[Test]
+    public function getDoesNotRetryHandlersForFailedIdentifier(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::once())->method('getFile')->willReturn(false);
+
+        $fileObject = $this->createMock(File::class);
+        $fileObject->method('getUid')->willReturn(1);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn($fileObject);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'handler1', 'handler' => $handler]],
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $this->createMock(ConnectionPool::class),
+        );
+        $collection->setLogger(new NullLogger());
+
+        // Second call must be served from the negative cache — the handler
+        // mock expects exactly one invocation.
+        self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function getTriesHandlersForEachDistinctIdentifier(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::exactly(2))->method('getFile')->willReturn(false);
+
+        $fileObject = $this->createMock(File::class);
+        $fileObject->method('getUid')->willReturn(1);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn($fileObject);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'handler1', 'handler' => $handler]],
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $this->createMock(ConnectionPool::class),
+        );
+        $collection->setLogger(new NullLogger());
+
+        self::assertNull($collection->get('/first.jpg', 'fileadmin/first.jpg'));
+        self::assertNull($collection->get('/second.jpg', 'fileadmin/second.jpg'));
+    }
+
+    #[Test]
     public function getUpdatesIdentifierOnSuccess(): void
     {
         $handler = $this->createMock(RemoteResourceInterface::class);
