@@ -142,12 +142,14 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         // ResourceStorage::$driver is a typed, uninitialized property on this
         // bare mock. The guard clause passes (record disabled but storage is
         // configured), so execution reaches getOriginalDriver(), whose
-        // Closure::bind accessor triggers PHP's "must not be accessed before
-        // initialization" Error when reading the typed property. Reaching
-        // that Error confirms the configured-storage branch was taken past
-        // the early-return guard, i.e. driver construction was reached.
+        // Closure::bind accessor triggers an Error reading the typed property
+        // (message/exact subclass varies by typo3/cms-core version: "must not
+        // be accessed before initialization" on some versions, a TypeError
+        // "Return value must be of type DriverInterface, null returned" on
+        // others — both are \Error subtypes). Reaching either confirms the
+        // configured-storage branch was taken past the early-return guard,
+        // i.e. driver construction was reached.
         $this->expectException(Error::class);
-        $this->expectExceptionMessage('must not be accessed before initialization');
         $listener($event);
     }
 }
