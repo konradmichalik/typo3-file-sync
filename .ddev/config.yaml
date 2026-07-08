@@ -11,7 +11,7 @@ additional_fqdns: [ ]
 database:
   type: mariadb
   version: "11.4"
-webimage_extra_packages: [ libxml2-utils, php8.4-pcov ]
+webimage_extra_packages: [ libxml2-utils, php8.2-pcov, php8.4-pcov ]
 use_dns_when_possible: true
 composer_version: "2"
 web_environment:
@@ -30,6 +30,12 @@ web_environment:
   - TYPO3_INSTALL_SITE_SETUP_TYPE=no
   - TYPO3_INSTALL_SITE_BASE_URL=
   - TYPO3_INSTALL_WEB_SERVER_CONFIG=apache
+  - typo3DatabaseDriver=mysqli
+  - typo3DatabaseName=db
+  - typo3DatabaseUsername=root
+  - typo3DatabasePassword=root
+  - typo3DatabaseHost=db
+  - typo3DatabasePort=3306
 corepack_enable: false
 hooks:
   post-start:
