@@ -89,6 +89,19 @@ For environment variable support (works in both backend and PHP configuration), 
 https://%env(REMOTE_USER)%:%env(REMOTE_PASS)%@production.example.com
 ```
 
+#### Timeouts
+
+Requests use a connect timeout of `5` seconds and a request timeout of `15` seconds by default, so a slow or unreachable remote instance cannot block page rendering indefinitely. Both can be adjusted via PHP configuration:
+
+```php
+'identifier' => 'remote_instance',
+'configuration' => [
+    'url' => 'https://production.example.com',
+    'connect_timeout' => 5,
+    'timeout' => 15,
+],
+```
+
 ### Placeholder Image
 
 Generates local placeholder images with configurable colors. Supports GD-based formats (`jpg`, `png`, `gif`, `webp`, `avif`) and `svg`.
