@@ -58,10 +58,16 @@ ddev cgl sca:php
 ## Run tests
 
 ```bash
-# All tests
+# All tests (Unit + Functional)
 ddev composer test
 
-# All tests with code coverage
+# Only unit tests
+ddev composer test:unit
+
+# Only functional tests (uses a real TYPO3 instance + database via typo3/testing-framework)
+ddev composer test:functional
+
+# All tests with combined code coverage (merged via phpcov into .Build/coverage/)
 ddev composer test:coverage
 ```
 
