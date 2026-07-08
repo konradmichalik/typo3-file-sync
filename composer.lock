@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c0ed5825ec39467a55e8297bee2bfd9c",
+    "content-hash": "61d55ded6d8c7ca94e9f9b2b6b170ebc",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -119,6 +119,151 @@
                 "source": "https://github.com/ChristianRiesen/base32/tree/1.6.0"
             },
             "time": "2021-02-26T10:19:33+00:00"
+        },
+        {
+            "name": "composer/class-map-generator",
+            "version": "1.7.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/composer/class-map-generator.git",
+                "reference": "86d8208fc3c649a3a999daf1a63c25201be2990f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/composer/class-map-generator/zipball/86d8208fc3c649a3a999daf1a63c25201be2990f",
+                "reference": "86d8208fc3c649a3a999daf1a63c25201be2990f",
+                "shasum": ""
+            },
+            "require": {
+                "composer/pcre": "^2.1 || ^3.1",
+                "php": "^7.2 || ^8.0",
+                "symfony/finder": "^4.4 || ^5.3 || ^6 || ^7 || ^8"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^1.12 || ^2",
+                "phpstan/phpstan-deprecation-rules": "^1 || ^2",
+                "phpstan/phpstan-phpunit": "^1 || ^2",
+                "phpstan/phpstan-strict-rules": "^1.1 || ^2",
+                "phpunit/phpunit": "^8",
+                "symfony/filesystem": "^5.4 || ^6 || ^7 || ^8"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-main": "1.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Composer\\ClassMapGenerator\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jordi Boggiano",
+                    "email": "j.boggiano@seld.be",
+                    "homepage": "https://seld.be"
+                }
+            ],
+            "description": "Utilities to scan PHP code and generate class maps.",
+            "keywords": [
+                "classmap"
+            ],
+            "support": {
+                "issues": "https://github.com/composer/class-map-generator/issues",
+                "source": "https://github.com/composer/class-map-generator/tree/1.7.3"
+            },
+            "funding": [
+                {
+                    "url": "https://packagist.com",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/composer",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-05-05T09:17:07+00:00"
+        },
+        {
+            "name": "composer/pcre",
+            "version": "3.4.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/composer/pcre.git",
+                "reference": "d5a341b3fb61f3001970940afb1d332968a183ed"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/composer/pcre/zipball/d5a341b3fb61f3001970940afb1d332968a183ed",
+                "reference": "d5a341b3fb61f3001970940afb1d332968a183ed",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^7.4 || ^8.0"
+            },
+            "conflict": {
+                "phpstan/phpstan": "<2.2.2"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2",
+                "phpstan/phpstan-deprecation-rules": "^2",
+                "phpstan/phpstan-strict-rules": "^2",
+                "phpunit/phpunit": "^9"
+            },
+            "type": "library",
+            "extra": {
+                "phpstan": {
+                    "includes": [
+                        "extension.neon"
+                    ]
+                },
+                "branch-alias": {
+                    "dev-main": "3.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Composer\\Pcre\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jordi Boggiano",
+                    "email": "j.boggiano@seld.be",
+                    "homepage": "http://seld.be"
+                }
+            ],
+            "description": "PCRE wrapping library that offers type-safe preg_* replacements.",
+            "keywords": [
+                "PCRE",
+                "preg",
+                "regex",
+                "regular expression"
+            ],
+            "support": {
+                "issues": "https://github.com/composer/pcre/issues",
+                "source": "https://github.com/composer/pcre/tree/3.4.0"
+            },
+            "funding": [
+                {
+                    "url": "https://packagist.com",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/composer",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-06-07T11:47:49+00:00"
         },
         {
             "name": "composer/semver",
@@ -4700,23 +4845,23 @@
         },
         {
             "name": "typo3/cms-backend",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/backend.git",
-                "reference": "f8a651ffef0d59628301448f4de157eca890a6b2"
+                "reference": "f842410118ea059292dc697e3c085e5b12ea41f0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/backend/zipball/f8a651ffef0d59628301448f4de157eca890a6b2",
-                "reference": "f8a651ffef0d59628301448f4de157eca890a6b2",
+                "url": "https://api.github.com/repos/TYPO3-CMS/backend/zipball/f842410118ea059292dc697e3c085e5b12ea41f0",
+                "reference": "f842410118ea059292dc697e3c085e5b12ea41f0",
                 "shasum": ""
             },
             "require": {
                 "ext-intl": "*",
                 "ext-libxml": "*",
                 "psr/event-dispatcher": "^1.0",
-                "typo3/cms-core": "14.3.0"
+                "typo3/cms-core": "14.3.4"
             },
             "conflict": {
                 "typo3/cms": "*"
@@ -4789,7 +4934,7 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/cms-cli",
@@ -4898,22 +5043,23 @@
         },
         {
             "name": "typo3/cms-core",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/core.git",
-                "reference": "a49593f7e8249bad713ac724fb71eb75bf4aee44"
+                "reference": "e59ef7a3348e439bf103140e01614f1bc403d373"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/core/zipball/a49593f7e8249bad713ac724fb71eb75bf4aee44",
-                "reference": "a49593f7e8249bad713ac724fb71eb75bf4aee44",
+                "url": "https://api.github.com/repos/TYPO3-CMS/core/zipball/e59ef7a3348e439bf103140e01614f1bc403d373",
+                "reference": "e59ef7a3348e439bf103140e01614f1bc403d373",
                 "shasum": ""
             },
             "require": {
                 "bacon/bacon-qr-code": "^3.1.1",
                 "christian-riesen/base32": "^1.6",
                 "composer-runtime-api": "^2.1",
+                "composer/class-map-generator": "^1.7.2",
                 "composer/semver": "^3.4",
                 "doctrine/dbal": "~4.4.3",
                 "doctrine/lexer": "^3.0.1",
@@ -4952,22 +5098,22 @@
                 "symfony/expression-language": "^7.4.8",
                 "symfony/filesystem": "^7.4.8",
                 "symfony/finder": "^7.4.8",
-                "symfony/http-foundation": "^7.4.8",
-                "symfony/mailer": "^7.4.8",
+                "symfony/http-foundation": "^7.4.13",
+                "symfony/mailer": "^7.4.12",
                 "symfony/messenger": "^7.4.8",
-                "symfony/mime": "^7.4.8",
+                "symfony/mime": "^7.4.12",
                 "symfony/options-resolver": "^7.4.8",
                 "symfony/polyfill-php83": "^1.36.0",
                 "symfony/process": "^7.4.8",
                 "symfony/rate-limiter": "^7.4.8",
-                "symfony/routing": "^7.4.8",
+                "symfony/routing": "^7.4.13",
                 "symfony/translation": "^7.4.8",
                 "symfony/uid": "^7.4.8",
-                "symfony/yaml": "^7.4.8",
+                "symfony/yaml": "^7.4.12",
                 "typo3/class-alias-loader": "^2.0.1",
                 "typo3/cms-cli": "^3.1.3",
                 "typo3/cms-composer-installers": "^5.0.2",
-                "typo3/html-sanitizer": "^2.2.0",
+                "typo3/html-sanitizer": "^2.3.2",
                 "typo3fluid/fluid": "^5.3.1"
             },
             "conflict": {
@@ -5052,7 +5198,7 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/html-sanitizer",
@@ -5168,162 +5314,17 @@
     ],
     "packages-dev": [
         {
-            "name": "composer/class-map-generator",
-            "version": "1.7.3",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/composer/class-map-generator.git",
-                "reference": "86d8208fc3c649a3a999daf1a63c25201be2990f"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/composer/class-map-generator/zipball/86d8208fc3c649a3a999daf1a63c25201be2990f",
-                "reference": "86d8208fc3c649a3a999daf1a63c25201be2990f",
-                "shasum": ""
-            },
-            "require": {
-                "composer/pcre": "^2.1 || ^3.1",
-                "php": "^7.2 || ^8.0",
-                "symfony/finder": "^4.4 || ^5.3 || ^6 || ^7 || ^8"
-            },
-            "require-dev": {
-                "phpstan/phpstan": "^1.12 || ^2",
-                "phpstan/phpstan-deprecation-rules": "^1 || ^2",
-                "phpstan/phpstan-phpunit": "^1 || ^2",
-                "phpstan/phpstan-strict-rules": "^1.1 || ^2",
-                "phpunit/phpunit": "^8",
-                "symfony/filesystem": "^5.4 || ^6 || ^7 || ^8"
-            },
-            "type": "library",
-            "extra": {
-                "branch-alias": {
-                    "dev-main": "1.x-dev"
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "Composer\\ClassMapGenerator\\": "src"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Jordi Boggiano",
-                    "email": "j.boggiano@seld.be",
-                    "homepage": "https://seld.be"
-                }
-            ],
-            "description": "Utilities to scan PHP code and generate class maps.",
-            "keywords": [
-                "classmap"
-            ],
-            "support": {
-                "issues": "https://github.com/composer/class-map-generator/issues",
-                "source": "https://github.com/composer/class-map-generator/tree/1.7.3"
-            },
-            "funding": [
-                {
-                    "url": "https://packagist.com",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/composer",
-                    "type": "github"
-                }
-            ],
-            "time": "2026-05-05T09:17:07+00:00"
-        },
-        {
-            "name": "composer/pcre",
-            "version": "3.4.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/composer/pcre.git",
-                "reference": "d5a341b3fb61f3001970940afb1d332968a183ed"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/composer/pcre/zipball/d5a341b3fb61f3001970940afb1d332968a183ed",
-                "reference": "d5a341b3fb61f3001970940afb1d332968a183ed",
-                "shasum": ""
-            },
-            "require": {
-                "php": "^7.4 || ^8.0"
-            },
-            "conflict": {
-                "phpstan/phpstan": "<2.2.2"
-            },
-            "require-dev": {
-                "phpstan/phpstan": "^2",
-                "phpstan/phpstan-deprecation-rules": "^2",
-                "phpstan/phpstan-strict-rules": "^2",
-                "phpunit/phpunit": "^9"
-            },
-            "type": "library",
-            "extra": {
-                "phpstan": {
-                    "includes": [
-                        "extension.neon"
-                    ]
-                },
-                "branch-alias": {
-                    "dev-main": "3.x-dev"
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "Composer\\Pcre\\": "src"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Jordi Boggiano",
-                    "email": "j.boggiano@seld.be",
-                    "homepage": "http://seld.be"
-                }
-            ],
-            "description": "PCRE wrapping library that offers type-safe preg_* replacements.",
-            "keywords": [
-                "PCRE",
-                "preg",
-                "regex",
-                "regular expression"
-            ],
-            "support": {
-                "issues": "https://github.com/composer/pcre/issues",
-                "source": "https://github.com/composer/pcre/tree/3.4.0"
-            },
-            "funding": [
-                {
-                    "url": "https://packagist.com",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/composer",
-                    "type": "github"
-                }
-            ],
-            "time": "2026-06-07T11:47:49+00:00"
-        },
-        {
             "name": "cuyz/valinor",
-            "version": "2.4.0",
+            "version": "2.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/CuyZ/Valinor.git",
-                "reference": "3b0afa3a287ed7f3a69aab223726cf1139454c34"
+                "reference": "afbe7352692d5925a76edd53d5998161334056d4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/CuyZ/Valinor/zipball/3b0afa3a287ed7f3a69aab223726cf1139454c34",
-                "reference": "3b0afa3a287ed7f3a69aab223726cf1139454c34",
+                "url": "https://api.github.com/repos/CuyZ/Valinor/zipball/afbe7352692d5925a76edd53d5998161334056d4",
+                "reference": "afbe7352692d5925a76edd53d5998161334056d4",
                 "shasum": ""
             },
             "require": {
@@ -5379,7 +5380,7 @@
             ],
             "support": {
                 "issues": "https://github.com/CuyZ/Valinor/issues",
-                "source": "https://github.com/CuyZ/Valinor/tree/2.4.0"
+                "source": "https://github.com/CuyZ/Valinor/tree/2.5.0"
             },
             "funding": [
                 {
@@ -5387,7 +5388,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-03-23T17:38:05+00:00"
+            "time": "2026-06-28T21:53:40+00:00"
         },
         {
             "name": "cypresslab/gitelephant",
@@ -8132,16 +8133,16 @@
         },
         {
             "name": "typo3/cms-extbase",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/extbase.git",
-                "reference": "bda955cc46edd447479a3054eb781531e9affa28"
+                "reference": "3d41793cdb2dcae4a3490f859af6a999e5cc5627"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/extbase/zipball/bda955cc46edd447479a3054eb781531e9affa28",
-                "reference": "bda955cc46edd447479a3054eb781531e9affa28",
+                "url": "https://api.github.com/repos/TYPO3-CMS/extbase/zipball/3d41793cdb2dcae4a3490f859af6a999e5cc5627",
+                "reference": "3d41793cdb2dcae4a3490f859af6a999e5cc5627",
                 "shasum": ""
             },
             "require": {
@@ -8153,7 +8154,7 @@
                 "symfony/property-access": "^7.4.8",
                 "symfony/property-info": "^7.4.8",
                 "symfony/validator": "^7.4.8",
-                "typo3/cms-core": "14.3.0"
+                "typo3/cms-core": "14.3.4"
             },
             "conflict": {
                 "typo3/cms": "*"
@@ -8214,24 +8215,24 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/cms-filelist",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/filelist.git",
-                "reference": "553161c367f1c21f3bdbd5a63f03efb5826f2e35"
+                "reference": "8bc262bbd3577a5535317941e141b0975803a4ca"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/filelist/zipball/553161c367f1c21f3bdbd5a63f03efb5826f2e35",
-                "reference": "553161c367f1c21f3bdbd5a63f03efb5826f2e35",
+                "url": "https://api.github.com/repos/TYPO3-CMS/filelist/zipball/8bc262bbd3577a5535317941e141b0975803a4ca",
+                "reference": "8bc262bbd3577a5535317941e141b0975803a4ca",
                 "shasum": ""
             },
             "require": {
-                "typo3/cms-core": "14.3.0"
+                "typo3/cms-core": "14.3.4"
             },
             "conflict": {
                 "typo3/cms": "*"
@@ -8283,27 +8284,27 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/cms-fluid",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/fluid.git",
-                "reference": "42aa0878bd36f0deaf4809c0c309a9a12ec1e67b"
+                "reference": "8f50a943ac2a22532379591c97b570119c8e4bae"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/fluid/zipball/42aa0878bd36f0deaf4809c0c309a9a12ec1e67b",
-                "reference": "42aa0878bd36f0deaf4809c0c309a9a12ec1e67b",
+                "url": "https://api.github.com/repos/TYPO3-CMS/fluid/zipball/8f50a943ac2a22532379591c97b570119c8e4bae",
+                "reference": "8f50a943ac2a22532379591c97b570119c8e4bae",
                 "shasum": ""
             },
             "require": {
                 "symfony/dependency-injection": "^7.4.8",
                 "symfony/finder": "^7.4.8",
-                "typo3/cms-core": "14.3.0",
-                "typo3/cms-extbase": "14.3.0",
+                "typo3/cms-core": "14.3.4",
+                "typo3/cms-extbase": "14.3.4",
                 "typo3fluid/fluid": "^5.3.1"
             },
             "conflict": {
@@ -8357,25 +8358,25 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/cms-frontend",
-            "version": "v14.3.0",
+            "version": "v14.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/TYPO3-CMS/frontend.git",
-                "reference": "6c921f0cd62ad13ba6c635b2439efc44faa97bca"
+                "reference": "bd865d76c5b63a5c0b1f0325b32292e975ad7c38"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/TYPO3-CMS/frontend/zipball/6c921f0cd62ad13ba6c635b2439efc44faa97bca",
-                "reference": "6c921f0cd62ad13ba6c635b2439efc44faa97bca",
+                "url": "https://api.github.com/repos/TYPO3-CMS/frontend/zipball/bd865d76c5b63a5c0b1f0325b32292e975ad7c38",
+                "reference": "bd865d76c5b63a5c0b1f0325b32292e975ad7c38",
                 "shasum": ""
             },
             "require": {
                 "ext-libxml": "*",
-                "typo3/cms-core": "14.3.0"
+                "typo3/cms-core": "14.3.4"
             },
             "conflict": {
                 "typo3/cms": "*"
@@ -8435,7 +8436,7 @@
                     "type": "membership"
                 }
             ],
-            "time": "2026-04-21T09:27:11+00:00"
+            "time": "2026-06-16T08:52:34+00:00"
         },
         {
             "name": "typo3/testing-framework",
