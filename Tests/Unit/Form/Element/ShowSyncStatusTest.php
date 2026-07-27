@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Form\Element;
 
+use KonradMichalik\Ttt\Attribute\{WithBackendUser, WithTypo3ConfVars};
 use KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
@@ -35,6 +35,14 @@ use function defined;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(ShowSyncStatus::class)]
+#[WithBackendUser(admin: true, uid: 42)]
+#[WithTypo3ConfVars([
+    'EXTCONF' => [
+        'typo3_file_sync' => [
+            'storages' => [0 => ['remote_instance' => []]],
+        ],
+    ],
+])]
 final class ShowSyncStatusTest extends TestCase
 {
     private ShowSyncStatus $element;
@@ -76,8 +84,6 @@ final class ShowSyncStatusTest extends TestCase
             },
         );
         $GLOBALS['LANG'] = $languageService;
-        $GLOBALS['BE_USER'] = $this->createMock(BackendUserAuthentication::class);
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [0 => ['remote_instance' => []]];
 
         if (!defined('LF')) {
             define('LF', "\n");
@@ -88,7 +94,7 @@ final class ShowSyncStatusTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['LANG'], $GLOBALS['BE_USER'], $GLOBALS['TYPO3_CONF_VARS']);
+        unset($GLOBALS['LANG']);
     }
 
     #[Test]

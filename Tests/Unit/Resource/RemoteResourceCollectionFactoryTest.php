@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollectionFactory, RemoteResourceInterface};
@@ -31,22 +32,23 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(RemoteResourceCollectionFactory::class)]
+#[WithTypo3ConfVars([
+    'EXTCONF' => [
+        'typo3_file_sync' => [
+            'resourceHandler' => [
+                'test_handler' => [
+                    'title' => 'Test Handler',
+                    'config' => ['label' => 'Test', 'config' => ['type' => 'input']],
+                    'handler' => TestRemoteResource::class,
+                ],
+            ],
+        ],
+    ],
+])]
 final class RemoteResourceCollectionFactoryTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [
-            'test_handler' => [
-                'title' => 'Test Handler',
-                'config' => ['label' => 'Test', 'config' => ['type' => 'input']],
-                'handler' => TestRemoteResource::class,
-            ],
-        ];
-    }
-
     protected function tearDown(): void
     {
-        unset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']);
         GeneralUtility::purgeInstances();
     }
 
