@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Form\Element;
 
-use KonradMichalik\Ttt\Attribute\{WithBackendUser, WithTypo3ConfVars};
+use KonradMichalik\Ttt\Attribute\{Typo3ConfVarsSentinel, WithBackendUser, WithTypo3ConfVars};
 use KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
@@ -98,11 +98,12 @@ final class ShowSyncStatusTest extends TestCase
     }
 
     #[Test]
+    #[WithTypo3ConfVars(['EXTCONF' => ['typo3_file_sync' => [
+        'storages' => Typo3ConfVarsSentinel::Unset,
+        'resourceHandler' => Typo3ConfVarsSentinel::Unset,
+    ]]])]
     public function renderReturnsEmptyWhenFileSyncNotConfigured(): void
     {
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [];
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [];
-
         $this->setElementData('sys_file_metadata', 42);
 
         $result = $this->element->render();
