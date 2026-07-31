@@ -4,8 +4,8 @@
 	"license": "GPL-2.0-or-later",
 	"type": "typo3-cms-extension",
 	"require": {
-		"konradmichalik/typo3-file-sync": "*",
-		"typo3/cms-fluid-styled-content": "*"
+		"konradmichalik/typo3-file-sync": "0.2.0",
+		"typo3/cms-fluid-styled-content": "14.3.5"
 	},
 	"extra": {
 		"typo3/cms": {

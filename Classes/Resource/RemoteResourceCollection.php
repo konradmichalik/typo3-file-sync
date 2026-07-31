@@ -42,6 +42,16 @@ final class RemoteResourceCollection implements LoggerAwareInterface
     protected array $fileIdentifierCache = [];
 
     /**
+     * Negative cache: identifiers no handler could deliver. The driver probes
+     * a missing file several times per request (fileExists, getPublicUrl,
+     * getFileInfoByIdentifier, ...) — without this cache every probe would
+     * retry the whole handler chain including remote HTTP round trips.
+     *
+     * @var array<string, true>
+     */
+    protected array $failedIdentifiers = [];
+
+    /**
      * @param array<int, array{identifier: string, handler: RemoteResourceInterface}> $resources
      */
     public function __construct(
@@ -57,6 +67,10 @@ final class RemoteResourceCollection implements LoggerAwareInterface
      */
     public function get(string $fileIdentifier, string $filePath): mixed
     {
+        if (isset($this->failedIdentifiers[$fileIdentifier])) {
+            return null;
+        }
+
         $this->resolveFileObject($fileIdentifier, $filePath);
         if (null === $this->fileIdentifierCache[$filePath]) {
             return null;
@@ -97,6 +111,8 @@ final class RemoteResourceCollection implements LoggerAwareInterface
 
             return $fileContent;
         }
+
+        $this->failedIdentifiers[$fileIdentifier] = true;
 
         return null;
     }
