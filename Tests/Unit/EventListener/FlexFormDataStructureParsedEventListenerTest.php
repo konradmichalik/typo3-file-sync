@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\EventListener;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\EventListener\FlexFormDataStructureParsedEventListener;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
@@ -26,24 +27,21 @@ use TYPO3\CMS\Core\Configuration\Event\AfterFlexFormDataStructureParsedEvent;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(FlexFormDataStructureParsedEventListener::class)]
+#[WithTypo3ConfVars([
+    'EXTCONF' => [
+        'typo3_file_sync' => [
+            'resourceHandler' => [
+                ResourceIdentifier::RemoteInstance->value => [
+                    'title' => 'Remote Instance',
+                    'config' => ['label' => 'URL', 'config' => ['type' => 'input']],
+                    'handler' => 'SomeHandler',
+                ],
+            ],
+        ],
+    ],
+])]
 final class FlexFormDataStructureParsedEventListenerTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['resourceHandler'] = [
-            ResourceIdentifier::RemoteInstance->value => [
-                'title' => 'Remote Instance',
-                'config' => ['label' => 'URL', 'config' => ['type' => 'input']],
-                'handler' => 'SomeHandler',
-            ],
-        ];
-    }
-
-    protected function tearDown(): void
-    {
-        unset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']);
-    }
-
     #[Test]
     public function listenerSkipsUnrelatedTable(): void
     {
