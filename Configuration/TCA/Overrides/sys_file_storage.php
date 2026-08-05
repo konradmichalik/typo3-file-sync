@@ -27,7 +27,9 @@ $tempColumns = [
         'displayCond' => 'FIELD:driver:=:Local',
         'config' => [
             'type' => 'flex',
-            'ds' => 'FILE:EXT:typo3_file_sync/Configuration/FlexForms/Resources.xml',
+            'ds' => [
+                'default' => 'FILE:EXT:typo3_file_sync/Configuration/FlexForms/Resources.xml',
+            ],
         ],
     ],
     'tx_typo3_file_sync_missing' => [
