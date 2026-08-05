@@ -153,6 +153,10 @@ final class FileSyncDriver extends LocalDriver
 
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
+        if ('' === $fileIdentifier) {
+            return $this->absoluteBasePath;
+        }
+
         $relativeFilePath = ltrim($this->canonicalizeAndCheckFileIdentifier($fileIdentifier, $callOriginalDriver), '/');
 
         return $this->absoluteBasePath.$relativeFilePath;
