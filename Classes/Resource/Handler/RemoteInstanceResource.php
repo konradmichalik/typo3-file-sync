@@ -22,7 +22,6 @@ use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function is_array;
-use function is_resource;
 use function sprintf;
 
 /**
@@ -81,28 +80,29 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
     {
         $url = $this->url.ltrim($filePath, '/');
 
-        // Spool the response into php://temp instead of loading it into a
-        // string: small files stay in memory, large ones spill to disk
-        // rather than exhausting the memory limit.
-        $target = fopen('php://temp', 'w+');
-        if (false === $target) {
-            return false;
-        }
-
         try {
-            $response = $this->httpClient->request(
-                'GET',
-                $url,
-                [RequestOptions::SINK => $target] + $this->requestOptions,
-            );
+            // Guzzle spools the response body into its own php://temp stream
+            // by default: small files stay in memory, large ones spill to
+            // disk rather than exhausting the memory limit.
+            $response = $this->httpClient->request('GET', $url, $this->requestOptions);
             $statusCode = $response->getStatusCode();
 
             if (200 !== $statusCode) {
                 $this->logger?->debug(
                     sprintf('GET %s returned HTTP %d', $url, $statusCode),
                 );
-                $this->close($target);
 
+                return false;
+            }
+
+            // detach() hands over the underlying resource without Guzzle's
+            // Psr7\Stream keeping ownership of it. Passing our own resource
+            // via RequestOptions::SINK instead would let Guzzle wrap it in a
+            // Stream whose __destruct() closes it as soon as Guzzle's
+            // internal objects are garbage collected, which can happen
+            // before this method returns.
+            $target = $response->getBody()->detach();
+            if (null === $target) {
                 return false;
             }
 
@@ -113,19 +113,8 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
             $this->logger?->warning(
                 sprintf('GET %s failed: %s', $url, $e->getMessage()),
             );
-            $this->close($target);
 
             return false;
-        }
-    }
-
-    /**
-     * @param resource $stream
-     */
-    private function close(mixed $stream): void
-    {
-        if (is_resource($stream)) {
-            fclose($stream);
         }
     }
 

@@ -38,14 +38,31 @@ final class RemoteInstanceResourceTest extends TestCase
             ->willReturnCallback(static function (string $method, string $url, array $options) use ($body): Response {
                 self::assertSame('GET', $method);
                 self::assertSame('https://example.com/fileadmin/test.jpg', $url);
-                self::assertArrayHasKey(RequestOptions::SINK, $options);
-                fwrite($options[RequestOptions::SINK], $body);
+                self::assertArrayNotHasKey(RequestOptions::SINK, $options);
 
-                return new Response(200);
+                return new Response(200, [], $body);
             });
 
         $resource = new RemoteInstanceResource('https://example.com', $httpClient);
         $result = $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+
+        self::assertIsResource($result);
+        self::assertSame($body, stream_get_contents($result));
+        fclose($result);
+    }
+
+    #[Test]
+    public function getFileReturnedResourceSurvivesResponseBeingGarbageCollected(): void
+    {
+        $body = 'file-content-binary-data';
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
+            ->willReturn(new Response(200, [], $body));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+        $result = $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+
+        gc_collect_cycles();
 
         self::assertIsResource($result);
         self::assertSame($body, stream_get_contents($result));
@@ -123,7 +140,6 @@ final class RemoteInstanceResourceTest extends TestCase
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
                 self::callback(static function (array $options): bool {
-                    self::assertArrayHasKey(RequestOptions::SINK, $options);
                     self::assertSame(5.0, $options[RequestOptions::CONNECT_TIMEOUT]);
                     self::assertSame(15.0, $options[RequestOptions::TIMEOUT]);
 
@@ -146,7 +162,6 @@ final class RemoteInstanceResourceTest extends TestCase
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
                 self::callback(static function (array $options): bool {
-                    self::assertArrayHasKey(RequestOptions::SINK, $options);
                     self::assertSame(2.0, $options[RequestOptions::CONNECT_TIMEOUT]);
                     self::assertSame(30.0, $options[RequestOptions::TIMEOUT]);
 
@@ -176,7 +191,6 @@ final class RemoteInstanceResourceTest extends TestCase
                 'GET',
                 'https://example.com/fileadmin/test.jpg',
                 self::callback(static function (array $options): bool {
-                    self::assertArrayHasKey(RequestOptions::SINK, $options);
                     self::assertSame(5.0, $options[RequestOptions::CONNECT_TIMEOUT]);
                     self::assertSame(15.0, $options[RequestOptions::TIMEOUT]);
                     self::assertSame(['user', 'secret'], $options[RequestOptions::AUTH]);
