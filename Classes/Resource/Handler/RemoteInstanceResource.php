@@ -22,6 +22,7 @@ use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function is_array;
+use function is_resource;
 use function sprintf;
 
 /**
@@ -102,7 +103,14 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
             // internal objects are garbage collected, which can happen
             // before this method returns.
             $target = $response->getBody()->detach();
-            if (null === $target) {
+            if (!is_resource($target)) {
+                // A detached-but-already-closed resource means something else
+                // took ownership of the stream. Fail soft instead of letting a
+                // TypeError escape from rewind().
+                $this->logger?->warning(
+                    sprintf('GET %s returned a closed response body', $url),
+                );
+
                 return false;
             }
 
