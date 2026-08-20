@@ -125,7 +125,27 @@ final class FileSyncDriver extends LocalDriver
         return true;
     }
 
-    protected function ensureFileExists(string $fileIdentifier): void
+    protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
+    {
+        if ('' === $fileIdentifier) {
+            return $this->absoluteBasePath;
+        }
+
+        $relativeFilePath = ltrim($this->canonicalizeAndCheckFileIdentifier($fileIdentifier, $callOriginalDriver), '/');
+
+        return $this->absoluteBasePath.$relativeFilePath;
+    }
+
+    protected function canonicalizeAndCheckFileIdentifier(string $fileIdentifier, bool $callOriginalDriver = true): string
+    {
+        if ($callOriginalDriver && $this->originalDriverObject instanceof LocalDriver) {
+            return $this->originalDriverObject->canonicalizeAndCheckFileIdentifier($fileIdentifier);
+        }
+
+        return parent::canonicalizeAndCheckFileIdentifier($fileIdentifier);
+    }
+
+    private function ensureFileExists(string $fileIdentifier): void
     {
         $absoluteFilePath = $this->getAbsolutePath($fileIdentifier, false);
         if ('' === $absoluteFilePath || file_exists($absoluteFilePath)) {
@@ -149,25 +169,5 @@ final class FileSyncDriver extends LocalDriver
                 fclose($fileContent);
             }
         }
-    }
-
-    protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
-    {
-        if ('' === $fileIdentifier) {
-            return $this->absoluteBasePath;
-        }
-
-        $relativeFilePath = ltrim($this->canonicalizeAndCheckFileIdentifier($fileIdentifier, $callOriginalDriver), '/');
-
-        return $this->absoluteBasePath.$relativeFilePath;
-    }
-
-    protected function canonicalizeAndCheckFileIdentifier(string $fileIdentifier, bool $callOriginalDriver = true): string
-    {
-        if ($callOriginalDriver && $this->originalDriverObject instanceof LocalDriver) {
-            return $this->originalDriverObject->canonicalizeAndCheckFileIdentifier($fileIdentifier);
-        }
-
-        return parent::canonicalizeAndCheckFileIdentifier($fileIdentifier);
     }
 }

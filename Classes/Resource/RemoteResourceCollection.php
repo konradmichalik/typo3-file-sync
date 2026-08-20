@@ -117,7 +117,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         return null;
     }
 
-    protected function resolveFileObject(string $fileIdentifier, string $filePath): void
+    private function resolveFileObject(string $fileIdentifier, string $filePath): void
     {
         if (array_key_exists($filePath, $this->fileIdentifierCache)) {
             return;
@@ -131,7 +131,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         }
     }
 
-    protected function getFileObjectFromStorage(ResourceStorage $storage, string $fileIdentifier): ?AbstractFile
+    private function getFileObjectFromStorage(ResourceStorage $storage, string $fileIdentifier): ?AbstractFile
     {
         if (!$storage->isWithinProcessingFolder($fileIdentifier)) {
             try {

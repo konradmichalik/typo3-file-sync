@@ -235,7 +235,7 @@ XML;
 class TestRemoteResource implements RemoteResourceInterface
 {
     public function __construct(
-        private readonly mixed $configuration = null, // @phpstan-ignore property.onlyWritten
+        private readonly mixed $configuration, // @phpstan-ignore property.onlyWritten
     ) {}
 
     public function getFile(string $fileIdentifier, string $filePath, ?\TYPO3\CMS\Core\Resource\FileInterface $fileObject = null): mixed

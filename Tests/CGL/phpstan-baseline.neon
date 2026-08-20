@@ -1,2 +1,13 @@
 parameters:
-	ignoreErrors: []
+	ignoreErrors:
+		-
+			message: '#^Constructor in KonradMichalik\\Typo3FileSync\\Resource\\Handler\\RemoteInstanceResource has parameter \$httpClient with default value\.$#'
+			identifier: ergebnis.noConstructorParameterWithDefaultValue
+			count: 1
+			path: ../../Classes/Resource/Handler/RemoteInstanceResource.php
+
+		-
+			message: '#^Unable to resolve the template type T in call to static method TYPO3\\CMS\\Core\\Utility\\GeneralUtility\:\:makeInstance\(\)$#'
+			identifier: argument.templateType
+			count: 1
+			path: ../../Classes/Resource/RemoteResourceCollectionFactory.php
