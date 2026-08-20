@@ -44,27 +44,32 @@ final class RemoteInstanceResourceTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        $port = self::findFreePort();
         $router = __DIR__.'/Fixtures/Server/router.php';
-
         $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $process = proc_open(
-            [\PHP_BINARY, '-S', '127.0.0.1:'.$port, $router],
-            $descriptors,
-            $pipes,
-        );
 
-        if (!is_resource($process)) {
-            self::markTestSkipped('Could not start the PHP built-in server.');
-        }
+        for ($attempt = 0; $attempt < 3; ++$attempt) {
+            $port = self::findFreePort();
+            $process = proc_open(
+                [\PHP_BINARY, '-S', '127.0.0.1:'.$port, $router],
+                $descriptors,
+                $pipes,
+            );
 
-        self::$serverProcess = $process;
-        self::$baseUrl = 'http://127.0.0.1:'.$port;
+            if (!is_resource($process)) {
+                continue;
+            }
 
-        if (!self::waitForServer($port)) {
+            self::$serverProcess = $process;
+            self::$baseUrl = 'http://127.0.0.1:'.$port;
+
+            if (self::waitForServer($port)) {
+                return;
+            }
+
             self::stopServer();
-            self::markTestSkipped('The PHP built-in server did not become reachable.');
         }
+
+        self::markTestSkipped('The PHP built-in server did not become reachable.');
     }
 
     public static function tearDownAfterClass(): void
