@@ -8,7 +8,7 @@
 ![TYPO3](https://img.shields.io/badge/TYPO3-13.4%20%7C%2014.0-orange.svg)
 [![Supported PHP Versions](https://img.shields.io/packagist/dependency-v/konradmichalik/typo3-file-sync/php?logo=php)](https://packagist.org/packages/konradmichalik/typo3-file-sync)
 [![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/cgl.yml)
-[![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/typo3-file-sync?logo=coveralls)](https://coveralls.io/github/konradmichalik/typo3-file-sync)
+[![Coverage](https://coveralls.io/repos/github/konradmichalik/typo3-file-sync/badge.svg?branch=main)](https://coveralls.io/github/konradmichalik/typo3-file-sync)
 [![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-file-sync/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-file-sync/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE.md)
 
