@@ -208,7 +208,7 @@ final class ShowSyncStatusTest extends TestCase
             'tx_typo3_file_sync_tstamp' => 1700000000,
         ]);
 
-        $this->setElementData('sys_file', 99, directUid: true);
+        $this->setElementData('sys_file', 99, true);
 
         $result = $this->element->render();
 

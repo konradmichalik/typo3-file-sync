@@ -62,7 +62,7 @@ final readonly class RemoteResourceCollectionFactory
             }
 
             /** @var object $handler */
-            $handler = GeneralUtility::makeInstance( // @phpstan-ignore argument.templateType
+            $handler = GeneralUtility::makeInstance(
                 $extConf[$resource['identifier']]['handler'],
                 $resource['configuration'] ?? null,
             );

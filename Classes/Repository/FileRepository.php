@@ -20,6 +20,8 @@ use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, StorageRepository};
 
 use function count;
+use function is_file;
+use function unlink;
 
 /**
  * FileRepository.
@@ -202,7 +204,7 @@ final readonly class FileRepository
                 }
 
                 $absolutePath = $file->getForLocalProcessing(false);
-                if (@unlink($absolutePath)) {
+                if (is_file($absolutePath) && unlink($absolutePath)) {
                     $this->updateIdentifier($file, '');
                 }
             } catch (InvalidArgumentException) {
