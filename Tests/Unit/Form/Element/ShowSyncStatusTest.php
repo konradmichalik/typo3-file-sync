@@ -201,6 +201,16 @@ final class ShowSyncStatusTest extends TestCase
     }
 
     #[Test]
+    public function renderReturnsEmptyForUnsupportedTableName(): void
+    {
+        $this->setElementData('tt_content', 42);
+
+        $result = $this->element->render();
+
+        self::assertSame('', $result['html'] ?? '');
+    }
+
+    #[Test]
     public function renderResolvesFileUidFromSysFile(): void
     {
         $this->queryResult->method('fetchAssociative')->willReturn([
