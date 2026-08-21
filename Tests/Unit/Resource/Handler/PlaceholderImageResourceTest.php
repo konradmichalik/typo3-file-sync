@@ -247,6 +247,27 @@ final class PlaceholderImageResourceTest extends TestCase
     }
 
     #[Test]
+    public function shortHexColorsAreExpandedForGdImageRendering(): void
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            self::markTestSkipped('GD extension not available');
+        }
+
+        $fileObject = $this->createMock(FileInterface::class);
+        $fileObject->method('getExtension')->willReturn('png');
+        $fileObject->method('getProperty')->willReturnMap([
+            ['width', 100],
+            ['height', 50],
+        ]);
+
+        $resource = new PlaceholderImageResource('#fff, #000');
+        $result = $resource->getFile('/test.png', 'fileadmin/test.png', $fileObject);
+
+        self::assertIsString($result);
+        self::assertNotEmpty($result);
+    }
+
+    #[Test]
     public function shortHexColorsAreAccepted(): void
     {
         $resource = new PlaceholderImageResource('#fff, #000');
