@@ -14,14 +14,26 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\EventListener;
 
 use Error;
+use KonradMichalik\Ttt\Attribute\WithEnvironment;
 use KonradMichalik\Typo3FileSync\EventListener\ResourceStorageInitializationEventListener;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
+use TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend;
+use TYPO3\CMS\Core\Cache\CacheManager;
+use TYPO3\CMS\Core\Cache\Frontend\VariableFrontend;
+use TYPO3\CMS\Core\Core\Environment;
+use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Log\LogManager;
+use TYPO3\CMS\Core\Resource\Capabilities;
+use TYPO3\CMS\Core\Resource\Driver\LocalDriver;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
-use TYPO3\CMS\Core\Resource\ResourceStorage;
+use TYPO3\CMS\Core\Resource\{ResourceFactory, ResourceStorage, StorageRepository};
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * ResourceStorageInitializationEventListenerTest.
@@ -98,7 +110,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         $storage->method('getName')->willReturn('Test');
         $storage->expects(self::never())->method('setDriver');
 
-        $existingFileSyncDriver = (new ReflectionClass(\KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver::class))
+        $existingFileSyncDriver = (new ReflectionClass(FileSyncDriver::class))
             ->newInstanceWithoutConstructor();
         (new ReflectionClass(ResourceStorage::class))->getProperty('driver')->setValue($storage, $existingFileSyncDriver);
 
@@ -151,5 +163,121 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         // i.e. driver construction was reached.
         $this->expectException(Error::class);
         $listener($event);
+    }
+
+    #[Test]
+    #[WithEnvironment(projectPath: 'self')]
+    public function listenerBuildsAndAssignsFileSyncDriverWhenRecordIsEnabled(): void
+    {
+        // GeneralUtility::xml2array() relies on a registered "runtime" cache.
+        $cacheManager = new CacheManager();
+        $cacheManager->setCacheConfigurations([
+            'runtime' => [
+                'frontend' => VariableFrontend::class,
+                'backend' => TransientMemoryBackend::class,
+            ],
+        ]);
+        GeneralUtility::setSingletonInstance(CacheManager::class, $cacheManager);
+
+        // LocalDriver only allows base paths within Environment::getProjectPath()
+        // or Environment::getPublicPath() (see GeneralUtility::isAllowedAbsPath()).
+        $basePath = Environment::getProjectPath().'/var/tests/file-sync-listener-test/';
+        if (!is_dir($basePath)) {
+            mkdir($basePath, 0777, true);
+        }
+
+        try {
+            $factory = $this->createFactory();
+
+            $originalDriver = new LocalDriver(['basePath' => $basePath]);
+            $originalDriver->processConfiguration();
+            $originalDriver->initialize();
+
+            $storage = $this->createMock(ResourceStorage::class);
+            $storage->method('getStorageRecord')->willReturn([
+                'uid' => 1,
+                'driver' => 'Local',
+                'tx_typo3_file_sync_enable' => 1,
+                'tx_typo3_file_sync_resources' => '<T3FlexForms><data><sheet index="sDEF"><language index="lDEF"><field index="resources"><el></el></field></language></sheet></data></T3FlexForms>',
+            ]);
+            $storage->method('getUid')->willReturn(1);
+            $storage->method('getName')->willReturn('Test');
+            $storage->method('getConfiguration')->willReturn(['basePath' => $basePath]);
+            $storage->method('getCapabilities')->willReturn(new Capabilities());
+            $storage->expects(self::once())->method('setDriver')->with(self::isInstanceOf(FileSyncDriver::class));
+
+            (new ReflectionClass(ResourceStorage::class))->getProperty('driver')->setValue($storage, $originalDriver);
+
+            $event = new AfterResourceStorageInitializationEvent($storage);
+
+            $listener = new ResourceStorageInitializationEventListener($factory);
+            $listener->setLogger(new NullLogger());
+            $listener($event);
+        } finally {
+            GeneralUtility::purgeInstances();
+            rmdir($basePath);
+        }
+    }
+
+    #[Test]
+    #[WithEnvironment(projectPath: 'self')]
+    public function listenerBuildsDriverFromConfigurationAndSwallowsInvalidBasePath(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
+            // A non-empty array marks the storage as configured; the empty
+            // identifier inside is skipped by createFromConfiguration(), so no
+            // resource handler needs to be registered for this test.
+            1 => [['identifier' => '']],
+        ];
+
+        $factory = $this->createFactory();
+
+        // A basePath that does not exist makes FileSyncDriver::processConfiguration()
+        // (inherited from LocalDriver) throw InvalidConfigurationException, which
+        // the listener deliberately swallows before still calling initialize()
+        // and setDriver() — LocalDriver::initialize() is a no-op, so the flow
+        // completes regardless of the earlier configuration failure.
+        $nonExistentBasePath = Environment::getProjectPath().'/var/tests/file-sync-listener-test-missing/';
+
+        $originalDriver = new LocalDriver(['basePath' => Environment::getProjectPath().'/var/']);
+        $originalDriver->processConfiguration();
+        $originalDriver->initialize();
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getStorageRecord')->willReturn([
+            'uid' => 1,
+            'driver' => 'Local',
+            'tx_typo3_file_sync_enable' => 0,
+            'tx_typo3_file_sync_resources' => '',
+        ]);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('getName')->willReturn('Test');
+        $storage->method('getConfiguration')->willReturn(['basePath' => $nonExistentBasePath]);
+        $storage->method('getCapabilities')->willReturn(new Capabilities());
+        $storage->expects(self::once())->method('setDriver')->with(self::isInstanceOf(FileSyncDriver::class));
+
+        (new ReflectionClass(ResourceStorage::class))->getProperty('driver')->setValue($storage, $originalDriver);
+
+        $event = new AfterResourceStorageInitializationEvent($storage);
+
+        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener->setLogger(new NullLogger());
+
+        try {
+            $listener($event);
+        } finally {
+            GeneralUtility::purgeInstances();
+        }
+    }
+
+    private function createFactory(): RemoteResourceCollectionFactory
+    {
+        return new RemoteResourceCollectionFactory(
+            $this->createMock(StorageRepository::class),
+            (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor(),
+            (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor(),
+            $this->createMock(ConnectionPool::class),
+            (new ReflectionClass(LogManager::class))->newInstanceWithoutConstructor(),
+        );
     }
 }
