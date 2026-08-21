@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Controller;
 
 use Error;
+use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Controller\StorageController;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
@@ -155,6 +156,18 @@ final class StorageControllerTest extends TestCase
         $this->createController()->deleteFilesAction($request);
     }
 
+    #[Test]
+    public function deleteFilesReturnsSuccessJsonWithDeletedCount(): void
+    {
+        $request = $this->createRequest($this->createBackendUser(true), ['storageUid' => 1, 'identifier' => 'remote_instance']);
+
+        $response = $this->createController($this->createFileRepositoryWithDeleteByIdentifierReturn(3))->deleteFilesAction($request);
+
+        self::assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        self::assertSame(['success' => true, 'message' => 'Deleted 3 file(s)', 'count' => 3], $body);
+    }
+
     private function createController(?FileRepository $fileRepository = null): StorageController
     {
         $fileRepository ??= (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
@@ -177,6 +190,41 @@ final class StorageControllerTest extends TestCase
 
         $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
         (new ReflectionClass(FileRepository::class))->getProperty('connectionPool')->setValue($fileRepository, $connectionPool);
+
+        return $fileRepository;
+    }
+
+    private function createFileRepositoryWithDeleteByIdentifierReturn(int $deletedCount): FileRepository
+    {
+        $rows = array_fill(0, $deletedCount, ['storage' => 1, 'identifier' => '/some/file.jpg']);
+
+        $result = $this->createMock(\Doctrine\DBAL\Result::class);
+        $result->method('fetchAllAssociative')->willReturn($rows);
+
+        $expressionBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder::class);
+        $expressionBuilder->method('eq')->willReturn('1=1');
+
+        $queryBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\QueryBuilder::class);
+        $queryBuilder->method('select')->willReturnSelf();
+        $queryBuilder->method('from')->willReturnSelf();
+        $queryBuilder->method('where')->willReturnSelf();
+        $queryBuilder->method('groupBy')->willReturnSelf();
+        $queryBuilder->method('expr')->willReturn($expressionBuilder);
+        $queryBuilder->method('createNamedParameter')->willReturn('1');
+        $queryBuilder->method('executeQuery')->willReturn($result);
+
+        $connectionPool = $this->createMock(\TYPO3\CMS\Core\Database\ConnectionPool::class);
+        $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
+
+        $storageRepository = $this->createMock(\TYPO3\CMS\Core\Resource\StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willThrowException(
+            new InvalidArgumentException('no such storage', 1234),
+        );
+
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+        $reflection = new ReflectionClass(FileRepository::class);
+        $reflection->getProperty('connectionPool')->setValue($fileRepository, $connectionPool);
+        $reflection->getProperty('storageRepository')->setValue($fileRepository, $storageRepository);
 
         return $fileRepository;
     }
