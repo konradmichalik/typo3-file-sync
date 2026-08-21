@@ -6,7 +6,8 @@ services:
             - EXTENSION_NAME=typo3-file-sync
             - PACKAGE_NAME=konradmichalik/typo3-file-sync
             - TYPO3_VERSIONS=13 14
-            - SYMLINK_EXCLUSIONS=.* Documentation Documentation-GENERATED-temp var vendor public
+            - SYMLINK_EXCLUSIONS=Documentation Documentation-GENERATED-temp var vendor public
+            - TYPO3_CONTEXT=Development
 
             # TYPO3 v13 config (legacy format)
             - TYPO3_INSTALL_DB_DRIVER=mysqli
@@ -19,7 +20,6 @@ services:
             - TYPO3_INSTALL_ADMIN_PASSWORD=Password1!
             - TYPO3_INSTALL_SITE_NAME=EXT:typo3-file-sync Dev Environment
             - TYPO3_INSTALL_SITE_SETUP_TYPE=site
-            - TYPO3_INSTALL_WEB_SERVER_CONFIG=apache
 
             # TYPO3 v13+ config
             - TYPO3_DB_DRIVER=mysqli
@@ -30,4 +30,3 @@ services:
             - TYPO3_SETUP_ADMIN_USERNAME=admin
             - TYPO3_SETUP_ADMIN_PASSWORD=Password1!
             - TYPO3_PROJECT_NAME=EXT:typo3-file-sync Dev Environment
-            - TYPO3_SERVER_TYPE=apache

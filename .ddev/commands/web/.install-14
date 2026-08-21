@@ -1,13 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -eo pipefail
 
+## #ddev-generated
 . .ddev/.setup/scripts/utils.sh
 
+# Pre-setup function for TYPO3 version 14
+# This function is part of the installation script and is responsible for performing
+# initial setup tasks before the main installation process begins.
 pre_setup 14
 
-_progress " ├─ Install test sitepackage"
-  composer config repositories.fixtures path "packages/$EXTENSION_KEY/Tests/Acceptance/Fixtures/packages/*" --working-dir "$BASE_PATH"
-  composer req test/sitepackage:'*@dev' \
-          --no-progress -n -d $BASE_PATH
-_done
+# Extra composer packages, TYPO3 settings etc. -> .ddev/.setup/project.sh
 
+# Function to perform post-setup tasks.
+# This function is called after the main installation process to finalize the setup.
+# It typically includes tasks such as configuring settings, modifying files, and other necessary adjustments.
 post_setup
