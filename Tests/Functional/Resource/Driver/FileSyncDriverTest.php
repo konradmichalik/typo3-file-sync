@@ -24,6 +24,7 @@ use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepo
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function is_resource;
 use function strlen;
 
 /**
@@ -247,6 +248,7 @@ final class FileSyncDriverTest extends FunctionalTestCase
 
         self::assertTrue($driver->fileExists('/missing.jpg'));
         self::assertSame('streamed-content', file_get_contents($this->basePath.'missing.jpg'));
+        self::assertFalse(is_resource($stream));
     }
 
     private function createDriver(RemoteResourceCollection $remoteResourceCollection): FileSyncDriver
