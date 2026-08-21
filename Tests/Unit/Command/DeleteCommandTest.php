@@ -72,13 +72,54 @@ final class DeleteCommandTest extends TestCase
         self::assertSame('', trim($tester->getDisplay()));
     }
 
+    #[Test]
+    public function executeDeletesAllIdentifiersFoundInDatabaseWhenAllOptionIsSet(): void
+    {
+        $tester = new CommandTester($this->createCommand(
+            [['uid' => 1, 'name' => 'Storage One']],
+            1,
+            [['count' => 1, 'tx_typo3_file_sync_identifier' => 'remote_instance']],
+        ));
+
+        $exitCode = $tester->execute(['--all' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Deleted 1 file(s) from "remote_instance" resource in storage "Storage One" (uid: 1)', $tester->getDisplay());
+    }
+
+    #[Test]
+    public function executeRestrictsToSingleStorageWhenStorageOptionIsSet(): void
+    {
+        $tester = new CommandTester($this->createCommand(
+            [['uid' => 1, 'name' => 'Storage One']],
+            3,
+        ));
+
+        $exitCode = $tester->execute(['--identifier' => ['remote_instance'], '--storage' => '1']);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Deleted 3 file(s) from "remote_instance" resource in storage "Storage One" (uid: 1)', $tester->getDisplay());
+    }
+
+    #[Test]
+    public function executeFallsBackToUnnamedStorageWhenStorageOptionIsNotEnabled(): void
+    {
+        $tester = new CommandTester($this->createCommand([], 2));
+
+        $exitCode = $tester->execute(['--identifier' => ['remote_instance'], '--storage' => '99']);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Deleted 2 file(s) from "remote_instance" resource in storage "" (uid: 99)', $tester->getDisplay());
+    }
+
     /**
-     * @param list<array{uid: int, name: string}> $enabledStorageRows
+     * @param list<array{uid: int, name: string}>                            $enabledStorageRows
+     * @param list<array{count: int, tx_typo3_file_sync_identifier: string}> $countByIdentifierRows
      */
-    private function createCommand(array $enabledStorageRows, int $deleteByIdentifierReturn): DeleteCommand
+    private function createCommand(array $enabledStorageRows, int $deleteByIdentifierReturn, array $countByIdentifierRows = []): DeleteCommand
     {
         $storageService = $this->createStorageService($enabledStorageRows);
-        $fileRepository = $this->createFileRepository($deleteByIdentifierReturn);
+        $fileRepository = $this->createFileRepository($deleteByIdentifierReturn, $countByIdentifierRows);
 
         $languageService = $this->createMock(LanguageService::class);
         $languageService->method('sL')->willReturnArgument(0);
@@ -120,7 +161,10 @@ final class DeleteCommandTest extends TestCase
         return $storageService;
     }
 
-    private function createFileRepository(int $deleteByIdentifierReturn): FileRepository
+    /**
+     * @param list<array{count: int, tx_typo3_file_sync_identifier: string}> $countByIdentifierRows
+     */
+    private function createFileRepository(int $deleteByIdentifierReturn, array $countByIdentifierRows = []): FileRepository
     {
         // deleteByIdentifier() first calls findByIdentifier() (a SELECT), then
         // loops calling storageRepository->getStorageObject() per row — we make
@@ -130,19 +174,32 @@ final class DeleteCommandTest extends TestCase
         $rows = array_fill(0, $deleteByIdentifierReturn, ['storage' => 1, 'identifier' => '/some/file.jpg']);
 
         $result = $this->createMock(\Doctrine\DBAL\Result::class);
-        $result->method('fetchAllAssociative')->willReturn($rows);
+        if ([] !== $countByIdentifierRows) {
+            // --all first calls countByIdentifier(), then deleteByIdentifier()
+            // calls findByIdentifier() once per identifier — both go through
+            // this same mocked query builder, so the two fetches are served
+            // in that call order.
+            $result->method('fetchAllAssociative')->willReturnOnConsecutiveCalls($countByIdentifierRows, $rows);
+        } else {
+            $result->method('fetchAllAssociative')->willReturn($rows);
+        }
 
         $expressionBuilder = $this->createMock(ExpressionBuilder::class);
         $expressionBuilder->method('eq')->willReturn('1=1');
+
+        $concreteQueryBuilder = $this->createMock(\Doctrine\DBAL\Query\QueryBuilder::class);
+        $concreteQueryBuilder->method('select')->willReturnSelf();
 
         $queryBuilder = $this->createMock(QueryBuilder::class);
         $queryBuilder->method('select')->willReturnSelf();
         $queryBuilder->method('from')->willReturnSelf();
         $queryBuilder->method('where')->willReturnSelf();
+        $queryBuilder->method('andWhere')->willReturnSelf();
         $queryBuilder->method('groupBy')->willReturnSelf();
         $queryBuilder->method('expr')->willReturn($expressionBuilder);
         $queryBuilder->method('createNamedParameter')->willReturn('1');
         $queryBuilder->method('executeQuery')->willReturn($result);
+        $queryBuilder->method('getConcreteQueryBuilder')->willReturn($concreteQueryBuilder);
 
         $connectionPool = $this->createMock(ConnectionPool::class);
         $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
