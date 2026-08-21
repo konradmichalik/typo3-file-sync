@@ -191,7 +191,7 @@ class MyHandler implements RemoteResourceInterface
 
 ## 🙏 Acknowledgments
 
-This project is inspired by the great [filefill](https://github.com/IchHabRecht/filefill) extension.
+This project is inspired by the great [filefill](https://github.com/IchHabRecht/filefill) extension. File Sync targets TYPO3 13.4 LTS and 14.0+, generates placeholder images (GD and SVG) fully locally without relying on an external service like Placehold.co, and adds CLI commands for resetting and deleting synced files.
 
 ## 🧑‍💻 Contributing
 
