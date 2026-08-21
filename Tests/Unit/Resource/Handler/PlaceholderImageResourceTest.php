@@ -265,6 +265,13 @@ final class PlaceholderImageResourceTest extends TestCase
 
         self::assertIsString($result);
         self::assertNotEmpty($result);
+
+        $image = imagecreatefromstring($result);
+        self::assertNotFalse($image);
+        $colorIndex = imagecolorat($image, 0, 0);
+        self::assertNotFalse($colorIndex);
+        $backgroundColor = imagecolorsforindex($image, $colorIndex);
+        self::assertSame(['red' => 255, 'green' => 255, 'blue' => 255, 'alpha' => 0], $backgroundColor);
     }
 
     #[Test]
