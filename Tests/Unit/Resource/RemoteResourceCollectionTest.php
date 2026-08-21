@@ -555,7 +555,7 @@ final class RemoteResourceCollectionTest extends TestCase
         $queryBuilder->method('set')->willReturnSelf();
         $queryBuilder->method('expr')->willReturn($expressionBuilder);
         $queryBuilder->method('createNamedParameter')->willReturn('1');
-        $queryBuilder->method('executeStatement')->willReturn(1);
+        $queryBuilder->expects(self::once())->method('executeStatement')->willReturn(1);
 
         $connectionPool = $this->createMock(ConnectionPool::class);
         $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
