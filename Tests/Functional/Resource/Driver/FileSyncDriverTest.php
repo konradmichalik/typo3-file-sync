@@ -24,6 +24,9 @@ use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepo
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function is_resource;
+use function strlen;
+
 /**
  * FileSyncDriverTest.
  *
@@ -142,6 +145,112 @@ final class FileSyncDriverTest extends FunctionalTestCase
         self::assertFalse($driver->folderExists('/nonexistent-folder/'));
     }
 
+    #[Test]
+    public function folderExistsFetchesRemoteFileWhenIdentifierLooksLikeAFile(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        self::assertFalse($driver->folderExists('/missing.jpg'));
+        self::assertFileExists($this->basePath.'missing.jpg');
+    }
+
+    #[Test]
+    public function fileExistsForEmptyIdentifierResolvesToBasePathWithoutRemoteFetch(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::never())->method('getFile');
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->expects(self::never())->method('getStorageObject');
+
+        $remoteResourceCollection = new RemoteResourceCollection(
+            [['identifier' => 'stub-handler', 'handler' => $handler]],
+            $storageRepository,
+            $this->get(ResourceFactory::class),
+            $this->get(FileRepository::class),
+            $this->get(ConnectionPool::class),
+        );
+
+        $driver = $this->createDriver($remoteResourceCollection);
+
+        // getAbsolutePath('') resolves directly to the driver's base path,
+        // which already exists on disk — ensureFileExists() returns before
+        // ever consulting the remote resource collection.
+        self::assertFalse($driver->fileExists(''));
+    }
+
+    #[Test]
+    public function getPublicUrlFetchesMissingFileThenReturnsOriginalDriverResult(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        $publicUrl = $driver->getPublicUrl('/missing.jpg');
+
+        self::assertFileExists($this->basePath.'missing.jpg');
+        self::assertNotNull($publicUrl);
+    }
+
+    #[Test]
+    public function getFileForLocalProcessingFetchesMissingFileThenReturnsLocalPath(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        $localPath = $driver->getFileForLocalProcessing('/missing.jpg', false);
+
+        self::assertFileExists($this->basePath.'missing.jpg');
+        self::assertSame('remote-file-content', file_get_contents($localPath));
+    }
+
+    #[Test]
+    public function getFileInfoByIdentifierFetchesMissingFileThenReturnsOriginalDriverResult(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        $info = $driver->getFileInfoByIdentifier('/missing.jpg');
+
+        self::assertFileExists($this->basePath.'missing.jpg');
+        self::assertSame('/missing.jpg', $info['identifier']);
+        self::assertSame(strlen('remote-file-content'), $info['size']);
+    }
+
+    #[Test]
+    public function getPermissionsFetchesMissingFileThenReturnsOriginalDriverResult(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        $permissions = $driver->getPermissions('/missing.jpg');
+
+        self::assertFileExists($this->basePath.'missing.jpg');
+        self::assertTrue($permissions['r']);
+    }
+
+    #[Test]
+    public function dumpFileContentsFetchesMissingFileThenDumpsOriginalDriverContent(): void
+    {
+        $driver = $this->createDriver($this->createRemoteResourceCollection('remote-file-content'));
+
+        ob_start();
+        $driver->dumpFileContents('/missing.jpg');
+        $output = ob_get_clean();
+
+        self::assertSame('remote-file-content', $output);
+    }
+
+    #[Test]
+    public function ensureFileExistsClosesResourceStreamContentAfterWritingIt(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        self::assertIsResource($stream);
+        fwrite($stream, 'streamed-content');
+        rewind($stream);
+
+        $driver = $this->createDriver($this->createRemoteResourceCollection($stream));
+
+        self::assertTrue($driver->fileExists('/missing.jpg'));
+        self::assertSame('streamed-content', file_get_contents($this->basePath.'missing.jpg'));
+        self::assertFalse(is_resource($stream));
+    }
+
     private function createDriver(RemoteResourceCollection $remoteResourceCollection): FileSyncDriver
     {
         $configuration = ['basePath' => $this->basePath];
@@ -157,7 +266,10 @@ final class FileSyncDriverTest extends FunctionalTestCase
         return $driver;
     }
 
-    private function createRemoteResourceCollection(string|false $handlerResult): RemoteResourceCollection
+    /**
+     * @param resource|string|false $handlerResult
+     */
+    private function createRemoteResourceCollection(mixed $handlerResult): RemoteResourceCollection
     {
         $handler = $this->createMock(RemoteResourceInterface::class);
         $handler->method('getFile')->willReturn($handlerResult);

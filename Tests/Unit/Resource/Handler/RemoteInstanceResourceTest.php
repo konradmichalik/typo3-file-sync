@@ -19,6 +19,7 @@ use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\StreamInterface;
 
 /**
  * RemoteInstanceResourceTest.
@@ -78,6 +79,34 @@ final class RemoteInstanceResourceTest extends TestCase
 
         $resource = new RemoteInstanceResource('https://example.com', $httpClient);
         self::assertFalse($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function getFileReturnsFalseWhenResponseBodyDetachReturnsNonResource(): void
+    {
+        $body = $this->createMock(StreamInterface::class);
+        $body->method('detach')->willReturn(null);
+
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('request')
+            ->willReturn(new Response(200, [], $body));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+
+        self::assertFalse($resource->getFile('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function constructorFallsBackToEmptyUrlPartsForUnparseableUrl(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::once())
+            ->method('request')
+            ->with('GET', 'https:/fileadmin/test.jpg')
+            ->willReturn(new Response(200));
+
+        $resource = new RemoteInstanceResource('http://:80', $httpClient);
+        $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
     }
 
     #[Test]

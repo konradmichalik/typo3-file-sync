@@ -82,6 +82,15 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
     }
 
     #[Test]
+    public function createFromConfigurationWrapsSingleFlatResourceConfiguration(): void
+    {
+        $factory = $this->createFactory();
+        $collection = $factory->createFromConfiguration(['identifier' => 'test_handler', 'configuration' => null]);
+
+        self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
+    }
+
+    #[Test]
     public function createFromConfigurationSkipsEmptyIdentifier(): void
     {
         $factory = $this->createFactory();

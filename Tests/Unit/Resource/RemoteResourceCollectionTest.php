@@ -22,7 +22,10 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepository};
+use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
+use TYPO3\CMS\Core\Database\Query\QueryBuilder;
+use TYPO3\CMS\Core\Resource\{File, ProcessedFile, ProcessedFileRepository, ResourceFactory, ResourceStorage, StorageRepository};
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * RemoteResourceCollectionTest.
@@ -33,6 +36,11 @@ use TYPO3\CMS\Core\Resource\{File, ResourceFactory, ResourceStorage, StorageRepo
 #[CoversClass(RemoteResourceCollection::class)]
 final class RemoteResourceCollectionTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        GeneralUtility::purgeInstances();
+    }
+
     #[Test]
     public function getReturnsContentFromFirstMatchingHandler(): void
     {
@@ -289,10 +297,10 @@ final class RemoteResourceCollectionTest extends TestCase
             'configuration' => serialize([]),
         ]);
 
-        $expressionBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder::class);
+        $expressionBuilder = $this->createMock(ExpressionBuilder::class);
         $expressionBuilder->method('eq')->willReturn('1=1');
 
-        $queryBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\QueryBuilder::class);
+        $queryBuilder = $this->createMock(QueryBuilder::class);
         $queryBuilder->method('select')->willReturnSelf();
         $queryBuilder->method('from')->willReturnSelf();
         $queryBuilder->method('where')->willReturnSelf();
@@ -336,10 +344,10 @@ final class RemoteResourceCollectionTest extends TestCase
         $queryResult = $this->createMock(\Doctrine\DBAL\Result::class);
         $queryResult->method('fetchAssociative')->willReturn(false);
 
-        $expressionBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder::class);
+        $expressionBuilder = $this->createMock(ExpressionBuilder::class);
         $expressionBuilder->method('eq')->willReturn('1=1');
 
-        $queryBuilder = $this->createMock(\TYPO3\CMS\Core\Database\Query\QueryBuilder::class);
+        $queryBuilder = $this->createMock(QueryBuilder::class);
         $queryBuilder->method('select')->willReturnSelf();
         $queryBuilder->method('from')->willReturnSelf();
         $queryBuilder->method('where')->willReturnSelf();
@@ -400,5 +408,158 @@ final class RemoteResourceCollectionTest extends TestCase
         $result = $collection->get('/test.jpg', 'fileadmin/test.jpg');
 
         self::assertNull($result);
+    }
+
+    #[Test]
+    public function getReturnsContentAndLogsSuccessAfterUpdatingIdentifier(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::once())->method('getFile')->willReturn('file-content');
+
+        $fileObject = $this->createMock(File::class);
+        $fileObject->method('getUid')->willReturn(42);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn($fileObject);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = new FileRepository(
+            $this->createFileRepositoryConnectionPool(),
+            $this->createMock(ProcessedFileRepository::class),
+            $this->createMock(StorageRepository::class),
+        );
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'test_handler', 'handler' => $handler]],
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $this->createMock(ConnectionPool::class),
+        );
+        $collection->setLogger(new NullLogger());
+
+        $result = $collection->get('/test.jpg', 'fileadmin/test.jpg');
+
+        self::assertSame('file-content', $result);
+    }
+
+    #[Test]
+    public function getReusesCachedFileObjectForSameFilePathAcrossDistinctIdentifiers(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::exactly(2))->method('getFile')->willReturn(false);
+
+        $fileObject = $this->createMock(File::class);
+        $fileObject->method('getUid')->willReturn(1);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->expects(self::once())->method('getFileByIdentifier')->willReturn($fileObject);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->expects(self::once())->method('getStorageObject')->willReturn($storage);
+
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'handler1', 'handler' => $handler]],
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $this->createMock(ConnectionPool::class),
+        );
+        $collection->setLogger(new NullLogger());
+
+        // Both calls share the same filePath but use distinct fileIdentifiers,
+        // so the negative cache (keyed by fileIdentifier) never short-circuits
+        // the second call — it must reach resolveFileObject(), whose filePath
+        // cache hit is confirmed by getStorageObject()/getFileByIdentifier()
+        // above being invoked only once in total.
+        self::assertNull($collection->get('/first-id.jpg', 'fileadmin/shared.jpg'));
+        self::assertNull($collection->get('/second-id.jpg', 'fileadmin/shared.jpg'));
+    }
+
+    #[Test]
+    public function getBuildsProcessedFileFromDatabaseRowWhenWithinProcessingFolder(): void
+    {
+        $originalFile = $this->createMock(File::class);
+
+        $resourceFactory = $this->createMock(ResourceFactory::class);
+        $resourceFactory->method('getFileObject')->with(1)->willReturn($originalFile);
+
+        $processedFile = $this->createMock(ProcessedFile::class);
+        GeneralUtility::addInstance(ProcessedFile::class, $processedFile);
+
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::once())->method('getFile')->willReturn('processed-content');
+
+        $queryResult = $this->createMock(\Doctrine\DBAL\Result::class);
+        $queryResult->method('fetchAssociative')->willReturn([
+            'original' => 1,
+            'task_type' => 'Preview',
+            'configuration' => serialize(['width' => 64]),
+        ]);
+
+        $expressionBuilder = $this->createMock(ExpressionBuilder::class);
+        $expressionBuilder->method('eq')->willReturn('1=1');
+
+        $queryBuilder = $this->createMock(QueryBuilder::class);
+        $queryBuilder->method('select')->willReturnSelf();
+        $queryBuilder->method('from')->willReturnSelf();
+        $queryBuilder->method('where')->willReturnSelf();
+        $queryBuilder->method('expr')->willReturn($expressionBuilder);
+        $queryBuilder->method('createNamedParameter')->willReturn('1');
+        $queryBuilder->method('executeQuery')->willReturn($queryResult);
+
+        $connectionPool = $this->createMock(ConnectionPool::class);
+        $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(true);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $fileRepository = (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor();
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'test_handler', 'handler' => $handler]],
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $connectionPool,
+        );
+        $collection->setLogger(new NullLogger());
+
+        $result = $collection->get('/processing/image.jpg', 'fileadmin/_processed_/image.jpg');
+
+        self::assertSame('processed-content', $result);
+    }
+
+    private function createFileRepositoryConnectionPool(): ConnectionPool
+    {
+        $expressionBuilder = $this->createMock(ExpressionBuilder::class);
+        $expressionBuilder->method('eq')->willReturn('1=1');
+
+        $queryBuilder = $this->createMock(QueryBuilder::class);
+        $queryBuilder->method('update')->willReturnSelf();
+        $queryBuilder->method('where')->willReturnSelf();
+        $queryBuilder->method('set')->willReturnSelf();
+        $queryBuilder->method('expr')->willReturn($expressionBuilder);
+        $queryBuilder->method('createNamedParameter')->willReturn('1');
+        $queryBuilder->expects(self::once())->method('executeStatement')->willReturn(1);
+
+        $connectionPool = $this->createMock(ConnectionPool::class);
+        $connectionPool->method('getQueryBuilderForTable')->willReturn($queryBuilder);
+
+        return $connectionPool;
     }
 }
