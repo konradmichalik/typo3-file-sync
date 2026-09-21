@@ -15,11 +15,16 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
 use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\StreamInterface;
+use ReflectionProperty;
+use RuntimeException;
+
+use function is_resource;
 
 /**
  * RemoteInstanceResourceTest.
@@ -231,5 +236,44 @@ final class RemoteInstanceResourceTest extends TestCase
 
         $resource = new RemoteInstanceResource('https://user:secret@example.com', $httpClient);
         $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function prefetchDoesNotThrowWhenARequestCannotBeSent(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('sendAsync')
+            ->willThrowException(new RuntimeException('boom'));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+
+        // A single request failing inside the pool must not escape
+        // prefetch() as an exception: this feature exists to keep image
+        // loading from breaking a page render, not to add a new way to
+        // break it. No assertion beyond "this call returns" is needed.
+        $resource->prefetch(['fileadmin/a.jpg']);
+
+        self::assertFalse($resource->getFile('/a.jpg', 'fileadmin/a.jpg'));
+    }
+
+    #[Test]
+    public function destructingWithUnconsumedBufferedResourcesClosesThem(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('sendAsync')
+            ->willReturn(Create::promiseFor(new Response(200, [], 'never read')));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+        $resource->prefetch(['fileadmin/never-read.jpg']);
+
+        $property = new ReflectionProperty($resource, 'prefetched');
+        $buffered = $property->getValue($resource);
+        self::assertCount(1, $buffered);
+        $stream = $buffered['fileadmin/never-read.jpg'];
+        self::assertIsResource($stream);
+
+        $resource->__destruct();
+
+        self::assertFalse(is_resource($stream));
     }
 }

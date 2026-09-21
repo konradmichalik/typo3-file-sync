@@ -20,11 +20,13 @@ use GuzzleHttp\Psr7\Request;
 use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, RemoteResourceInterface};
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
+use Throwable;
 use TYPO3\CMS\Core\Http\Client\GuzzleClientFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function array_filter;
+use function array_map;
 use function array_unique;
 use function array_values;
 use function is_array;
@@ -87,46 +89,79 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
         }
     }
 
+    public function __destruct()
+    {
+        // Deferred loading means some prefetched files are never emitted via
+        // getFile(): a leftover entry here is the expected steady state, not
+        // an error case, and nothing else owns these detached resources.
+        foreach ($this->prefetched as $stream) {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+        $this->prefetched = [];
+    }
+
     /**
      * @param list<string> $filePaths
      */
     public function prefetch(array $filePaths): void
     {
-        $filePaths = array_values(array_unique(array_filter($filePaths, static fn (string $path): bool => '' !== $path)));
+        // Normalized once, here: the buffer is keyed and later looked up
+        // (in getFile()) by the same leading-slash-stripped value, so a
+        // caller mixing '/fileadmin/x.jpg' and 'fileadmin/x.jpg' must not
+        // end up with two requests for one file and an unreachable buffer
+        // entry.
+        $filePaths = array_values(array_unique(array_filter(
+            array_map(static fn (string $path): string => ltrim($path, '/'), $filePaths),
+            static fn (string $path): bool => '' !== $path,
+        )));
         if ([] === $filePaths) {
             return;
         }
 
         $requests = function () use ($filePaths): Generator {
             foreach ($filePaths as $filePath) {
-                yield $filePath => new Request('GET', $this->url.ltrim($filePath, '/'));
+                yield $filePath => new Request('GET', $this->url.$filePath);
             }
         };
 
-        $pool = new Pool($this->httpClient, $requests(), [
-            'concurrency' => self::DEFAULT_CONCURRENCY,
-            'options' => $this->requestOptions,
-            'fulfilled' => function (ResponseInterface $response, string $filePath): void {
-                if (200 !== $response->getStatusCode()) {
-                    return;
-                }
+        try {
+            $pool = new Pool($this->httpClient, $requests(), [
+                'concurrency' => self::DEFAULT_CONCURRENCY,
+                'options' => $this->requestOptions,
+                'fulfilled' => function (ResponseInterface $response, string $filePath): void {
+                    if (200 !== $response->getStatusCode()) {
+                        return;
+                    }
 
-                // Same detach()-not-SINK reasoning as getFile(): keep the
-                // resource alive past Guzzle's own objects being collected.
-                $stream = $response->getBody()->detach();
-                if (is_resource($stream)) {
-                    rewind($stream);
-                    $this->prefetched[$filePath] = $stream;
-                }
-            },
-            'rejected' => function (mixed $reason, string $filePath): void {
-                $this->logger?->warning(
-                    sprintf('Prefetch of %s failed', $filePath),
-                );
-            },
-        ]);
+                    // Same detach()-not-SINK reasoning as getFile(): keep the
+                    // resource alive past Guzzle's own objects being collected.
+                    $stream = $response->getBody()->detach();
+                    if (is_resource($stream)) {
+                        rewind($stream);
+                        $this->prefetched[$filePath] = $stream;
+                    }
+                },
+                'rejected' => function (mixed $reason, string $filePath): void {
+                    $this->logger?->warning(
+                        sprintf('Prefetch of %s failed', $filePath),
+                    );
+                },
+            ]);
 
-        $pool->promise()->wait();
+            $pool->promise()->wait();
+        } catch (Throwable $e) {
+            // A single unparseable path (e.g. a MalformedUriException from a
+            // Request that can never be built) must not fail the whole
+            // batch: this feature exists to keep image loading from
+            // breaking a page render, not to add a new way to break it.
+            // Entries already buffered by earlier fulfilled requests stay
+            // valid.
+            $this->logger?->warning(
+                sprintf('Prefetch batch failed: %s', $e->getMessage()),
+            );
+        }
     }
 
     /**
@@ -134,17 +169,18 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
-        $buffered = $this->prefetched[ltrim($filePath, '/')] ?? null;
+        $normalizedPath = ltrim($filePath, '/');
+        $buffered = $this->prefetched[$normalizedPath] ?? null;
+        // Removed unconditionally, not just when a resource is found: a
+        // caller may already have read or closed this handle, and rewind()
+        // on a closed resource is fatal, so it is never rewound and reused.
+        // A second request for the same path goes over the wire again.
+        unset($this->prefetched[$normalizedPath]);
         if (is_resource($buffered)) {
-            // Removed rather than rewound: a caller may already have read or
-            // closed this handle, and rewind() on a closed resource is fatal.
-            // A second request for the same path goes over the wire again.
-            unset($this->prefetched[ltrim($filePath, '/')]);
-
             return $buffered;
         }
 
-        $url = $this->url.ltrim($filePath, '/');
+        $url = $this->url.$normalizedPath;
 
         try {
             // Guzzle spools the response body into its own php://temp stream

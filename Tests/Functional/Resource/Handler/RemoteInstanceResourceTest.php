@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
 
+use function count;
 use function is_resource;
 use function sprintf;
 use function strlen;
@@ -129,11 +130,43 @@ final class RemoteInstanceResourceTest extends TestCase
     #[Test]
     public function prefetchedFilesAreReturnedWithoutAFurtherRequest(): void
     {
+        self::resetHitLog();
+
         $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
         $subject->prefetch(['fileadmin/batch-1.jpg', 'fileadmin/batch-2.jpg']);
 
+        // The round trip must have happened during prefetch() itself. An
+        // empty prefetch() body would still make the getFile() assertions
+        // below pass, by fetching on demand instead, so this pins the
+        // timing rather than just the final byte content.
+        self::assertSame(1, self::countHitsFor('batch-1.jpg'));
+        self::assertSame(1, self::countHitsFor('batch-2.jpg'));
+
         self::assertSame('body-for-batch-1.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-1.jpg', 'fileadmin/batch-1.jpg')));
         self::assertSame('body-for-batch-2.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-2.jpg', 'fileadmin/batch-2.jpg')));
+
+        // getFile() must not have gone over the wire again for either path.
+        self::assertSame(1, self::countHitsFor('batch-1.jpg'));
+        self::assertSame(1, self::countHitsFor('batch-2.jpg'));
+    }
+
+    #[Test]
+    public function prefetchNormalizesLeadingSlashesIntoTheSameBufferKeyGetFileUses(): void
+    {
+        self::resetHitLog();
+
+        $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
+        $subject->prefetch(['/fileadmin/batch-1.jpg']);
+
+        // A leading slash must not make prefetch() store under a different
+        // key than getFile() looks up: a mismatch here would both miss the
+        // buffer (leaking the resource) and, combined with array_unique(),
+        // could request the same URL more than once per prefetch() call.
+        self::assertSame(1, self::countHitsFor('batch-1.jpg'));
+
+        self::assertSame('body-for-batch-1.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-1.jpg', 'fileadmin/batch-1.jpg')));
+
+        self::assertSame(1, self::countHitsFor('batch-1.jpg'));
     }
 
     #[Test]
@@ -148,11 +181,27 @@ final class RemoteInstanceResourceTest extends TestCase
     #[Test]
     public function aPrefetchedStreamIsHandedOutOnlyOnce(): void
     {
+        self::resetHitLog();
+
         $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
         $subject->prefetch(['fileadmin/batch-3.jpg']);
 
-        self::assertSame('body-for-batch-3.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg')));
-        self::assertSame('body-for-batch-3.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg')));
+        $first = $subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg');
+        self::assertIsResource($first);
+        self::assertSame('body-for-batch-3.jpg', stream_get_contents($first));
+
+        $second = $subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg');
+        self::assertIsResource($second);
+        self::assertSame('body-for-batch-3.jpg', stream_get_contents($second));
+
+        // Two distinct handles, not the same one rewound and handed out
+        // twice: reading a stream to EOF does not close it, so a rewind-
+        // and-reuse implementation would still pass the assertions above.
+        self::assertNotSame($first, $second);
+
+        // The second read only reproduced the same body because it went
+        // over the wire again, exactly once more.
+        self::assertSame(2, self::countHitsFor('batch-3.jpg'));
     }
 
     /**
@@ -166,6 +215,35 @@ final class RemoteInstanceResourceTest extends TestCase
             'redirect chain' => ['fileadmin/redirect-chain.jpg'],
             'gzip encoded' => ['fileadmin/gzip.jpg'],
         ];
+    }
+
+    /**
+     * The built-in server re-runs router.php from scratch for every
+     * request, so nothing in that process's memory survives between
+     * requests. A file under the system temp directory is the only way for
+     * a test to observe how many times a path actually reached the server.
+     */
+    private static function hitLogPath(): string
+    {
+        return sys_get_temp_dir().'/typo3-file-sync-batch-hits.log';
+    }
+
+    private static function resetHitLog(): void
+    {
+        @unlink(self::hitLogPath());
+    }
+
+    private static function countHitsFor(string $filename): int
+    {
+        $contents = @file_get_contents(self::hitLogPath());
+        if (false === $contents) {
+            return 0;
+        }
+
+        return count(array_filter(
+            explode(\PHP_EOL, $contents),
+            static fn (string $line): bool => $filename === $line,
+        ));
     }
 
     private static function findFreePort(): int
