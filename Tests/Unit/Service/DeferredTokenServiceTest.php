@@ -19,13 +19,12 @@ use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Crypto\HashService;
 
-
 /**
  * DeferredTokenServiceTest.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
  */
-
 #[CoversClass(DeferredTokenService::class)]
 final class DeferredTokenServiceTest extends TestCase
 {
