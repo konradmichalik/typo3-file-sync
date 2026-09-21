@@ -14,17 +14,21 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Functional\Service;
 
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Http\ServerRequest;
+use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function count;
 use function is_resource;
+use function preg_match;
 use function sprintf;
 
 /**
@@ -34,9 +38,15 @@ use function sprintf;
  * HTTP server, because everything this service does happens between FAL and
  * the remote: mocking either end would leave the interesting part untested.
  *
+ * One test here deliberately spans two middlewares' worth of the feature:
+ * it mints its token with DeferredImageMiddleware instead of by hand, so the
+ * URL this service answers with is checked against the very src attribute it
+ * has to replace. Nothing else in the suite crosses that seam.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
+#[CoversClass(DeferredImageMiddleware::class)]
 #[CoversClass(MaterializationService::class)]
 final class MaterializationServiceTest extends FunctionalTestCase
 {
@@ -47,6 +57,9 @@ final class MaterializationServiceTest extends FunctionalTestCase
     private static string $baseUrl = '';
 
     private string $basePath;
+
+    /** @var array<string, mixed> */
+    private array $serverBackup = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -99,6 +112,13 @@ final class MaterializationServiceTest extends FunctionalTestCase
         $GLOBALS['TYPO3_REQUEST'] = (new ServerRequest('https://example.com/'))
             ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
 
+        // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
+        // TYPO3 read the site path as "vendor/bin/". Pinning it is what lets
+        // a test assert the URL the browser is handed, and lets another move
+        // the whole site into a subdirectory.
+        $this->serverBackup = $_SERVER;
+        self::useSitePath('/');
+
         $this->basePath = Environment::getPublicPath().'/fileadmin/';
         GeneralUtility::mkdir_deep($this->basePath.'user_upload');
         GeneralUtility::mkdir_deep($this->basePath.'_processed_');
@@ -111,6 +131,8 @@ final class MaterializationServiceTest extends FunctionalTestCase
     protected function tearDown(): void
     {
         unset($GLOBALS['TYPO3_REQUEST']);
+        $_SERVER = $this->serverBackup;
+        GeneralUtility::flushInternalRuntimeCaches();
         GeneralUtility::rmdir($this->basePath, true);
         putenv('TYPO3_FILE_SYNC_REMOTE_URL');
         parent::tearDown();
@@ -123,9 +145,65 @@ final class MaterializationServiceTest extends FunctionalTestCase
 
         $result = $this->get(MaterializationService::class)->materialize([$token]);
 
-        self::assertArrayHasKey('url', $result[$token]);
-        self::assertStringContainsString('?v=', $result[$token]['url']);
+        // The shape matters, not just the presence of a key: this is the one
+        // value the browser consumes. A site-relative "fileadmin/..." would
+        // satisfy any weaker assertion and still resolve against the page
+        // the visitor is on, which is a 404 on every page but the root.
+        self::assertMatchesRegularExpression(
+            '#^/fileadmin/[^?\s]+\.jpg\?v=\d+$#',
+            $result[$token]['url'],
+        );
         self::assertSame('remote-body', file_get_contents($this->basePath.'user_upload/provisional.jpg'));
+    }
+
+    #[Test]
+    public function theRebuiltUrlCarriesTheSitePathOfASubdirectoryInstall(): void
+    {
+        self::useSitePath('/subdir/');
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertMatchesRegularExpression(
+            '#^/subdir/fileadmin/[^?\s]+\.jpg\?v=\d+$#',
+            $result[$token]['url'],
+        );
+    }
+
+    /**
+     * The only test that crosses a task boundary. The marking middleware and
+     * the materialization service each define what a provisional image URL
+     * looks like, and both sides were green while the two definitions did not
+     * meet: the middleware stripped a rooted src, the service answered with
+     * an unrooted one, and no browser ever swapped an image outside the site
+     * root.
+     */
+    #[Test]
+    public function aTokenMintedByTheMarkingMiddlewareYieldsAReplacementForTheSrcItMarked(): void
+    {
+        $src = '/fileadmin/_processed_/csm_provisional.jpg';
+        $marked = $this->markBody('<html><body><img src="'.$src.'" alt="deferred"></body></html>');
+
+        self::assertSame(1, preg_match('/data-file-sync="([^"]+)"/', $marked, $matches));
+
+        $token = $matches[1];
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertArrayHasKey('url', $result[$token], 'The minted token did not resolve to a rendition.');
+
+        // Prefix compatible: the replacement has to be reachable from the
+        // same document as the src it replaces, which means it carries the
+        // storage's public prefix exactly as the marked src did. That prefix
+        // is derived from the src rather than written out, so the marking
+        // side and the answering side cannot drift apart unnoticed.
+        //
+        // Compared at the storage root rather than at the rendition folder
+        // because without an image processor core hands back the original
+        // file as its own rendition, which is a different folder.
+        self::assertStringStartsWith(
+            substr($src, 0, (int) strpos($src, '/', 1) + 1),
+            $result[$token]['url'],
+        );
     }
 
     #[Test]
@@ -316,6 +394,25 @@ final class MaterializationServiceTest extends FunctionalTestCase
         return $targetName;
     }
 
+    /**
+     * Runs the marking middleware over a response body the way the frontend
+     * would, so the token under test is the one a real page would carry.
+     */
+    private function markBody(string $body): string
+    {
+        $stream = new Stream('php://temp', 'r+');
+        $stream->write($body);
+        $response = (new Response($stream, 200))->withHeader('Content-Type', 'text/html; charset=utf-8');
+
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->method('handle')->willReturn($response);
+
+        $request = (new ServerRequest('https://example.com/en/news/article-42/'))
+            ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+
+        return (string) $this->get(DeferredImageMiddleware::class)->process($request, $handler)->getBody();
+    }
+
     private function renditionExists(int $processedFileUid): bool
     {
         return (bool) $this->get(ConnectionPool::class)
@@ -378,6 +475,19 @@ final class MaterializationServiceTest extends FunctionalTestCase
             explode(\PHP_EOL, $contents),
             static fn (string $line): bool => $filename === $line,
         ));
+    }
+
+    /**
+     * TYPO3 derives the site path from the entry script and the request, both
+     * of which are meaningless under PHPUnit. Pointing them at an index.php
+     * below $sitePath is what a real installation at that path looks like.
+     */
+    private static function useSitePath(string $sitePath): void
+    {
+        $_SERVER['HTTP_HOST'] = 'example.com';
+        $_SERVER['SCRIPT_NAME'] = $sitePath.'index.php';
+        $_SERVER['REQUEST_URI'] = $sitePath;
+        GeneralUtility::flushInternalRuntimeCaches();
     }
 
     private static function findFreePort(): int

@@ -250,7 +250,11 @@ final class MaterializationService implements LoggerAwareInterface
 
             // The rendition is rebuilt behind the URL the browser already
             // holds, so only the query string makes it load the new bytes.
-            return ['url' => $publicUrl.'?v='.time()];
+            // SitePath::absolute() because this request is answered before
+            // site resolution: without TSFE nothing prefixes the leading
+            // slash, and the browser would resolve "fileadmin/..." against
+            // the page it is on rather than against the document root.
+            return ['url' => SitePath::absolute($publicUrl).'?v='.time()];
         } catch (Throwable $exception) {
             $this->logger?->warning(
                 sprintf('Rebuilding rendition %d failed: %s', $processedRow['uid'], $exception->getMessage()),
