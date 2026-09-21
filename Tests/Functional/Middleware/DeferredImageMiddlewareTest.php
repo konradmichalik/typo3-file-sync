@@ -181,7 +181,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     #[Test]
-    public function injectsTheScriptAndStyleExactlyOnce(): void
+    public function injectsTheScriptExactlyOnce(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
 
@@ -189,7 +189,22 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
         self::assertSame(10, substr_count($result, 'data-file-sync='));
         self::assertSame(1, substr_count($result, 'file-sync.js'));
-        self::assertSame(1, substr_count($result, '::view-transition-old'));
+        self::assertSame(1, substr_count($result, '<script type="module"'));
+    }
+
+    /**
+     * An inline style block would be dropped by the CSP header that
+     * csp-headers has already emitted further in, and the module guards
+     * prefers-reduced-motion itself, so nothing but the script is injected.
+     */
+    #[Test]
+    public function injectsNoInlineStyle(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertStringNotContainsString('<style', $result);
     }
 
     #[Test]

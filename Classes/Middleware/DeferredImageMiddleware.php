@@ -312,11 +312,15 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         return substr($body, 0, $position).$this->snippet().substr($body, $position);
     }
 
+    /**
+     * No inline style: the module consults prefers-reduced-motion itself
+     * before it starts a view transition, and an inline style block would
+     * be dropped by the CSP header that csp-headers has already emitted by
+     * the time this middleware sees the response.
+     */
     private function snippet(): string
     {
-        return '<style>@media (prefers-reduced-motion: no-preference){'
-            .'::view-transition-old(root),::view-transition-new(root){animation-duration:250ms}}</style>'
-            .'<script type="module" src="'.htmlspecialchars($this->assetUrl(), \ENT_QUOTES).'"></script>';
+        return '<script type="module" src="'.htmlspecialchars($this->assetUrl(), \ENT_QUOTES).'"></script>';
     }
 
     private function assetUrl(): string
