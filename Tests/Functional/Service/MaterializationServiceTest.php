@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Http\ServerRequest;
+use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
@@ -158,6 +159,57 @@ final class MaterializationServiceTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function theProvisionalRenditionIsDiscardedInsteadOfAdopted(): void
+    {
+        $targetName = $this->parkRenditionAtItsTargetName(10);
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        // Left in place, a provisional rendition is not simply overwritten.
+        // Core either adopts whatever already sits at the target name
+        // (LocalImageProcessor::checkForExistingTargetFile()) or deletes it
+        // mid-flight from needsReprocessing() and hands back a ProcessedFile
+        // already flagged deleted, whose getPublicUrl() is null. Discarding
+        // it up front is what makes the answer a real, current rendition.
+        self::assertArrayHasKey('url', $result[$token]);
+        self::assertStringNotContainsString($targetName, $result[$token]['url']);
+        self::assertFalse($this->renditionExists(10));
+    }
+
+    #[Test]
+    public function thePrefetchedBufferIsTheOneTheDriverReads(): void
+    {
+        self::resetHitLog();
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $this->get(MaterializationService::class)->materialize([$token]);
+
+        // prefetch() keys its buffer by the path the driver later looks up.
+        // Derive the two differently and the buffer is filled but never
+        // read: the driver silently falls back to fetching serially, and
+        // the only trace is a second request for the same file.
+        self::assertSame(1, self::countHitsFor('provisional.jpg'));
+    }
+
+    #[Test]
+    public function aRenditionOfAnAlreadyMaterializedOriginalIsNotThrottled(): void
+    {
+        $tokenService = $this->get(DeferredTokenService::class);
+        $service = $this->get(MaterializationService::class);
+
+        $service->materialize([$tokenService->create(10)]);
+
+        // Lazy loading sends a second batch on scroll. updateIdentifier()
+        // stamps tx_typo3_file_sync_tstamp on success exactly as damp()
+        // does on failure, so reading that stamp as "failed recently"
+        // would leave every further rendition a placeholder for 300s.
+        $retryToken = $tokenService->create(11);
+
+        self::assertArrayHasKey('url', $service->materialize([$retryToken])[$retryToken]);
+    }
+
+    #[Test]
     public function severalRenditionsOfOneOriginalCauseASingleRemoteFetch(): void
     {
         self::resetHitLog();
@@ -212,6 +264,37 @@ final class MaterializationServiceTest extends FunctionalTestCase
         $tokens = array_map(fn (int $i): string => $this->get(DeferredTokenService::class)->create($i), range(1, 51));
 
         self::assertSame([], $this->get(MaterializationService::class)->materialize($tokens));
+    }
+
+    /**
+     * TYPO3 names a rendition csm_<name>_<checksum>.<ext> and the image
+     * processor short-circuits on a file already sitting at that name. A
+     * fixture whose rendition is parked under any other name would let the
+     * discard step look inert when it is not.
+     */
+    private function parkRenditionAtItsTargetName(int $processedFileUid): string
+    {
+        $targetName = $this->get(ProcessedFileRepository::class)
+            ->findByUid($processedFileUid)
+            ->getTask()
+            ->getTargetFileName();
+
+        unlink($this->basePath.'_processed_/csm_provisional.jpg');
+        file_put_contents($this->basePath.'_processed_/'.$targetName, 'placeholder-derivative');
+        $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_processedfile')->update(
+            'sys_file_processedfile',
+            ['identifier' => '/_processed_/'.$targetName, 'name' => $targetName],
+            ['uid' => $processedFileUid],
+        );
+
+        return $targetName;
+    }
+
+    private function renditionExists(int $processedFileUid): bool
+    {
+        return (bool) $this->get(ConnectionPool::class)
+            ->getConnectionForTable('sys_file_processedfile')
+            ->count('uid', 'sys_file_processedfile', ['uid' => $processedFileUid]);
     }
 
     private function syncIdentifierOf(int $fileUid): string

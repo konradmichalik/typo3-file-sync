@@ -116,6 +116,52 @@ final class FileRepositoryTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function findSyncDataByUidsReturnsIdentifierAndTimestampKeyedByUid(): void
+    {
+        $result = $this->subject->findSyncDataByUids([1, 2]);
+
+        self::assertSame([
+            1 => ['identifier' => '', 'tstamp' => 0],
+            2 => ['identifier' => '/synced/baz.jpg', 'tstamp' => 1700000000],
+        ], $result);
+    }
+
+    #[Test]
+    public function findSyncDataByUidsReturnsEmptyArrayForAnEmptyUidList(): void
+    {
+        self::assertSame([], $this->subject->findSyncDataByUids([]));
+    }
+
+    #[Test]
+    public function findProcessedFilesByUidsKeysRowsByUid(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProcessedFilesByUids([110, 112]);
+
+        self::assertSame([110, 112], array_keys($result));
+        self::assertSame(101, (int) $result[110]['original']);
+        self::assertSame('Image.CropScaleMask', $result[110]['task_type']);
+    }
+
+    #[Test]
+    public function findProcessedFilesByUidsReturnsEmptyArrayForAnEmptyUidList(): void
+    {
+        self::assertSame([], $this->subject->findProcessedFilesByUids([]));
+    }
+
+    #[Test]
+    public function touchSyncTimestampStampsTheTimestampAndLeavesTheIdentifierAlone(): void
+    {
+        $this->subject->touchSyncTimestamp(2);
+
+        $result = $this->subject->findSyncData(2);
+
+        self::assertSame('/synced/baz.jpg', $result['identifier']);
+        self::assertGreaterThan(1700000000, $result['tstamp']);
+    }
+
+    #[Test]
     public function countProvisionalCountsOnlyFilesDeliveredByAFallbackHandler(): void
     {
         // setUp() already imports Fixtures/sys_file.csv, whose uid 2 also carries a

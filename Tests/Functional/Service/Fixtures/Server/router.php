@@ -19,16 +19,18 @@ declare(strict_types=1);
 
 $path = parse_url((string) $_SERVER['REQUEST_URI'], \PHP_URL_PATH);
 
+// Every request is recorded, misses included, so a test can prove both
+// that one original is fetched once however many renditions ask for it and
+// that a prefetch did not request the file under a key nobody reads. The
+// built-in server re-runs this script per request, so nothing in process
+// memory survives between requests.
+file_put_contents(
+    sys_get_temp_dir().'/typo3-file-sync-materialize-hits.log',
+    basename((string) $path).\PHP_EOL,
+    \FILE_APPEND | \LOCK_EX,
+);
+
 if ('/fileadmin/user_upload/provisional.jpg' === $path) {
-    // Recorded so a test can prove one original is fetched once no matter
-    // how many renditions of it a batch asks for. The built-in server
-    // re-runs this script per request, so nothing in process memory
-    // survives between requests.
-    file_put_contents(
-        sys_get_temp_dir().'/typo3-file-sync-materialize-hits.log',
-        basename((string) $path).\PHP_EOL,
-        \FILE_APPEND | \LOCK_EX,
-    );
     header('Content-Type: image/jpeg');
     echo 'remote-body';
 

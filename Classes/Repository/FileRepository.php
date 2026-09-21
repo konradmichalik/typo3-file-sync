@@ -217,6 +217,95 @@ final readonly class FileRepository
     }
 
     /**
+     * Batched sibling of findSyncData() for a whole materialization request.
+     *
+     * @param list<int> $fileUids
+     *
+     * @return array<int, array{identifier: string, tstamp: int}>
+     */
+    public function findSyncDataByUids(array $fileUids): array
+    {
+        if ([] === $fileUids) {
+            return [];
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $rows = $queryBuilder
+            ->select('uid', Configuration::FIELD_IDENTIFIER, Configuration::FIELD_TSTAMP)
+            ->from('sys_file')
+            ->where(
+                $queryBuilder->expr()->in(
+                    'uid',
+                    $queryBuilder->createNamedParameter($fileUids, ArrayParameterType::INTEGER),
+                ),
+            )
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['uid']] = [
+                'identifier' => (string) ($row[Configuration::FIELD_IDENTIFIER] ?? ''),
+                'tstamp' => (int) ($row[Configuration::FIELD_TSTAMP] ?? 0),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param list<int> $processedFileUids
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function findProcessedFilesByUids(array $processedFileUids): array
+    {
+        if ([] === $processedFileUids) {
+            return [];
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
+        $rows = $queryBuilder
+            ->select('uid', 'original', 'task_type', 'configuration')
+            ->from('sys_file_processedfile')
+            ->where(
+                $queryBuilder->expr()->in(
+                    'uid',
+                    $queryBuilder->createNamedParameter($processedFileUids, ArrayParameterType::INTEGER),
+                ),
+            )
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['uid']] = $row;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Stamps the sync timestamp without touching the identifier, which is
+     * still whatever the fallback chain last made it. Arms the damping
+     * window that keeps a file the remote cannot deliver from being
+     * retried on every page view.
+     */
+    public function touchSyncTimestamp(int $fileUid): void
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $queryBuilder->update('sys_file')
+            ->where(
+                $queryBuilder->expr()->eq(
+                    'uid',
+                    $queryBuilder->createNamedParameter($fileUid, ParameterType::INTEGER),
+                ),
+            )
+            ->set(Configuration::FIELD_TSTAMP, time(), true, ParameterType::INTEGER)
+            ->executeStatement();
+    }
+
+    /**
      * @param list<int> $storageUids
      */
     public function countProvisional(array $storageUids): int

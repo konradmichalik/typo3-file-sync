@@ -14,17 +14,15 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Service;
 
 use Closure;
-use Doctrine\DBAL\{ArrayParameterType, ParameterType};
-use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\{FetchMode, ResourceIdentifier};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use Throwable;
-use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, ResourceFactory, ResourceStorage};
 
+use function array_map;
 use function array_merge;
 use function array_unique;
 use function array_values;
@@ -66,7 +64,6 @@ final class MaterializationService implements LoggerAwareInterface
     public function __construct(
         private readonly DeferredTokenService $deferredTokenService,
         private readonly FetchMode $fetchMode,
-        private readonly ConnectionPool $connectionPool,
         private readonly ResourceFactory $resourceFactory,
         private readonly ProcessedFileRepository $processedFileRepository,
         private readonly FileRepository $fileRepository,
@@ -94,12 +91,15 @@ final class MaterializationService implements LoggerAwareInterface
             $uidsByToken[$token] = $uid;
         }
 
-        $processedRows = $this->loadProcessedFiles(array_values($uidsByToken));
-        $originalRows = $this->loadOriginals($processedRows);
+        $processedRows = $this->fileRepository->findProcessedFilesByUids(array_values($uidsByToken));
+        $syncData = $this->fileRepository->findSyncDataByUids(array_values(array_unique(array_map(
+            static fn (array $row): int => (int) $row['original'],
+            $processedRows,
+        ))));
 
         $pending = [];
         foreach ($uidsByToken as $token => $uid) {
-            $state = $this->classify($processedRows[$uid] ?? null, $originalRows);
+            $state = $this->classify($processedRows[$uid] ?? null, $syncData);
             if (is_array($state)) {
                 $pending[$token] = $state;
                 continue;
@@ -120,27 +120,28 @@ final class MaterializationService implements LoggerAwareInterface
     }
 
     /**
-     * @param array<string, mixed>|null        $processedRow
-     * @param array<int, array<string, mixed>> $originalRows
+     * @param array<string, mixed>|null                          $processedRow
+     * @param array<int, array{identifier: string, tstamp: int}> $syncData
      *
      * @return array<string, mixed>|string the processed file row, or the error key describing why it was dropped
      */
-    private function classify(?array $processedRow, array $originalRows): array|string
+    private function classify(?array $processedRow, array $syncData): array|string
     {
-        if (null === $processedRow) {
+        $original = null === $processedRow ? null : ($syncData[(int) $processedRow['original']] ?? null);
+        if (null === $processedRow || null === $original) {
             return 'invalid';
         }
 
-        $original = $originalRows[(int) $processedRow['original']] ?? null;
-        if (null === $original) {
-            return 'invalid';
+        // An original that already carries a materialized identifier is
+        // done, not throttled: its remaining renditions must still be
+        // rebuilt. tx_typo3_file_sync_tstamp is written by damp() on
+        // failure and by updateIdentifier() on success, so a fresh
+        // timestamp alone does not mean "failed recently".
+        if (in_array($original['identifier'], self::materializedIdentifiers(), true)) {
+            return $processedRow;
         }
 
-        if (time() - (int) $original[Configuration::FIELD_TSTAMP] < self::DAMPING_SECONDS) {
-            return 'throttled';
-        }
-
-        return $processedRow;
+        return time() - $original['tstamp'] < self::DAMPING_SECONDS ? 'throttled' : $processedRow;
     }
 
     /**
@@ -190,15 +191,14 @@ final class MaterializationService implements LoggerAwareInterface
     private function refetchOriginal(File $file, array $accepted): ?array
     {
         try {
-            if (!$this->isDelivered($file, $accepted)) {
-                // A provisional file on disk stops the driver from reaching
-                // for the remote, so it has to go before the fetch. An
-                // original a concurrent request already materialized is
-                // left alone: deleting it would throw away a real file.
-                $provisionalPath = $file->getForLocalProcessing(false);
-                if (is_file($provisionalPath)) {
-                    unlink($provisionalPath);
-                }
+            // getForLocalProcessing() is not a path getter: it runs through
+            // FileSyncDriver::ensureFileExists(), which fetches when the
+            // file is absent. The guard therefore has to be read after it,
+            // or a provisional-but-absent original would be downloaded for
+            // real here and unlinked on the next line.
+            $provisionalPath = $file->getForLocalProcessing(false);
+            if (!$this->isDelivered($file, $accepted) && is_file($provisionalPath)) {
+                unlink($provisionalPath);
             }
 
             if (is_file($file->getForLocalProcessing(false)) && $this->isDelivered($file, $accepted)) {
@@ -278,9 +278,6 @@ final class MaterializationService implements LoggerAwareInterface
      * resource identifiers count as materialized there. The render skips
      * exactly the handlers marked DeferrableResourceInterface, so those are
      * the ones whose delivery means the real file arrived.
-     * ResourceIdentifier::RemoteInstance is the one the extension ships and
-     * the one FileRepository's provisional queries key on; a project adding
-     * its own deferrable handler is picked up through the marker interface.
      *
      * @param array<int, File> $originals
      *
@@ -288,35 +285,84 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function prepareStorages(array $originals): array
     {
-        /** @var array<int, array{storage: ResourceStorage, paths: list<string>}> $batches */
+        /** @var array<int, array{storage: ResourceStorage, files: list<File>}> $batches */
         $batches = [];
         foreach ($originals as $file) {
-            $storage = $file->getStorage();
-            $batches[$storage->getUid()] ??= ['storage' => $storage, 'paths' => []];
-
-            $publicUrl = $file->getPublicUrl();
-            if (null !== $publicUrl && '' !== $publicUrl) {
-                $batches[$storage->getUid()]['paths'][] = $publicUrl;
+            try {
+                $storage = $file->getStorage();
+                $batches[$storage->getUid()] ??= ['storage' => $storage, 'files' => []];
+                $batches[$storage->getUid()]['files'][] = $file;
+            } catch (Throwable $exception) {
+                $this->logger?->warning(
+                    sprintf('Storage of file %d is unavailable: %s', $file->getUid(), $exception->getMessage()),
+                );
             }
         }
 
         $accepted = [];
         foreach ($batches as $storageUid => $batch) {
-            $accepted[$storageUid] = [ResourceIdentifier::RemoteInstance->value];
+            // A storage that cannot be prepared costs the batch its
+            // prefetch, never its answers: every token of that storage
+            // still runs, one serial fetch at a time.
+            $accepted[$storageUid] = self::materializedIdentifiers();
 
-            $driver = self::extractDriver($batch['storage']);
-            if (!$driver instanceof FileSyncDriver) {
-                continue;
+            try {
+                $accepted[$storageUid] = $this->prepareStorage($batch['storage'], $batch['files']);
+            } catch (Throwable $exception) {
+                $this->logger?->warning(
+                    sprintf('Prefetch for storage %d failed: %s', $storageUid, $exception->getMessage()),
+                );
             }
-
-            $driver->prefetch(array_values(array_unique($batch['paths'])));
-            $accepted[$storageUid] = array_values(array_unique(array_merge(
-                $accepted[$storageUid],
-                $driver->getDeferrableIdentifiers(),
-            )));
         }
 
         return $accepted;
+    }
+
+    /**
+     * @param list<File> $files
+     *
+     * @return list<string>
+     */
+    private function prepareStorage(ResourceStorage $storage, array $files): array
+    {
+        $driver = self::extractDriver($storage);
+        if (!$driver instanceof FileSyncDriver) {
+            return self::materializedIdentifiers();
+        }
+
+        $paths = [];
+        foreach ($files as $file) {
+            // Taken from the original driver, exactly as
+            // FileSyncDriver::ensureFileExists() does it. Going through
+            // File::getPublicUrl() would dispatch
+            // GeneratePublicUrlForResourceEvent, so a listener or a CDN
+            // base URL could produce a key the driver never looks up, and
+            // it would also fetch each file serially before the pool runs.
+            $path = $driver->getRemotePath($file->getIdentifier());
+            if (null !== $path && '' !== $path) {
+                $paths[] = $path;
+            }
+        }
+
+        $driver->prefetch(array_values(array_unique($paths)));
+
+        return array_values(array_unique(array_merge(
+            self::materializedIdentifiers(),
+            $driver->getDeferrableIdentifiers(),
+        )));
+    }
+
+    /**
+     * The identifiers that mean "materialized" without a storage in hand.
+     * prepareStorage() widens this with the storage's own deferrable
+     * handlers; this baseline is what FileRepository's provisional queries
+     * key on and all that is knowable before FAL is touched.
+     *
+     * @return list<string>
+     */
+    private static function materializedIdentifiers(): array
+    {
+        return [ResourceIdentifier::RemoteInstance->value];
     }
 
     private function resolveOriginal(int $fileUid): ?File
@@ -333,64 +379,6 @@ final class MaterializationService implements LoggerAwareInterface
     }
 
     /**
-     * @param list<int> $uids
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function loadProcessedFiles(array $uids): array
-    {
-        if ([] === $uids) {
-            return [];
-        }
-
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
-        $rows = $queryBuilder
-            ->select('uid', 'original', 'task_type', 'configuration')
-            ->from('sys_file_processedfile')
-            ->where(
-                $queryBuilder->expr()->in(
-                    'uid',
-                    $queryBuilder->createNamedParameter($uids, ArrayParameterType::INTEGER),
-                ),
-            )
-            ->executeQuery()
-            ->fetchAllAssociative();
-
-        return self::indexByUid($rows);
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $processedRows
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function loadOriginals(array $processedRows): array
-    {
-        $originalUids = array_values(array_unique(array_map(
-            static fn (array $row): int => (int) $row['original'],
-            $processedRows,
-        )));
-        if ([] === $originalUids) {
-            return [];
-        }
-
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
-        $rows = $queryBuilder
-            ->select('uid', Configuration::FIELD_TSTAMP)
-            ->from('sys_file')
-            ->where(
-                $queryBuilder->expr()->in(
-                    'uid',
-                    $queryBuilder->createNamedParameter($originalUids, ArrayParameterType::INTEGER),
-                ),
-            )
-            ->executeQuery()
-            ->fetchAllAssociative();
-
-        return self::indexByUid($rows);
-    }
-
-    /**
      * Arms the damping window and reports the failure in one step, so no
      * caller can return 'unavailable' without also blocking the retry.
      *
@@ -398,33 +386,9 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function damp(File $file): array
     {
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
-        $queryBuilder->update('sys_file')
-            ->where(
-                $queryBuilder->expr()->eq(
-                    'uid',
-                    $queryBuilder->createNamedParameter($file->getUid(), ParameterType::INTEGER),
-                ),
-            )
-            ->set(Configuration::FIELD_TSTAMP, time(), true, ParameterType::INTEGER)
-            ->executeStatement();
+        $this->fileRepository->touchSyncTimestamp($file->getUid());
 
         return ['error' => 'unavailable'];
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $rows
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private static function indexByUid(array $rows): array
-    {
-        $indexed = [];
-        foreach ($rows as $row) {
-            $indexed[(int) $row['uid']] = $row;
-        }
-
-        return $indexed;
     }
 
     /**

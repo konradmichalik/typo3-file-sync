@@ -144,6 +144,17 @@ final class FileSyncDriver extends LocalDriver
         return $this->remoteResourceCollection->getDeferrableIdentifiers();
     }
 
+    /**
+     * The key the remote handlers see for a file. Derived from the original
+     * driver rather than from the storage, so that no listener on
+     * GeneratePublicUrlForResourceEvent can make a prefetched buffer
+     * unreachable, and so that asking for the key does not itself fetch.
+     */
+    public function getRemotePath(string $fileIdentifier): ?string
+    {
+        return '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
+    }
+
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
         if ('' === $fileIdentifier) {
@@ -176,9 +187,7 @@ final class FileSyncDriver extends LocalDriver
             return;
         }
 
-        $filePath = '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
-
-        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $filePath ?? '');
+        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $this->getRemotePath($fileIdentifier) ?? '');
         if (null !== $fileContent) {
             $absoluteFilePath = $this->getAbsolutePath($fileIdentifier);
             GeneralUtility::mkdir_deep(dirname($absoluteFilePath));
