@@ -145,6 +145,37 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         self::assertSame(200, $response->getStatusCode());
     }
 
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function nonScalarTokenProvider(): array
+    {
+        return [
+            'nested array' => ['{"tokens":[["x"]]}'],
+            'object element' => ['{"tokens":[{"uid":1}]}'],
+            'null element' => ['{"tokens":[null]}'],
+            'one bad among good' => ['{"tokens":["1.deadbeef",["x"]]}'],
+        ];
+    }
+
+    /**
+     * Anything but a scalar used to reach strval(), which raises an "Array to
+     * string conversion" warning on a public unauthenticated endpoint and
+     * then materializes the token "Array".
+     */
+    #[Test]
+    #[DataProvider('nonScalarTokenProvider')]
+    public function rejectsATokenThatIsNotScalar(string $body): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', $body);
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'bad request']), (string) $response->getBody());
+    }
+
     #[Test]
     public function answersAWellFormedPostWithAJsonMap(): void
     {

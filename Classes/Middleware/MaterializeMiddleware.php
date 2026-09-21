@@ -19,10 +19,12 @@ use Psr\Http\Message\{ResponseFactoryInterface, ResponseInterface, ServerRequest
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Configuration\Features;
 
+use function array_filter;
 use function array_map;
 use function array_values;
 use function count;
 use function is_array;
+use function is_scalar;
 use function json_decode;
 use function json_encode;
 use function rtrim;
@@ -95,7 +97,16 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
             return null;
         }
 
-        return array_map(strval(...), array_values($tokens));
+        // This endpoint is public and unauthenticated, so it is handed
+        // whatever the caller wrote. An element that is itself an array
+        // would reach strval() and raise an "Array to string conversion"
+        // warning, which is a 500 on any install that has hardened
+        // exceptionalErrors, and would materialize the token "Array".
+        $scalars = array_filter($tokens, is_scalar(...));
+
+        return count($scalars) === count($tokens)
+            ? array_map(strval(...), array_values($scalars))
+            : null;
     }
 
     /**
