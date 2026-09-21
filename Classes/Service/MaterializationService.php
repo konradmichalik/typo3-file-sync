@@ -22,11 +22,13 @@ use Throwable;
 use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, ResourceFactory, ResourceStorage};
 
+use function array_filter;
 use function array_map;
 use function array_merge;
 use function array_unique;
 use function array_values;
 use function count;
+use function implode;
 use function in_array;
 use function is_array;
 use function is_file;
@@ -348,10 +350,27 @@ final class MaterializationService implements LoggerAwareInterface
             return self::materializedIdentifiers();
         }
 
+        $deferrable = $driver->getDeferrableIdentifiers();
         $accepted = array_values(array_unique(array_merge(
             self::materializedIdentifiers(),
-            $driver->getDeferrableIdentifiers(),
+            $deferrable,
         )));
+
+        // This is the one place that sees both definitions of "provisional":
+        // the one this service uses, which is every deferrable handler, and
+        // the one FileRepository queries with, which is the single identifier
+        // it can name in SQL. They agree only while there is one deferrable
+        // handler. Past that a file is delivered here and still provisional
+        // there, so the next render defers it again and the loop never ends.
+        if (count($deferrable) > 1) {
+            $this->logger?->warning(sprintf(
+                'Storage %d has %d deferrable resource handlers (%s). Only "%s" counts as materialized in the database, so the others are deferred again on every render. Implementing DeferrableResourceInterface outside this extension is not supported.',
+                $storage->getUid(),
+                count($deferrable),
+                implode(', ', $deferrable),
+                ResourceIdentifier::RemoteInstance->value,
+            ));
+        }
 
         $paths = [];
         foreach ($files as $file) {
@@ -368,13 +387,13 @@ final class MaterializationService implements LoggerAwareInterface
             // GeneratePublicUrlForResourceEvent, so a listener or a CDN
             // base URL could produce a key the driver never looks up, and
             // it would also fetch each file serially before the pool runs.
-            $path = $driver->getRemotePath($file->getIdentifier()) ?? '';
-            if ('' !== $path) {
-                $paths[] = $path;
-            }
+            $paths[] = $driver->getRemotePath($file->getIdentifier()) ?? '';
         }
 
-        $driver->prefetch(array_values(array_unique($paths)));
+        $driver->prefetch(array_values(array_unique(array_filter(
+            $paths,
+            static fn (string $path): bool => '' !== $path,
+        ))));
 
         return $accepted;
     }

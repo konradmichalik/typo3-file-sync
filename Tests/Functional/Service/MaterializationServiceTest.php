@@ -15,10 +15,12 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Service;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
+use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
-use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Log\AbstractLogger;
+use Stringable;
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
@@ -26,9 +28,12 @@ use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function array_filter;
+use function array_values;
 use function count;
 use function is_resource;
 use function preg_match;
+use function str_contains;
 use function sprintf;
 
 /**
@@ -375,6 +380,43 @@ final class MaterializationServiceTest extends FunctionalTestCase
         }
     }
 
+    /**
+     * DeferrableResourceInterface is documented as not being an extension
+     * point, because this service and FileRepository hold two definitions of
+     * "provisional" that agree only while one handler is marked deferrable.
+     * The day a project ignores that, the image is materialized here and
+     * deferred again by the next render, forever. A log line is what makes
+     * that visible instead of silent.
+     */
+    #[Test]
+    public function aSecondDeferrableHandlerOnAStorageIsReportedAsUnsupported(): void
+    {
+        $this->registerASecondDeferrableHandler();
+
+        $logger = new class extends AbstractLogger {
+            /** @var list<string> */
+            public array $messages = [];
+
+            public function log(mixed $level, string|Stringable $message, array $context = []): void
+            {
+                $this->messages[] = (string) $message;
+            }
+        };
+
+        $service = $this->get(MaterializationService::class);
+        $service->setLogger($logger);
+        $service->materialize([$this->get(DeferredTokenService::class)->create(10)]);
+
+        $warnings = array_values(array_filter(
+            $logger->messages,
+            static fn (string $message): bool => str_contains($message, 'deferrable resource handlers'),
+        ));
+
+        self::assertCount(1, $warnings);
+        self::assertStringContainsString('second_remote', $warnings[0]);
+        self::assertStringContainsString('DeferrableResourceInterface', $warnings[0]);
+    }
+
     #[Test]
     public function anInvalidTokenYieldsAnErrorEntryRatherThanAnException(): void
     {
@@ -435,6 +477,31 @@ final class MaterializationServiceTest extends FunctionalTestCase
         );
 
         return $targetName;
+    }
+
+    /**
+     * Points the storage at a second handler that is also deferrable. Its
+     * class is RemoteInstanceResource again, because what the warning reacts
+     * to is a second deferrable identifier on one storage, not a particular
+     * implementation. Registering it through EXTCONF means blanking the
+     * record's own resource field, which is what makes that path win.
+     */
+    private function registerASecondDeferrableHandler(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER]['second_remote'] = [
+            'title' => 'Second Remote',
+            'handler' => RemoteInstanceResource::class,
+        ];
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][9] = [
+            ['identifier' => 'remote_instance', 'configuration' => self::$baseUrl],
+            ['identifier' => 'second_remote', 'configuration' => self::$baseUrl],
+        ];
+
+        $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_storage')->update(
+            'sys_file_storage',
+            [Configuration::FIELD_RESOURCES => ''],
+            ['uid' => 9],
+        );
     }
 
     /**
