@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Functional\Configuration;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
@@ -24,6 +24,7 @@ use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
+#[CoversClass(Configuration::class)]
 final class StorageFieldTest extends FunctionalTestCase
 {
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
