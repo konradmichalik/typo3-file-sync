@@ -33,8 +33,8 @@ use function array_values;
 use function count;
 use function is_resource;
 use function preg_match;
-use function str_contains;
 use function sprintf;
+use function str_contains;
 
 /**
  * MaterializationServiceTest.

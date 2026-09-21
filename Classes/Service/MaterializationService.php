@@ -34,7 +34,6 @@ use function is_array;
 use function is_file;
 use function sprintf;
 use function time;
-use function unlink;
 use function unserialize;
 
 /**

@@ -166,7 +166,13 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] = tru
 
 A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required.
 
-The swap is injected as an external `<script type="module">` tag that carries no nonce, so it only runs where `script-src` is unset and `default-src` covers it. TYPO3's own default frontend content security policy sets `script-src` to a nonce proxy, so on any site with that policy enabled the injected tag is blocked and this feature does nothing there.
+The swap is injected as an external `<script type="module">` tag that carries no nonce, so it only runs where `script-src` is unset and `default-src` covers it. TYPO3's own default frontend content security policy sets `script-src` to a nonce proxy, so on any site with that policy enabled the injected tag is blocked and this feature does nothing there. That policy only applies once the core feature toggle `security.frontend.enforceContentSecurityPolicy` is switched on, and it ships off, so the block is the exception rather than the default.
+
+Known limitations:
+
+- Only the `src` of an `<img>` is rewritten. `srcset` and `<source>` are left alone, so the swap does nothing for `<picture>` and responsive image markup.
+- At most 50 images are materialized per page view, in document order with the visible ones first. There is no second pass on scroll, so anything past that limit stays a placeholder until the page is reloaded.
+- A storage with deferred loading enabled needs a non-deferrable fallback handler, such as the placeholder image generator, configured alongside the remote one. Without it the render has nothing left to answer with and produces no file at all rather than a placeholder.
 
 > [!WARNING]
 > This feature is experimental. The JSON contract of the materialize endpoint and the `data-file-sync` attribute name may change without a major release.
