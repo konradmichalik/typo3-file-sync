@@ -13,9 +13,10 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Repository;
 
-use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\{ArrayParameterType, ParameterType};
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, StorageRepository};
 
@@ -213,5 +214,84 @@ final readonly class FileRepository
         }
 
         return count($rows);
+    }
+
+    /**
+     * @param list<int> $storageUids
+     */
+    public function countProvisional(array $storageUids): int
+    {
+        if ([] === $storageUids) {
+            return 0;
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $expressionBuilder = $queryBuilder->expr();
+
+        return (int) $queryBuilder->count('*')
+            ->from('sys_file')
+            ->where(
+                $expressionBuilder->in(
+                    'storage',
+                    $queryBuilder->createNamedParameter($storageUids, ArrayParameterType::INTEGER),
+                ),
+                $expressionBuilder->neq(
+                    Configuration::FIELD_IDENTIFIER,
+                    $queryBuilder->createNamedParameter(''),
+                ),
+                $expressionBuilder->neq(
+                    Configuration::FIELD_IDENTIFIER,
+                    $queryBuilder->createNamedParameter(ResourceIdentifier::RemoteInstance->value),
+                ),
+            )
+            ->executeQuery()
+            ->fetchOne();
+    }
+
+    /**
+     * @param list<int>    $storageUids
+     * @param list<string> $identifiers
+     *
+     * @return array<string, int>
+     */
+    public function findProvisionalProcessedFiles(array $storageUids, array $identifiers): array
+    {
+        if ([] === $storageUids || [] === $identifiers) {
+            return [];
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
+        $expressionBuilder = $queryBuilder->expr();
+        $rows = $queryBuilder
+            ->select('p.uid', 'p.identifier')
+            ->from('sys_file_processedfile', 'p')
+            ->innerJoin('p', 'sys_file', 'f', $expressionBuilder->eq('f.uid', 'p.original'))
+            ->where(
+                $expressionBuilder->in(
+                    'p.storage',
+                    $queryBuilder->createNamedParameter($storageUids, ArrayParameterType::INTEGER),
+                ),
+                $expressionBuilder->in(
+                    'p.identifier',
+                    $queryBuilder->createNamedParameter($identifiers, ArrayParameterType::STRING),
+                ),
+                $expressionBuilder->neq(
+                    'f.'.Configuration::FIELD_IDENTIFIER,
+                    $queryBuilder->createNamedParameter(''),
+                ),
+                $expressionBuilder->neq(
+                    'f.'.Configuration::FIELD_IDENTIFIER,
+                    $queryBuilder->createNamedParameter(ResourceIdentifier::RemoteInstance->value),
+                ),
+            )
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(string) $row['identifier']] = (int) $row['uid'];
+        }
+
+        return $result;
     }
 }

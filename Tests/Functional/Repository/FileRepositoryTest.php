@@ -114,4 +114,40 @@ final class FileRepositoryTest extends FunctionalTestCase
 
         self::assertSame(1, $count);
     }
+
+    #[Test]
+    public function countProvisionalCountsOnlyFilesDeliveredByAFallbackHandler(): void
+    {
+        // setUp() already imports Fixtures/sys_file.csv, whose uid 2 also carries a
+        // non-empty, non-remote-instance identifier and therefore counts as
+        // provisional too. Assert the delta so this test does not depend on that
+        // unrelated fixture's contents.
+        $baselineCount = $this->subject->countProvisional([1]);
+
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame($baselineCount + 1, $this->subject->countProvisional([1]));
+    }
+
+    #[Test]
+    public function findProvisionalProcessedFilesMapsIdentifiersToUids(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProvisionalProcessedFiles([1], [
+            '/_processed_/a/b/csm_provisional_aaa.jpg',
+            '/_processed_/a/b/csm_real_bbb.jpg',
+            '/_processed_/a/b/csm_untouched_ccc.jpg',
+        ]);
+
+        self::assertSame(['/_processed_/a/b/csm_provisional_aaa.jpg' => 110], $result);
+    }
+
+    #[Test]
+    public function findProvisionalProcessedFilesReturnsEmptyArrayForAnEmptyIdentifierList(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame([], $this->subject->findProvisionalProcessedFiles([1], []));
+    }
 }
