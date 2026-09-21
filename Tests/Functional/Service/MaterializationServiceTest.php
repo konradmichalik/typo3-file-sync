@@ -178,6 +178,25 @@ final class MaterializationServiceTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function anOriginalMissingFromDiskIsFetchedOnceRatherThanDownloadedAndDeleted(): void
+    {
+        // Nothing pre-seeded here: this is the state the driver reaches
+        // whenever a provisional original was already cleaned off disk.
+        unlink($this->basePath.'user_upload/provisional.jpg');
+        self::resetHitLog();
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        // getForLocalProcessing() fetches when the file is absent, so a
+        // delete guard read before it downloads the real original and
+        // unlinks it again. prefetch() hands each buffered stream out
+        // once, so recovering from that costs a second trip over the wire.
+        self::assertSame(1, self::countHitsFor('provisional.jpg'));
+        self::assertArrayHasKey('url', $result[$token]);
+    }
+
+    #[Test]
     public function thePrefetchedBufferIsTheOneTheDriverReads(): void
     {
         self::resetHitLog();
@@ -199,14 +218,21 @@ final class MaterializationServiceTest extends FunctionalTestCase
         $service = $this->get(MaterializationService::class);
 
         $service->materialize([$tokenService->create(10)]);
+        self::resetHitLog();
 
         // Lazy loading sends a second batch on scroll. updateIdentifier()
         // stamps tx_typo3_file_sync_tstamp on success exactly as damp()
         // does on failure, so reading that stamp as "failed recently"
         // would leave every further rendition a placeholder for 300s.
         $retryToken = $tokenService->create(11);
+        $second = $service->materialize([$retryToken]);
 
-        self::assertArrayHasKey('url', $service->materialize([$retryToken])[$retryToken]);
+        self::assertArrayHasKey('url', $second[$retryToken]);
+
+        // And letting the token through must not mean downloading the
+        // original again: it is already the real file on disk, so the
+        // second batch has nothing to fetch for it.
+        self::assertSame(0, self::countHitsFor('provisional.jpg'));
     }
 
     #[Test]

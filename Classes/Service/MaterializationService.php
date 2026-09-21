@@ -116,7 +116,7 @@ final class MaterializationService implements LoggerAwareInterface
         // earlier would keep handing out placeholders instead of fetching.
         $this->fetchMode->forceSynchronous();
 
-        return $results + $this->materializeAll($pending);
+        return $results + $this->materializeAll($pending, $syncData);
     }
 
     /**
@@ -145,11 +145,12 @@ final class MaterializationService implements LoggerAwareInterface
     }
 
     /**
-     * @param array<string, array<string, mixed>> $pending
+     * @param array<string, array<string, mixed>>                $pending
+     * @param array<int, array{identifier: string, tstamp: int}> $syncData
      *
      * @return array<string, array{url: string}|array{error: string}>
      */
-    private function materializeAll(array $pending): array
+    private function materializeAll(array $pending, array $syncData): array
     {
         $results = [];
         $files = [];
@@ -167,7 +168,7 @@ final class MaterializationService implements LoggerAwareInterface
         // Grouped by original, not by token: srcset routinely puts several
         // renditions of one picture on a page, and fetching per rendition
         // would delete a real file this batch just paid to download.
-        $accepted = $this->prepareStorages($originals);
+        $accepted = $this->prepareStorages($originals, $syncData);
         $failures = [];
         foreach ($originals as $fileUid => $file) {
             $failure = $this->refetchOriginal($file, $accepted[$file->getStorage()->getUid()] ?? []);
@@ -279,11 +280,12 @@ final class MaterializationService implements LoggerAwareInterface
      * exactly the handlers marked DeferrableResourceInterface, so those are
      * the ones whose delivery means the real file arrived.
      *
-     * @param array<int, File> $originals
+     * @param array<int, File>                                   $originals
+     * @param array<int, array{identifier: string, tstamp: int}> $syncData
      *
      * @return array<int, list<string>> accepted resource identifiers per storage uid
      */
-    private function prepareStorages(array $originals): array
+    private function prepareStorages(array $originals, array $syncData): array
     {
         /** @var array<int, array{storage: ResourceStorage, files: list<File>}> $batches */
         $batches = [];
@@ -307,7 +309,7 @@ final class MaterializationService implements LoggerAwareInterface
             $accepted[$storageUid] = self::materializedIdentifiers();
 
             try {
-                $accepted[$storageUid] = $this->prepareStorage($batch['storage'], $batch['files']);
+                $accepted[$storageUid] = $this->prepareStorage($batch['storage'], $batch['files'], $syncData);
             } catch (Throwable $exception) {
                 $this->logger?->warning(
                     sprintf('Prefetch for storage %d failed: %s', $storageUid, $exception->getMessage()),
@@ -319,37 +321,47 @@ final class MaterializationService implements LoggerAwareInterface
     }
 
     /**
-     * @param list<File> $files
+     * @param list<File>                                         $files
+     * @param array<int, array{identifier: string, tstamp: int}> $syncData
      *
      * @return list<string>
      */
-    private function prepareStorage(ResourceStorage $storage, array $files): array
+    private function prepareStorage(ResourceStorage $storage, array $files, array $syncData): array
     {
         $driver = self::extractDriver($storage);
         if (!$driver instanceof FileSyncDriver) {
             return self::materializedIdentifiers();
         }
 
+        $accepted = array_values(array_unique(array_merge(
+            self::materializedIdentifiers(),
+            $driver->getDeferrableIdentifiers(),
+        )));
+
         $paths = [];
         foreach ($files as $file) {
+            // An original that is already the real file has nothing to
+            // download. Without this the next lazy-load batch would fetch
+            // every picture the previous one just materialized again.
+            if (in_array($syncData[$file->getUid()]['identifier'] ?? '', $accepted, true)) {
+                continue;
+            }
+
             // Taken from the original driver, exactly as
             // FileSyncDriver::ensureFileExists() does it. Going through
             // File::getPublicUrl() would dispatch
             // GeneratePublicUrlForResourceEvent, so a listener or a CDN
             // base URL could produce a key the driver never looks up, and
             // it would also fetch each file serially before the pool runs.
-            $path = $driver->getRemotePath($file->getIdentifier());
-            if (null !== $path && '' !== $path) {
+            $path = $driver->getRemotePath($file->getIdentifier()) ?? '';
+            if ('' !== $path) {
                 $paths[] = $path;
             }
         }
 
         $driver->prefetch(array_values(array_unique($paths)));
 
-        return array_values(array_unique(array_merge(
-            self::materializedIdentifiers(),
-            $driver->getDeferrableIdentifiers(),
-        )));
+        return $accepted;
     }
 
     /**
