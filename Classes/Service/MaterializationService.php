@@ -53,7 +53,7 @@ final class MaterializationService implements LoggerAwareInterface
      * render catching up, it is an attempt to make this instance hammer
      * the remote on demand.
      */
-    private const MAX_TOKENS = 50;
+    public const MAX_TOKENS = 50;
 
     /**
      * How long a file the remote could not deliver stays untouched. Without

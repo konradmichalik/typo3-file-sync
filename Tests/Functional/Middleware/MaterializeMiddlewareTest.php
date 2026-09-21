@@ -15,6 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
+use KonradMichalik\Typo3FileSync\Service\MaterializationService;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
@@ -22,6 +23,7 @@ use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function array_fill;
 use function json_decode;
 use function json_encode;
 
@@ -112,6 +114,35 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
 
         self::assertSame(400, $response->getStatusCode());
+    }
+
+    /**
+     * The one branch of the 400 guard the provider above cannot reach, and
+     * the reason the batch limit has to be MaterializationService's rather
+     * than a copy: a drift between the two answers every full page with 400.
+     */
+    #[Test]
+    public function rejectsABatchLargerThanTheServiceAccepts(): void
+    {
+        $this->enableFeature();
+        $tokens = array_fill(0, MaterializationService::MAX_TOKENS + 1, '9999.deadbeef');
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['tokens' => $tokens]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(400, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function acceptsABatchOfExactlyTheAllowedSize(): void
+    {
+        $this->enableFeature();
+        $tokens = array_fill(0, MaterializationService::MAX_TOKENS, '9999.deadbeef');
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['tokens' => $tokens]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
     }
 
     #[Test]

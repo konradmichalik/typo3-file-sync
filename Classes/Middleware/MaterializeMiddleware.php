@@ -42,8 +42,6 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
 {
     private const PATH = '/tx-file-sync/materialize';
 
-    private const MAX_TOKENS = 50;
-
     public function __construct(
         private Features $features,
         private MaterializationService $materializationService,
@@ -75,13 +73,29 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
             return $this->json(['error' => 'method not allowed'], 405);
         }
 
-        $payload = json_decode((string) $request->getBody(), true);
-        $tokens = is_array($payload) ? ($payload['tokens'] ?? null) : null;
-        if (!is_array($tokens) || [] === $tokens || count($tokens) > self::MAX_TOKENS) {
+        $tokens = self::readTokens(json_decode((string) $request->getBody(), true));
+        if (null === $tokens) {
             return $this->json(['error' => 'bad request'], 400);
         }
 
-        return $this->json($this->materializationService->materialize(array_map(strval(...), array_values($tokens))));
+        return $this->json($this->materializationService->materialize($tokens));
+    }
+
+    /**
+     * The batch limit is MaterializationService's, not this middleware's: two
+     * copies of it drift into a browser that posts fifty tokens and a server
+     * that answers 400.
+     *
+     * @return list<string>|null null when the payload is not a usable batch
+     */
+    private static function readTokens(mixed $payload): ?array
+    {
+        $tokens = is_array($payload) ? ($payload['tokens'] ?? null) : null;
+        if (!is_array($tokens) || [] === $tokens || count($tokens) > MaterializationService::MAX_TOKENS) {
+            return null;
+        }
+
+        return array_map(strval(...), array_values($tokens));
     }
 
     /**
