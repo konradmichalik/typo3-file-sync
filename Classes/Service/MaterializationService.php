@@ -13,13 +13,11 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Service;
 
-use Closure;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\{FetchMode, ResourceIdentifier};
+use KonradMichalik\Typo3FileSync\Resource\{FetchMode, ResourceIdentifier, StorageDriver};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use Throwable;
-use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, ResourceFactory, ResourceStorage};
 
 use function array_filter;
@@ -344,7 +342,7 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function prepareStorage(ResourceStorage $storage, array $files, array $syncData): array
     {
-        $driver = self::extractDriver($storage);
+        $driver = StorageDriver::extract($storage);
         if (!$driver instanceof FileSyncDriver) {
             return self::materializedIdentifiers();
         }
@@ -434,16 +432,5 @@ final class MaterializationService implements LoggerAwareInterface
         $this->fileRepository->touchSyncTimestamp($file->getUid());
 
         return ['error' => 'unavailable'];
-    }
-
-    /**
-     * TYPO3 core deliberately keeps the driver private with no public accessor.
-     *
-     * @see ResourceStorage::$driver (private)
-     * @see ResourceStorage::getDriver() (protected)
-     */
-    private static function extractDriver(ResourceStorage $storage): DriverInterface
-    {
-        return Closure::bind(static fn () => $storage->driver, null, ResourceStorage::class)();
     }
 }
