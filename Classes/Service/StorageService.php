@@ -61,4 +61,34 @@ final readonly class StorageService
 
         return $result;
     }
+
+    /**
+     * Read from the storage records rather than from FetchMode, because a
+     * page answered out of the page cache never initialises a storage and
+     * that is exactly the request where deferred images matter.
+     *
+     * @return list<int>
+     */
+    public function getDeferredStorageUids(): array
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
+        $expressionBuilder = $queryBuilder->expr();
+        $rows = $queryBuilder->select('uid')
+            ->from('sys_file_storage')
+            ->where(
+                $expressionBuilder->eq(
+                    Configuration::FIELD_ENABLE,
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
+                $expressionBuilder->eq(
+                    Configuration::FIELD_DEFERRED,
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
+            )
+            ->orderBy('uid')
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        return array_map(intval(...), array_column($rows, 'uid'));
+    }
 }

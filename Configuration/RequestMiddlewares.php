@@ -11,10 +11,14 @@ declare(strict_types=1);
  * file that was distributed with this source code.
  */
 
-use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
+use KonradMichalik\Typo3FileSync\Middleware\{DeferredImageMiddleware, MaterializeMiddleware};
 
 return [
     'frontend' => [
+        'konradmichalik/typo3-file-sync/deferred-images' => [
+            'target' => DeferredImageMiddleware::class,
+            'before' => ['typo3/cms-frontend/timetracker'],
+        ],
         'konradmichalik/typo3-file-sync/materialize' => [
             'target' => MaterializeMiddleware::class,
             'after' => ['typo3/cms-frontend/timetracker'],

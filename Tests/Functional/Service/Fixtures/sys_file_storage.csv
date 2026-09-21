@@ -1,5 +1,6 @@
 "sys_file_storage"
-,"uid","pid","name","tx_typo3_file_sync_enable"
-,1,0,"Enabled By Flag",1
-,2,0,"Disabled",0
-,3,0,"Enabled By Config Only",0
+,"uid","pid","name","tx_typo3_file_sync_enable","tx_typo3_file_sync_deferred"
+,1,0,"Enabled By Flag",1,1
+,2,0,"Disabled",0,1
+,3,0,"Enabled By Config Only",0,0
+,4,0,"Enabled Without Deferred",1,0

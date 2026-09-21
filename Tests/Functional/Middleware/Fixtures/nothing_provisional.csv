@@ -1,0 +1,11 @@
+"sys_file_storage"
+,"uid","pid","name","driver","configuration","is_default","is_browsable","is_public","is_writable","is_online","tx_typo3_file_sync_enable","tx_typo3_file_sync_deferred"
+,9,0,"Deferred Storage","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>fileadmin/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,1,1
+"sys_file"
+,"uid","pid","storage","identifier","name","extension","mime_type","type","size","missing","tx_typo3_file_sync_identifier","tx_typo3_file_sync_tstamp"
+,1,0,9,"/user_upload/provisional.jpg","provisional.jpg","jpg","image/jpeg",2,16,0,"remote_instance",0
+,2,0,9,"/user_upload/real.jpg","real.jpg","jpg","image/jpeg",2,16,0,"remote_instance",0
+"sys_file_processedfile"
+,"uid","storage","original","identifier","name","configuration","configurationsha1","task_type","width","height"
+,110,9,1,"/_processed_/a/b/csm_provisional_aaa.jpg","csm_provisional_aaa.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
+,111,9,2,"/_processed_/a/b/csm_real_bbb.jpg","csm_real_bbb.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
