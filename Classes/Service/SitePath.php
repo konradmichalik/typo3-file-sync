@@ -41,7 +41,7 @@ final class SitePath
      */
     public static function prefix(): string
     {
-        $path = trim((string) GeneralUtility::getIndpEnv('TYPO3_SITE_PATH'), '/');
+        $path = trim(GeneralUtility::getIndpEnv('TYPO3_SITE_PATH'), '/');
 
         return '' === $path ? '/' : '/'.$path.'/';
     }

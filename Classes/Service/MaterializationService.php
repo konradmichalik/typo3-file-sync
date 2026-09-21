@@ -191,18 +191,27 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function refetchOriginal(File $file, array $accepted): ?array
     {
+        // The provisional file has to get out of the way before the driver
+        // will fetch anything, but this is a public endpoint that must not
+        // leave the storage worse than it found it: an identifier of
+        // placeholder_image on top of real bytes is the ordinary state of an
+        // instance whose files were rsynced after its database was synced.
+        $stashed = null;
+
         try {
             // getForLocalProcessing() is not a path getter: it runs through
             // FileSyncDriver::ensureFileExists(), which fetches when the
             // file is absent. The guard therefore has to be read after it,
             // or a provisional-but-absent original would be downloaded for
-            // real here and unlinked on the next line.
+            // real here and moved aside on the next line.
             $provisionalPath = $file->getForLocalProcessing(false);
             if (!$this->isDelivered($file, $accepted) && is_file($provisionalPath)) {
-                unlink($provisionalPath);
+                $stashed = StashedFile::stash($provisionalPath);
             }
 
             if (is_file($file->getForLocalProcessing(false)) && $this->isDelivered($file, $accepted)) {
+                $stashed?->discard();
+
                 return null;
             }
         } catch (Throwable $exception) {
@@ -210,6 +219,8 @@ final class MaterializationService implements LoggerAwareInterface
                 sprintf('Fetching original %d failed: %s', $file->getUid(), $exception->getMessage()),
             );
         }
+
+        $stashed?->restore();
 
         return $this->damp($file);
     }

@@ -236,6 +236,31 @@ final class MaterializationServiceTest extends FunctionalTestCase
         self::assertSame('placeholder_image', $this->syncIdentifierOf(3));
     }
 
+    /**
+     * The reachable case is ordinary rather than exotic: an instance whose
+     * files were rsynced from production after its database was synced sits
+     * at an identifier of placeholder_image with the real bytes already on
+     * disk, and the marking query keeps minting tokens for those. Deleting
+     * first and fetching second would destroy one real file per page view.
+     */
+    #[Test]
+    public function aFailedFetchLeavesTheOriginalOnDiskAsItWas(): void
+    {
+        // uid 2's original is a text file the fixture server answers with 404
+        // and the placeholder handler refuses, so no handler delivers at all.
+        file_put_contents($this->basePath.'user_upload/broken.txt', 'bytes-that-were-already-there');
+        $token = $this->get(DeferredTokenService::class)->create(20);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertSame(
+            'bytes-that-were-already-there',
+            file_get_contents($this->basePath.'user_upload/broken.txt'),
+        );
+        self::assertSame([], glob($this->basePath.'user_upload/.tx-file-sync-stash-*'));
+    }
+
     #[Test]
     public function theProvisionalRenditionIsDiscardedInsteadOfAdopted(): void
     {
