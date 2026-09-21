@@ -29,6 +29,7 @@ use function array_filter;
 use function array_map;
 use function array_unique;
 use function array_values;
+use function get_debug_type;
 use function is_array;
 use function is_resource;
 use function ltrim;
@@ -144,8 +145,11 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
                     }
                 },
                 'rejected' => function (mixed $reason, string $filePath): void {
+                    // A failed prefetch is what turns this feature from fast
+                    // into silently slow, so the line has to say why: getFile()
+                    // reports the same detail for the serial path.
                     $this->logger?->warning(
-                        sprintf('Prefetch of %s failed', $filePath),
+                        sprintf('Prefetch of %s failed: %s', $filePath, self::describeReason($reason)),
                     );
                 },
             ]);
@@ -225,6 +229,16 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
 
             return false;
         }
+    }
+
+    /**
+     * A Guzzle pool rejects with whatever the promise carried. That is a
+     * TransferException for every failure the library produces itself, but
+     * the contract is "mixed", so anything else is named rather than dropped.
+     */
+    private static function describeReason(mixed $reason): string
+    {
+        return $reason instanceof Throwable ? $reason->getMessage() : get_debug_type($reason);
     }
 
     private static function resolveEnvPlaceholders(string $value): string

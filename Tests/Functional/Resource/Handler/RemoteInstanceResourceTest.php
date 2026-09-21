@@ -17,6 +17,8 @@ use GuzzleHttp\Client;
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
+use Stringable;
 
 use function count;
 use function is_resource;
@@ -176,6 +178,35 @@ final class RemoteInstanceResourceTest extends TestCase
         $subject->prefetch(['fileadmin/does-not-exist.jpg']);
 
         self::assertFalse($subject->getFile('1:/fileadmin/does-not-exist.jpg', 'fileadmin/does-not-exist.jpg'));
+    }
+
+    /**
+     * A prefetch that quietly fails is what turns this feature from fast into
+     * silently slow, and it is the one failure an operator has nothing else to
+     * go on for: the page still renders, just with every image fetched
+     * serially. "Prefetch of x failed" alone does not say whether that was a
+     * 404, a timeout or a wrong base URL.
+     */
+    #[Test]
+    public function aRejectedPrefetchLogsWhyItWasRejected(): void
+    {
+        $logger = new class extends AbstractLogger {
+            /** @var list<string> */
+            public array $messages = [];
+
+            public function log(mixed $level, string|Stringable $message, array $context = []): void
+            {
+                $this->messages[] = (string) $message;
+            }
+        };
+
+        $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
+        $subject->setLogger($logger);
+        $subject->prefetch(['fileadmin/does-not-exist.jpg']);
+
+        self::assertCount(1, $logger->messages);
+        self::assertStringContainsString('fileadmin/does-not-exist.jpg', $logger->messages[0]);
+        self::assertStringContainsString('404', $logger->messages[0]);
     }
 
     #[Test]
