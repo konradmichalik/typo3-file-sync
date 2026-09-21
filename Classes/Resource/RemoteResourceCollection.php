@@ -125,6 +125,18 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         return null;
     }
 
+    /**
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof BatchRemoteResourceInterface) {
+                $resource['handler']->prefetch($filePaths);
+            }
+        }
+    }
+
     private function resolveFileObject(string $fileIdentifier, string $filePath): void
     {
         if (array_key_exists($filePath, $this->fileIdentifierCache)) {

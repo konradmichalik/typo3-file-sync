@@ -125,6 +125,17 @@ final class FileSyncDriver extends LocalDriver
         return true;
     }
 
+    /**
+     * Downloads several files ahead of the serial, one-at-a-time calls FAL
+     * makes. Only the handlers that support batching act on it.
+     *
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        $this->remoteResourceCollection->prefetch($filePaths);
+    }
+
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
         if ('' === $fileIdentifier) {

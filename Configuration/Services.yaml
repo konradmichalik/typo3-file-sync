@@ -38,6 +38,12 @@ services:
     KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory:
         public: true
 
+    KonradMichalik\Typo3FileSync\Service\DeferredTokenService:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Service\MaterializationService:
+        public: true
+
     KonradMichalik\Typo3FileSync\Service\StorageService:
         public: true
 

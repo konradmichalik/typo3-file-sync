@@ -1,0 +1,11 @@
+"sys_file_storage"
+,"uid","pid","name","driver","configuration","is_default","is_browsable","is_public","is_writable","is_online","tx_typo3_file_sync_enable","tx_typo3_file_sync_deferred","tx_typo3_file_sync_resources"
+,9,0,"Deferred Storage","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>fileadmin/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,1,1,"<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='resources'><el><numIndex index='0'><remote_instance><el><remote_instance><vDEF>%env(TYPO3_FILE_SYNC_REMOTE_URL)%</vDEF></remote_instance></el></remote_instance></numIndex><numIndex index='1'><placeholder_image><el><placeholder_image><vDEF>#CCCCCC,#969696</vDEF></placeholder_image></el></placeholder_image></numIndex></el></field></language></sheet></data></T3FlexForms>"
+"sys_file"
+,"uid","pid","storage","identifier","identifier_hash","folder_hash","name","extension","mime_type","type","size","missing","tx_typo3_file_sync_identifier","tx_typo3_file_sync_tstamp"
+,1,0,9,"/user_upload/provisional.jpg","f950a4bd9cdeb40792d0fdc67d2083b2a76a00c7","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","provisional.jpg","jpg","image/jpeg",2,16,0,"placeholder_image",0
+,2,0,9,"/user_upload/broken.txt","de5fc88198de80753b01ef61ae43a89f54704ea8","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","broken.txt","txt","text/plain",1,16,0,"placeholder_image",0
+"sys_file_processedfile"
+,"uid","storage","original","identifier","name","configuration","configurationsha1","task_type","width","height"
+,10,9,1,"/_processed_/csm_provisional.jpg","csm_provisional.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
+,20,9,2,"/_processed_/csm_broken.png","csm_broken.png","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
