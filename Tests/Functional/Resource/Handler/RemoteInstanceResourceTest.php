@@ -126,6 +126,35 @@ final class RemoteInstanceResourceTest extends TestCase
         self::assertFalse($subject->getFile('1:/fileadmin/missing.jpg', 'fileadmin/missing.jpg'));
     }
 
+    #[Test]
+    public function prefetchedFilesAreReturnedWithoutAFurtherRequest(): void
+    {
+        $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
+        $subject->prefetch(['fileadmin/batch-1.jpg', 'fileadmin/batch-2.jpg']);
+
+        self::assertSame('body-for-batch-1.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-1.jpg', 'fileadmin/batch-1.jpg')));
+        self::assertSame('body-for-batch-2.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-2.jpg', 'fileadmin/batch-2.jpg')));
+    }
+
+    #[Test]
+    public function prefetchIgnoresFailuresAndLeavesTheRegularPathIntact(): void
+    {
+        $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
+        $subject->prefetch(['fileadmin/does-not-exist.jpg']);
+
+        self::assertFalse($subject->getFile('1:/fileadmin/does-not-exist.jpg', 'fileadmin/does-not-exist.jpg'));
+    }
+
+    #[Test]
+    public function aPrefetchedStreamIsHandedOutOnlyOnce(): void
+    {
+        $subject = new RemoteInstanceResource(self::$baseUrl, new Client());
+        $subject->prefetch(['fileadmin/batch-3.jpg']);
+
+        self::assertSame('body-for-batch-3.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg')));
+        self::assertSame('body-for-batch-3.jpg', stream_get_contents($subject->getFile('1:/fileadmin/batch-3.jpg', 'fileadmin/batch-3.jpg')));
+    }
+
     /**
      * @return array<string, array{string}>
      */

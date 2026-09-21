@@ -38,6 +38,13 @@ switch ($path) {
         echo gzencode(str_repeat('A', 2048));
         break;
 
+    case '/fileadmin/batch-1.jpg':
+    case '/fileadmin/batch-2.jpg':
+    case '/fileadmin/batch-3.jpg':
+        header('Content-Type: image/jpeg');
+        echo 'body-for-'.basename($path);
+        break;
+
     default:
         http_response_code(404);
         echo 'not found';

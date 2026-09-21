@@ -13,16 +13,23 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
-use GuzzleHttp\{ClientInterface, RequestOptions};
+use Generator;
+use GuzzleHttp\{ClientInterface, Pool, RequestOptions};
 use GuzzleHttp\Exception\TransferException;
-use KonradMichalik\Typo3FileSync\Resource\{DeferrableResourceInterface, RemoteResourceInterface};
+use GuzzleHttp\Psr7\Request;
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, RemoteResourceInterface};
+use Psr\Http\Message\ResponseInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Http\Client\GuzzleClientFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function array_filter;
+use function array_unique;
+use function array_values;
 use function is_array;
 use function is_resource;
+use function ltrim;
 use function sprintf;
 
 /**
@@ -31,7 +38,7 @@ use function sprintf;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final class RemoteInstanceResource implements DeferrableResourceInterface, LoggerAwareInterface, RemoteResourceInterface
+final class RemoteInstanceResource implements BatchRemoteResourceInterface, DeferrableResourceInterface, LoggerAwareInterface, RemoteResourceInterface
 {
     use LoggerAwareTrait;
 
@@ -42,11 +49,17 @@ final class RemoteInstanceResource implements DeferrableResourceInterface, Logge
      */
     private const DEFAULT_CONNECT_TIMEOUT = 5;
     private const DEFAULT_TIMEOUT = 15;
+    private const DEFAULT_CONCURRENCY = 8;
 
     private readonly ClientInterface $httpClient;
     private readonly string $url;
     /** @var array<string, mixed> */
     private array $requestOptions;
+
+    /**
+     * @var array<string, resource>
+     */
+    private array $prefetched = [];
 
     /**
      * @param array<string, mixed>|string|null $configuration
@@ -75,10 +88,62 @@ final class RemoteInstanceResource implements DeferrableResourceInterface, Logge
     }
 
     /**
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        $filePaths = array_values(array_unique(array_filter($filePaths, static fn (string $path): bool => '' !== $path)));
+        if ([] === $filePaths) {
+            return;
+        }
+
+        $requests = function () use ($filePaths): Generator {
+            foreach ($filePaths as $filePath) {
+                yield $filePath => new Request('GET', $this->url.ltrim($filePath, '/'));
+            }
+        };
+
+        $pool = new Pool($this->httpClient, $requests(), [
+            'concurrency' => self::DEFAULT_CONCURRENCY,
+            'options' => $this->requestOptions,
+            'fulfilled' => function (ResponseInterface $response, string $filePath): void {
+                if (200 !== $response->getStatusCode()) {
+                    return;
+                }
+
+                // Same detach()-not-SINK reasoning as getFile(): keep the
+                // resource alive past Guzzle's own objects being collected.
+                $stream = $response->getBody()->detach();
+                if (is_resource($stream)) {
+                    rewind($stream);
+                    $this->prefetched[$filePath] = $stream;
+                }
+            },
+            'rejected' => function (mixed $reason, string $filePath): void {
+                $this->logger?->warning(
+                    sprintf('Prefetch of %s failed', $filePath),
+                );
+            },
+        ]);
+
+        $pool->promise()->wait();
+    }
+
+    /**
      * @return resource|false
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
+        $buffered = $this->prefetched[ltrim($filePath, '/')] ?? null;
+        if (is_resource($buffered)) {
+            // Removed rather than rewound: a caller may already have read or
+            // closed this handle, and rewind() on a closed resource is fatal.
+            // A second request for the same path goes over the wire again.
+            unset($this->prefetched[ltrim($filePath, '/')]);
+
+            return $buffered;
+        }
+
         $url = $this->url.ltrim($filePath, '/');
 
         try {
