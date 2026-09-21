@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Service\MaterializationService;
+use KonradMichalik\Typo3FileSync\Service\{MaterializationService, SitePath};
 use Psr\Http\Message\{ResponseFactoryInterface, ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Configuration\Features;
@@ -25,6 +25,7 @@ use function count;
 use function is_array;
 use function json_decode;
 use function json_encode;
+use function rtrim;
 use function strval;
 
 /**
@@ -50,9 +51,19 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
         private StreamFactoryInterface $streamFactory,
     ) {}
 
+    /**
+     * The path the browser has to post to. Below a subdirectory install the
+     * request arrives carrying that subdirectory, so a fixed root path would
+     * both miss here and be unreachable from the module.
+     */
+    public static function endpointPath(): string
+    {
+        return rtrim(SitePath::prefix(), '/').self::PATH;
+    }
+
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        if (self::PATH !== $request->getUri()->getPath()) {
+        if (self::endpointPath() !== $request->getUri()->getPath()) {
             return $handler->handle($request);
         }
 

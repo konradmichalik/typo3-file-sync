@@ -67,6 +67,8 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
 {
     private const ATTRIBUTE = 'data-file-sync';
 
+    private const ENDPOINT_ATTRIBUTE = 'data-file-sync-endpoint';
+
     private const CACHE_KEY = 'fileSyncProvisionalCount';
 
     /**
@@ -410,10 +412,18 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * before it starts a view transition, and an inline style block would
      * be dropped by the CSP header that csp-headers has already emitted by
      * the time this middleware sees the response.
+     *
+     * The endpoint travels on the tag rather than being hardcoded in the
+     * module, because only the server knows whether the site sits at the
+     * document root or below a subdirectory. import.meta.url would not do:
+     * the module is served from _assets/ or from typo3conf/ext/ depending on
+     * the installation, so its own depth says nothing about the site root.
      */
     private function snippet(): string
     {
-        return '<script type="module" src="'.htmlspecialchars($this->assetUrl(), \ENT_QUOTES).'"></script>';
+        return '<script type="module" src="'.htmlspecialchars($this->assetUrl(), \ENT_QUOTES).'"'
+            .' '.self::ENDPOINT_ATTRIBUTE.'="'.htmlspecialchars(MaterializeMiddleware::endpointPath(), \ENT_QUOTES).'"'
+            .'></script>';
     }
 
     private function assetUrl(): string

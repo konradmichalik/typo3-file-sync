@@ -171,6 +171,24 @@ final class MaterializationServiceTest extends FunctionalTestCase
     }
 
     /**
+     * The other half of the same seam: the module the marking side injects
+     * has to post to the same path the endpoint answers at, and only the
+     * server knows where the site root is.
+     */
+    #[Test]
+    public function theInjectedModuleIsPointedAtTheEndpointOfASubdirectoryInstall(): void
+    {
+        self::useSitePath('/subdir/');
+
+        $marked = $this->markBody('<html><body><img src="/fileadmin/_processed_/csm_provisional.jpg"></body></html>');
+
+        self::assertStringContainsString(
+            'data-file-sync-endpoint="/subdir/tx-file-sync/materialize"',
+            $marked,
+        );
+    }
+
+    /**
      * The only test that crosses a task boundary. The marking middleware and
      * the materialization service each define what a provisional image URL
      * looks like, and both sides were green while the two definitions did not

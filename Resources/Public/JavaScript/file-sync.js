@@ -1,4 +1,11 @@
-const ENDPOINT = '/tx-file-sync/materialize';
+// Read off the tag that loaded this module rather than hardcoded, because a
+// site below a subdirectory answers at /subdir/tx-file-sync/materialize and
+// a module cannot work that out from import.meta.url: it is served from
+// _assets/ or from typo3conf/ext/ depending on the installation.
+// document.currentScript is null inside a module, hence the query.
+const ENDPOINT =
+    document.querySelector('script[data-file-sync-endpoint]')?.dataset.fileSyncEndpoint ??
+    '/tx-file-sync/materialize';
 const BATCH_SIZE = 50;
 
 const canAnimate = () =>

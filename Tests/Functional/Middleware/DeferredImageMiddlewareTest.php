@@ -306,6 +306,25 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     /**
+     * The module has no way of working the endpoint out for itself: it is
+     * served from _assets/ or from typo3conf/ext/ depending on the
+     * installation, so its own URL says nothing about where the site root
+     * is. The subdirectory case is asserted in MaterializationServiceTest,
+     * which pins the site path.
+     */
+    #[Test]
+    public function pointsTheInjectedModuleAtTheMaterializeEndpoint(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertSame(1, preg_match('/data-file-sync-endpoint="([^"]+)"/', $result, $matches));
+        self::assertStringStartsWith('/', $matches[1]);
+        self::assertStringEndsWith('/tx-file-sync/materialize', $matches[1]);
+    }
+
+    /**
      * An inline style block would be dropped by the CSP header that
      * csp-headers has already emitted further in, and the module guards
      * prefers-reduced-motion itself, so nothing but the script is injected.

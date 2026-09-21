@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function json_decode;
@@ -41,11 +42,27 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     private const PATH = '/tx-file-sync/materialize';
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
+    /** @var array<string, mixed> */
+    private array $serverBackup = [];
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = false;
+
+        // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
+        // TYPO3 read the site path as "vendor/bin/". Pinning it is what makes
+        // the endpoint path assertable in either installation layout.
+        $this->serverBackup = $_SERVER;
+        self::useSitePath('/');
+    }
+
+    protected function tearDown(): void
+    {
+        $_SERVER = $this->serverBackup;
+        GeneralUtility::flushInternalRuntimeCaches();
+        parent::tearDown();
     }
 
     #[Test]
@@ -135,6 +152,55 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
 
         self::assertSame(418, $response->getStatusCode());
+    }
+
+    /**
+     * A request to a site below a subdirectory arrives carrying that
+     * subdirectory. Matching the bare root path would hand every materialize
+     * call straight to the page renderer, and the module would be posting at
+     * an address that answers with a page.
+     */
+    #[Test]
+    public function answersAtTheEndpointOfASubdirectoryInstall(): void
+    {
+        self::useSitePath('/subdir/');
+        $this->enableFeature();
+
+        self::assertSame('/subdir'.self::PATH, MaterializeMiddleware::endpointPath());
+
+        $response = $this->get(MaterializeMiddleware::class)->process(
+            $this->buildRequest('/subdir'.self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function passesThroughTheRootPathOnASubdirectoryInstall(): void
+    {
+        self::useSitePath('/subdir/');
+        $this->enableFeature();
+
+        $response = $this->get(MaterializeMiddleware::class)->process(
+            $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(418, $response->getStatusCode());
+    }
+
+    /**
+     * TYPO3 derives the site path from the entry script and the request, both
+     * of which are meaningless under PHPUnit. Pointing them at an index.php
+     * below $sitePath is what a real installation at that path looks like.
+     */
+    private static function useSitePath(string $sitePath): void
+    {
+        $_SERVER['HTTP_HOST'] = 'example.com';
+        $_SERVER['SCRIPT_NAME'] = $sitePath.'index.php';
+        $_SERVER['REQUEST_URI'] = $sitePath;
+        GeneralUtility::flushInternalRuntimeCaches();
     }
 
     private function enableFeature(): void
