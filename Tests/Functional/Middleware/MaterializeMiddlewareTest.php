@@ -18,6 +18,8 @@ use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
 use KonradMichalik\Typo3FileSync\Service\MaterializationService;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
+use TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend;
+use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -44,6 +46,14 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     private const PATH = '/tx-file-sync/materialize';
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
+    /**
+     * The rate limiter is the thing under test in two cases below, and the
+     * framework's default NullBackend would retire it silently.
+     */
+    protected array $configurationToUseInTestInstance = [
+        'SYS' => ['caching' => ['cacheConfigurations' => ['ratelimiter' => ['backend' => Typo3DatabaseBackend::class]]]],
+    ];
+
     /** @var array<string, mixed> */
     private array $serverBackup = [];
 
@@ -58,6 +68,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         // the endpoint path assertable in either installation layout.
         $this->serverBackup = $_SERVER;
         self::useSitePath('/');
+        $this->get(CacheManager::class)->getCache('ratelimiter')->flush();
     }
 
     protected function tearDown(): void
@@ -250,6 +261,33 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         );
 
         self::assertSame(418, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function aRequestUnderTheLimitIsNotThrottled(): void
+    {
+        $this->enableFeature();
+
+        $response = $this->get(MaterializeMiddleware::class)
+            ->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler());
+
+        self::assertSame(405, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function aCallerPastTheLimitIsThrottled(): void
+    {
+        $this->enableFeature();
+        $middleware = $this->get(MaterializeMiddleware::class);
+
+        for ($i = 0; $i < 60; ++$i) {
+            self::assertSame(405, $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler())->getStatusCode());
+        }
+
+        $response = $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler());
+
+        self::assertSame(429, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'too many requests']), (string) $response->getBody());
     }
 
     /**

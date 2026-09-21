@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Service\{MaterializationService, SitePath};
+use KonradMichalik\Typo3FileSync\Service\{MaterializationService, MaterializeRateLimiter, SitePath};
 use Psr\Http\Message\{ResponseFactoryInterface, ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Configuration\Features;
@@ -47,6 +47,7 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
     public function __construct(
         private Features $features,
         private MaterializationService $materializationService,
+        private MaterializeRateLimiter $rateLimiter,
         private ResponseFactoryInterface $responseFactory,
         private StreamFactoryInterface $streamFactory,
     ) {}
@@ -69,6 +70,12 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
 
         if (!$this->features->isFeatureEnabled(Configuration::FEATURE_DEFERRED_LOADING)) {
             return $this->json(['error' => 'disabled'], 404);
+        }
+
+        // Counted before the method check, so a flood cannot dodge the limit
+        // by using a verb that would be rejected cheaply.
+        if (!$this->rateLimiter->isAccepted($request)) {
+            return $this->json(['error' => 'too many requests'], 429);
         }
 
         if ('POST' !== $request->getMethod()) {

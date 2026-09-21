@@ -173,6 +173,7 @@ Known limitations:
 - Only the `src` of an `<img>` is rewritten. `srcset` and `<source>` are left alone, so the swap does nothing for `<picture>` and responsive image markup.
 - At most 50 images are materialized per page view, in document order with the visible ones first. There is no second pass on scroll, so anything past that limit stays a placeholder until the page is reloaded.
 - A storage with deferred loading enabled needs a non-deferrable fallback handler, such as the placeholder image generator, configured alongside the remote one. Without it the render has nothing left to answer with and produces no file at all rather than a placeholder.
+- The materialize endpoint is public and unauthenticated, so it is rate limited to 60 requests per minute per client address and answers `429` beyond that. A normal page view costs one request.
 
 > [!WARNING]
 > This feature is experimental. The JSON contract of the materialize endpoint and the `data-file-sync` attribute name may change without a major release.
