@@ -166,7 +166,7 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] = tru
 
 A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required.
 
-The swap is injected as an external `<script type="module">` tag, which works under a `default-src 'self'` content security policy (TYPO3's default when frontend CSP is enabled), but not under a nonce-only `script-src`, since the middleware that injects it runs outermost and never sees the nonce TYPO3 attaches further inside the request.
+The swap is injected as an external `<script type="module">` tag that carries no nonce, so it only runs where `script-src` is unset and `default-src` covers it. TYPO3's own default frontend content security policy sets `script-src` to a nonce proxy, so on any site with that policy enabled the injected tag is blocked and this feature does nothing there.
 
 > [!WARNING]
 > This feature is experimental. The JSON contract of the materialize endpoint and the `data-file-sync` attribute name may change without a major release.
