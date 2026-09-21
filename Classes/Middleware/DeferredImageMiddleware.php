@@ -76,7 +76,21 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      */
     private const CACHE_LIFETIME = 60;
 
-    private const IMAGE_PATTERN = '/<img\b[^>]*\bsrc=(["\'])([^"\']+)\1[^>]*>/i';
+    /**
+     * "(?<![-\w])src=" rather than "\bsrc=": a word boundary also sits
+     * between the hyphen and the "s" of data-src, and because [^>]* is
+     * greedy the engine backtracks from the right and would settle on the
+     * lazy-loading attribute instead of the src the browser renders.
+     */
+    private const IMAGE_PATTERN = '/<img\b[^>]*(?<![-\w])src=(["\'])([^"\']+)\1[^>]*>/i';
+
+    /**
+     * Spans whose contents are not markup the browser renders as elements.
+     * An img inside them must be left alone: in a script an injected
+     * attribute can terminate a JavaScript string literal, and in a
+     * textarea it would show up as visible page text.
+     */
+    private const SKIP_PATTERN = '/<script\b[^>]*>.*?<\/script\s*>|<textarea\b[^>]*>.*?<\/textarea\s*>|<!--.*?-->/is';
 
     public function __construct(
         private CacheManager $cacheManager,
@@ -96,12 +110,10 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return $response;
         }
 
-        // Everything below reads the body or the database, so the two free
-        // checks come first: this middleware runs on every frontend
-        // response of every site that has the extension installed.
-        if (200 !== $response->getStatusCode()
-            || !str_starts_with(strtolower($response->getHeaderLine('Content-Type')), 'text/html')
-        ) {
+        // Everything below reads the body or the database, so the free header
+        // checks come first: this middleware runs on every frontend response
+        // of every site that has the extension installed.
+        if (!self::isRewritableHtml($response)) {
             return $response;
         }
 
@@ -151,27 +163,56 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
+        $rewritten = $this->rewriteTags($body, $identifierByUrl, $uidByIdentifier);
+        if (null === $rewritten) {
+            return null;
+        }
+
+        return $this->injectSnippet($rewritten);
+    }
+
+    /**
+     * Matched offsets are needed to tell a tag the browser renders from one
+     * sitting inside a script, a textarea or a comment.
+     *
+     * @param array<string, string> $identifierByUrl
+     * @param array<string, int>    $uidByIdentifier
+     *
+     * @return string|null the rewritten body, or null when nothing was marked
+     */
+    private function rewriteTags(string $body, array $identifierByUrl, array $uidByIdentifier): ?string
+    {
+        $skipSpans = self::skipSpans($body);
         $marked = 0;
+        $total = 0;
         $result = preg_replace_callback(
             self::IMAGE_PATTERN,
-            function (array $match) use ($identifierByUrl, $uidByIdentifier, &$marked): string {
-                $identifier = $identifierByUrl[$match[2]] ?? null;
+            function (array $match) use ($identifierByUrl, $uidByIdentifier, $skipSpans, &$marked): string {
+                [$tag, $offset] = $match[0];
+                if (self::isWithinSpan($offset, $skipSpans)) {
+                    return $tag;
+                }
+
+                $identifier = $identifierByUrl[$match[2][0]] ?? null;
                 $uid = null === $identifier ? null : ($uidByIdentifier[$identifier] ?? null);
-                $tag = $this->withAttribute($match[0], $uid);
-                if ($tag !== $match[0]) {
+                $rewritten = $this->withAttribute($tag, $match[1][0], $uid);
+                if ($rewritten !== $tag) {
                     ++$marked;
                 }
 
-                return $tag;
+                return $rewritten;
             },
             $body,
+            -1,
+            $total,
+            \PREG_OFFSET_CAPTURE,
         );
 
         if (!is_string($result) || 0 === $marked) {
             return null;
         }
 
-        return $this->injectSnippet($result);
+        return $result;
     }
 
     /**
@@ -179,24 +220,76 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * it is not certain about: one that is already marked, and one whose
      * quotes do not balance, which means the pattern stopped at a ">" inside
      * an attribute value and the match is only part of the real tag.
+     *
+     * The new attribute reuses the quote character the tag already uses for
+     * its src. A tag written with single quotes is the one that turns up
+     * inside a double-quoted JavaScript string literal, where injecting a
+     * double quote would end the string and break the whole script block.
+     * The token is digits, a dot and hex, so it never needs escaping.
      */
-    private function withAttribute(string $tag, ?int $processedFileUid): string
+    private function withAttribute(string $tag, string $quote, ?int $processedFileUid): string
     {
-        if (null === $processedFileUid || str_contains(strtolower($tag), self::ATTRIBUTE)) {
+        if (null === $processedFileUid
+            || str_contains(strtolower($tag), self::ATTRIBUTE)
+            || self::hasUnbalancedQuotes($tag)
+        ) {
             return $tag;
         }
 
-        if (1 === preg_match('/["\']/', (string) preg_replace('/"[^"]*"|\'[^\']*\'/', '', $tag))) {
-            return $tag;
-        }
-
-        $token = $this->deferredTokenService->create($processedFileUid);
+        $attribute = ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote;
         $head = rtrim(substr($tag, 0, -1));
         if (str_ends_with($head, '/')) {
-            return rtrim(substr($head, 0, -1)).' '.self::ATTRIBUTE.'="'.$token.'" />';
+            return rtrim(substr($head, 0, -1)).$attribute.' />';
         }
 
-        return $head.' '.self::ATTRIBUTE.'="'.$token.'">';
+        return $head.$attribute.'>';
+    }
+
+    /**
+     * The pattern stopped at a ">" inside an attribute value when the quotes
+     * no longer balance, which means the match is only part of the real tag.
+     */
+    private static function hasUnbalancedQuotes(string $tag): bool
+    {
+        return 1 === preg_match('/["\']/', (string) preg_replace('/"[^"]*"|\'[^\']*\'/', '', $tag));
+    }
+
+    /**
+     * @return list<array{int, int}> start and end offset of each span
+     */
+    private static function skipSpans(string $body): array
+    {
+        preg_match_all(self::SKIP_PATTERN, $body, $matches, \PREG_OFFSET_CAPTURE);
+
+        return array_map(
+            static fn (array $match): array => [$match[1], $match[1] + strlen($match[0])],
+            $matches[0],
+        );
+    }
+
+    /**
+     * @param list<array{int, int}> $spans
+     */
+    private static function isWithinSpan(int $offset, array $spans): bool
+    {
+        foreach ($spans as [$start, $end]) {
+            if ($offset >= $start && $offset < $end) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A Content-Encoding means another middleware already compressed the
+     * body, so what is in the stream is bytes rather than markup.
+     */
+    private static function isRewritableHtml(ResponseInterface $response): bool
+    {
+        return 200 === $response->getStatusCode()
+            && '' === $response->getHeaderLine('Content-Encoding')
+            && str_starts_with(strtolower($response->getHeaderLine('Content-Type')), 'text/html');
     }
 
     /**
@@ -208,10 +301,6 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private function identifiersByUrl(array $urls, array $storageUids): array
     {
         $prefixes = $this->publicPrefixes($storageUids);
-        if ([] === $prefixes) {
-            return [];
-        }
-
         $map = [];
         foreach ($urls as $url) {
             $identifier = self::toIdentifier($url, $prefixes);
@@ -259,17 +348,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     {
         $prefixes = [];
         foreach ($storageUids as $storageUid) {
-            if ($storageUid < 1) {
-                continue;
-            }
-
-            try {
-                $storage = $this->storageRepository->getStorageObject($storageUid);
-            } catch (InvalidArgumentException) {
-                continue;
-            }
-
-            $prefix = self::publicPrefix($storage);
+            $prefix = $this->publicPrefixOfStorage($storageUid);
             if (null !== $prefix) {
                 $prefixes[] = $prefix;
             }
@@ -281,6 +360,20 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         usort($prefixes, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
 
         return $prefixes;
+    }
+
+    private function publicPrefixOfStorage(int $storageUid): ?string
+    {
+        // Storage 0 is the fallback storage and is never a deferred one.
+        if ($storageUid < 1) {
+            return null;
+        }
+
+        try {
+            return self::publicPrefix($this->storageRepository->getStorageObject($storageUid));
+        } catch (InvalidArgumentException) {
+            return null;
+        }
     }
 
     private static function publicPrefix(ResourceStorage $storage): ?string
@@ -331,26 +424,22 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     /**
      * The one lookup a settled installation pays for. Nothing above it
      * touches the body and nothing below it runs while the count is zero.
+     * No runtime cache in front of it: this middleware is the only caller
+     * and runs once per request, so that layer would never be read.
      *
      * @return array{storages: list<int>, count: int}
      */
     private function provisionalState(): array
     {
-        $runtimeCache = $this->cacheManager->getCache('runtime');
-        $state = self::readState($runtimeCache);
+        $cache = $this->cacheManager->getCache('hash');
+        $state = self::readState($cache);
         if (null !== $state) {
             return $state;
         }
 
-        $persistentCache = $this->cacheManager->getCache('hash');
-        $state = self::readState($persistentCache);
-        if (null === $state) {
-            $storages = $this->storageService->getDeferredStorageUids();
-            $state = ['storages' => $storages, 'count' => $this->fileRepository->countProvisional($storages)];
-            $persistentCache->set(self::CACHE_KEY, $state, [], self::CACHE_LIFETIME);
-        }
-
-        $runtimeCache->set(self::CACHE_KEY, $state);
+        $storages = $this->storageService->getDeferredStorageUids();
+        $state = ['storages' => $storages, 'count' => $this->fileRepository->countProvisional($storages)];
+        $cache->set(self::CACHE_KEY, $state, [], self::CACHE_LIFETIME);
 
         return $state;
     }

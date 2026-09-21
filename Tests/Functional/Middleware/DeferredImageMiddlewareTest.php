@@ -16,7 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Service\DeferredTokenService;
-use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend;
@@ -173,6 +173,119 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         // up to the one inside alt. Rewriting that match would produce
         // markup that is no longer an img tag at all.
         $tag = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" alt="a > b">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString($tag, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    /**
+     * The tag inside an inline script is written with single quotes so the
+     * surrounding JavaScript string literal can use double ones. Injecting
+     * a double quote there ends the literal and takes the whole script
+     * block down with a SyntaxError.
+     */
+    #[Test]
+    public function leavesAnImageInsideAnInlineScriptAlone(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $markup = '<script>var h = "'."<img src='/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg'>".'";</script>';
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString($markup, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    #[Test]
+    public function leavesAnImageInsideATextareaAlone(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $markup = '<textarea name="t">'.self::PROVISIONAL_TAG.'</textarea>';
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString($markup, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    #[Test]
+    public function leavesAnImageInsideAnHtmlCommentAlone(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $markup = '<!-- '.self::PROVISIONAL_TAG.' -->';
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString($markup, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    /**
+     * Nothing about the token needs escaping, so mirroring costs nothing
+     * and keeps a single-quoted tag safe wherever it was embedded.
+     */
+    #[Test]
+    public function mirrorsTheQuoteCharacterTheTagAlreadyUses(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = "<img src='/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg'>";
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertMatchesRegularExpression("/data-file-sync='[^']+'/", $result);
+        self::assertStringNotContainsString('data-file-sync="', $result);
+    }
+
+    #[Test]
+    public function marksASelfClosingTagWithoutSwallowingItsSlash(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" alt="provisional" />';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame(110, $this->tokenOf($result));
+        self::assertStringContainsString('" />', $result);
+        self::assertStringNotContainsString('/ data-file-sync', $result);
+    }
+
+    /**
+     * A word boundary also sits inside "data-src", and greedy backtracking
+     * makes the rightmost src= win, so both attribute orderings have to be
+     * pinned: the real src is the one the browser renders either way.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function lazyLoadingAttributeOrderProvider(): array
+    {
+        return [
+            'placeholder src first' => [
+                '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" data-src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg">',
+            ],
+            'data-src first' => [
+                '<img data-src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg">',
+            ],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('lazyLoadingAttributeOrderProvider')]
+    public function readsTheRealSrcRatherThanALazyLoadingAttribute(string $tag): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    #[Test]
+    public function leavesATagAloneWhoseOnlyProvisionalUrlIsALazyLoadingAttribute(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" data-src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg">';
 
         $result = $this->processBody($this->page($tag));
 
