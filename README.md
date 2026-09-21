@@ -154,6 +154,30 @@ vendor/bin/typo3 file-sync:delete --identifier=remote_instance --storage=1
 > [!WARNING]
 > `file-sync:delete --all` permanently removes all files that were fetched by any handler. Run `file-sync:reset` afterwards to allow them to be re-synced on next access.
 
+## 🧪 Experimental: Deferred Image Loading
+
+A placeholder for an image on a storage with deferred loading enabled renders immediately, skipping every network-bound resource handler. The browser fetches the real file once the page has loaded, and a small script swaps it in with a crossfade.
+
+Enable it by hand in `config/system/additional.php` (or `settings.php`), since the Install Tool only surfaces core feature toggles:
+
+```php
+$GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] = true;
+```
+
+A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required.
+
+The swap is injected as an external `<script type="module">` tag, which works under a `default-src 'self'` content security policy (TYPO3's default when frontend CSP is enabled), but not under a nonce-only `script-src`, since the middleware that injects it runs outermost and never sees the nonce TYPO3 attaches further inside the request.
+
+> [!WARNING]
+> This feature is experimental. The JSON contract of the materialize endpoint and the `data-file-sync` attribute name may change without a major release.
+
+After a database sync from production, `tx_typo3_file_sync_identifier` is empty again while the provisional files still sit on disk. They then count as real and are never replaced. This is the existing behaviour for placeholders, and the remedy belongs in the sync routine:
+
+```bash
+vendor/bin/typo3 file-sync:delete --identifier=placeholder_image
+vendor/bin/typo3 file-sync:reset
+```
+
 ## 🧩 Custom Resource Handlers
 
 Register a custom handler in your `ext_localconf.php`:
