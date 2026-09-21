@@ -38,12 +38,13 @@ final readonly class RemoteResourceCollectionFactory
         private FileRepository $fileRepository,
         private ConnectionPool $connectionPool,
         private LogManager $logManager,
+        private FetchMode $fetchMode,
     ) {}
 
     /**
      * @param array<int|string, mixed> $configuration
      */
-    public function createFromConfiguration(array $configuration): RemoteResourceCollection
+    public function createFromConfiguration(array $configuration, int $storageUid): RemoteResourceCollection
     {
         if (isset($configuration['identifier'])) {
             $configuration = [$configuration];
@@ -88,10 +89,12 @@ final readonly class RemoteResourceCollectionFactory
             $this->resourceFactory,
             $this->fileRepository,
             $this->connectionPool,
+            $storageUid,
+            $this->fetchMode,
         );
     }
 
-    public function createFromFlexForm(string $flexForm): RemoteResourceCollection
+    public function createFromFlexForm(string $flexForm, int $storageUid): RemoteResourceCollection
     {
         $configuration = [];
         $resourcesConfiguration = GeneralUtility::xml2array($flexForm);
@@ -114,6 +117,6 @@ final readonly class RemoteResourceCollectionFactory
             ];
         }
 
-        return $this->createFromConfiguration($configuration);
+        return $this->createFromConfiguration($configuration, $storageUid);
     }
 }

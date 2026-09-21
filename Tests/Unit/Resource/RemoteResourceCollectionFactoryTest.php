@@ -16,7 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollectionFactory, RemoteResourceInterface};
+use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollectionFactory, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -76,7 +76,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $factory = $this->createFactory();
         $collection = $factory->createFromConfiguration([
             ['identifier' => 'test_handler', 'configuration' => null],
-        ]);
+        ], 1);
 
         self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
@@ -85,7 +85,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
     public function createFromConfigurationWrapsSingleFlatResourceConfiguration(): void
     {
         $factory = $this->createFactory();
-        $collection = $factory->createFromConfiguration(['identifier' => 'test_handler', 'configuration' => null]);
+        $collection = $factory->createFromConfiguration(['identifier' => 'test_handler', 'configuration' => null], 1);
 
         self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
@@ -96,7 +96,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $factory = $this->createFactory();
         $collection = $factory->createFromConfiguration([
             ['identifier' => '', 'configuration' => null],
-        ]);
+        ], 1);
 
         self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
@@ -109,7 +109,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $this->expectException(UnknownResourceException::class);
         $factory->createFromConfiguration([
             ['identifier' => 'nonexistent_handler'],
-        ]);
+        ], 1);
     }
 
     #[Test]
@@ -126,7 +126,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $this->expectException(\KonradMichalik\Typo3FileSync\Exception\MissingInterfaceException::class);
         $factory->createFromConfiguration([
             ['identifier' => 'broken_handler', 'configuration' => null],
-        ]);
+        ], 1);
     }
 
     #[Test]
@@ -146,10 +146,10 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
         $logManager = $this->createMock(LogManager::class);
         $logManager->expects(self::once())->method('getLogger')->willReturn(new \Psr\Log\NullLogger());
 
-        $factory = new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager);
+        $factory = new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager, new FetchMode());
         $factory->createFromConfiguration([
             ['identifier' => 'logger_aware_handler', 'configuration' => null],
-        ]);
+        ], 1);
     }
 
     #[Test]
@@ -181,7 +181,7 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
 XML;
 
         $factory = $this->createFactory();
-        $collection = $factory->createFromFlexForm($flexForm);
+        $collection = $factory->createFromFlexForm($flexForm, 1);
 
         self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
     }
@@ -217,7 +217,7 @@ XML;
         $factory = $this->createFactory();
 
         $this->expectException(UnknownResourceException::class);
-        $factory->createFromFlexForm($flexForm);
+        $factory->createFromFlexForm($flexForm, 1);
     }
 
     private function createFactory(): RemoteResourceCollectionFactory
@@ -229,7 +229,7 @@ XML;
         $connectionPool = $this->createMock(ConnectionPool::class);
         $logManager = (new ReflectionClass(LogManager::class))->newInstanceWithoutConstructor();
 
-        return new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager);
+        return new RemoteResourceCollectionFactory($storageRepository, $resourceFactory, $fileRepository, $connectionPool, $logManager, new FetchMode());
     }
 }
 

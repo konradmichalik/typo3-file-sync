@@ -16,8 +16,9 @@ namespace KonradMichalik\Typo3FileSync\EventListener;
 use Closure;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
+use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollection, RemoteResourceCollectionFactory};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
+use TYPO3\CMS\Core\Configuration\Features;
 use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\Event\AfterResourceStorageInitializationEvent;
 use TYPO3\CMS\Core\Resource\Exception\InvalidConfigurationException;
@@ -38,6 +39,8 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
 
     public function __construct(
         private readonly RemoteResourceCollectionFactory $remoteResourceCollectionFactory,
+        private readonly FetchMode $fetchMode,
+        private readonly Features $features,
     ) {}
 
     public function __invoke(AfterResourceStorageInitializationEvent $event): void
@@ -71,15 +74,7 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
             return;
         }
 
-        if ($isRecordEnabled) {
-            $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromFlexForm(
-                $storageRecord[Configuration::FIELD_RESOURCES],
-            );
-        } else {
-            $remoteResourceCollection = $this->remoteResourceCollectionFactory->createFromConfiguration(
-                $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()],
-            );
-        }
+        $remoteResourceCollection = $this->buildRemoteResourceCollection($storage, $storageRecord, $isRecordEnabled);
 
         /** @var FileSyncDriver $driverObject */
         $driverObject = GeneralUtility::makeInstance(
@@ -98,6 +93,30 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
         $driverObject->initialize();
 
         $storage->setDriver($driverObject);
+    }
+
+    /**
+     * @param array<string, mixed> $storageRecord
+     */
+    private function buildRemoteResourceCollection(ResourceStorage $storage, array $storageRecord, bool $isRecordEnabled): RemoteResourceCollection
+    {
+        $this->fetchMode->registerStorage(
+            (int) $storageRecord['uid'],
+            $this->features->isFeatureEnabled(Configuration::FEATURE_DEFERRED_LOADING)
+                && ($storageRecord[Configuration::FIELD_DEFERRED] ?? 0) > 0,
+        );
+
+        if ($isRecordEnabled) {
+            return $this->remoteResourceCollectionFactory->createFromFlexForm(
+                $storageRecord[Configuration::FIELD_RESOURCES],
+                (int) $storageRecord['uid'],
+            );
+        }
+
+        return $this->remoteResourceCollectionFactory->createFromConfiguration(
+            $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()],
+            (int) $storageRecord['uid'],
+        );
     }
 
     /**

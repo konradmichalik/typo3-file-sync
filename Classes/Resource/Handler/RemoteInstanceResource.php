@@ -15,7 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
 use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\TransferException;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
+use KonradMichalik\Typo3FileSync\Resource\{DeferrableResourceInterface, RemoteResourceInterface};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use TYPO3\CMS\Core\Http\Client\GuzzleClientFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
@@ -31,7 +31,7 @@ use function sprintf;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResourceInterface
+final class RemoteInstanceResource implements DeferrableResourceInterface, LoggerAwareInterface, RemoteResourceInterface
 {
     use LoggerAwareTrait;
 

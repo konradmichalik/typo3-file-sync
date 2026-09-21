@@ -16,15 +16,17 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 use Error;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\{RemoteResourceCollection, RemoteResourceInterface};
+use KonradMichalik\Typo3FileSync\Resource\{DeferrableResourceInterface, FetchMode, RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
+use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
-use TYPO3\CMS\Core\Resource\{File, ProcessedFile, ProcessedFileRepository, ResourceFactory, ResourceStorage, StorageRepository};
+use TYPO3\CMS\Core\Http\ServerRequest;
+use TYPO3\CMS\Core\Resource\{File, FileInterface, ProcessedFile, ProcessedFileRepository, ResourceFactory, ResourceStorage, StorageRepository};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -38,6 +40,7 @@ final class RemoteResourceCollectionTest extends TestCase
 {
     protected function tearDown(): void
     {
+        unset($GLOBALS['TYPO3_REQUEST']);
         GeneralUtility::purgeInstances();
     }
 
@@ -73,6 +76,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -109,6 +114,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -148,6 +155,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -176,6 +185,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -209,6 +220,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -244,6 +257,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -277,6 +292,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -327,6 +344,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $connectionPool,
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -374,6 +393,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $connectionPool,
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -402,6 +423,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -440,6 +463,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -474,6 +499,8 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
@@ -536,12 +563,137 @@ final class RemoteResourceCollectionTest extends TestCase
             $resourceFactory,
             $fileRepository,
             $connectionPool,
+            1,
+            new FetchMode(),
         );
         $collection->setLogger(new NullLogger());
 
         $result = $collection->get('/processing/image.jpg', 'fileadmin/_processed_/image.jpg');
 
         self::assertSame('processed-content', $result);
+    }
+
+    #[Test]
+    public function deferredStorageSkipsDeferrableHandlersAndFallsThroughToTheNext(): void
+    {
+        $deferrable = new class implements RemoteResourceInterface, DeferrableResourceInterface {
+            public bool $called = false;
+
+            /**
+             * @return string
+             */
+            public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
+            {
+                $this->called = true;
+
+                return 'remote';
+            }
+        };
+        $fallback = new class implements RemoteResourceInterface {
+            /**
+             * @return string
+             */
+            public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
+            {
+                return 'placeholder';
+            }
+        };
+
+        $fetchMode = new FetchMode();
+        $fetchMode->registerStorage(1, true);
+        $GLOBALS['TYPO3_REQUEST'] = (new ServerRequest())->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+
+        $subject = $this->createSubject(
+            [
+                ['identifier' => 'remote_instance', 'handler' => $deferrable],
+                ['identifier' => 'placeholder_image', 'handler' => $fallback],
+            ],
+            1,
+            $fetchMode,
+        );
+
+        self::assertSame('placeholder', $subject->get('/missing.jpg', 'fileadmin/missing.jpg'));
+        self::assertFalse($deferrable->called);
+    }
+
+    #[Test]
+    public function synchronousStorageStillUsesDeferrableHandlersFirst(): void
+    {
+        $deferrable = new class implements RemoteResourceInterface, DeferrableResourceInterface {
+            public bool $called = false;
+
+            /**
+             * @return string
+             */
+            public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
+            {
+                $this->called = true;
+
+                return 'remote';
+            }
+        };
+        $fallback = new class implements RemoteResourceInterface {
+            /**
+             * @return string
+             */
+            public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
+            {
+                return 'placeholder';
+            }
+        };
+
+        $fetchMode = new FetchMode();
+        $fetchMode->registerStorage(1, false);
+        $GLOBALS['TYPO3_REQUEST'] = (new ServerRequest())->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+
+        $subject = $this->createSubject(
+            [
+                ['identifier' => 'remote_instance', 'handler' => $deferrable],
+                ['identifier' => 'placeholder_image', 'handler' => $fallback],
+            ],
+            1,
+            $fetchMode,
+        );
+
+        self::assertSame('remote', $subject->get('/missing.jpg', 'fileadmin/missing.jpg'));
+        self::assertTrue($deferrable->called);
+    }
+
+    /**
+     * @param array<int, array{identifier: string, handler: RemoteResourceInterface}> $resources
+     */
+    private function createSubject(array $resources, int $storageUid = 1, ?FetchMode $fetchMode = null): RemoteResourceCollection
+    {
+        $fileObject = $this->createMock(File::class);
+        $fileObject->method('getUid')->willReturn(1);
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn($fileObject);
+
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $resourceFactory = (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor();
+        $fileRepository = new FileRepository(
+            $this->createFileRepositoryConnectionPool(),
+            $this->createMock(ProcessedFileRepository::class),
+            $this->createMock(StorageRepository::class),
+        );
+
+        $collection = new RemoteResourceCollection(
+            $resources,
+            $storageRepository,
+            $resourceFactory,
+            $fileRepository,
+            $this->createMock(ConnectionPool::class),
+            $storageUid,
+            $fetchMode ?? new FetchMode(),
+        );
+        $collection->setLogger(new NullLogger());
+
+        return $collection;
     }
 
     private function createFileRepositoryConnectionPool(): ConnectionPool

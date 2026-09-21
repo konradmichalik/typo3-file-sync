@@ -60,6 +60,8 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         protected readonly ResourceFactory $resourceFactory,
         protected readonly FileRepository $fileRepository,
         protected readonly ConnectionPool $connectionPool,
+        protected readonly int $storageUid,
+        protected readonly FetchMode $fetchMode,
     ) {}
 
     /**
@@ -82,6 +84,12 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         );
 
         foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof DeferrableResourceInterface
+                && $this->fetchMode->isDeferred($this->storageUid)
+            ) {
+                continue;
+            }
+
             $file = $this->fileIdentifierCache[$filePath];
             $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);
             if (false === $fileContent) {
