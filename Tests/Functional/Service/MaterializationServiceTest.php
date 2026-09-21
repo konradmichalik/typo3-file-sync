@@ -22,6 +22,7 @@ use TYPO3\CMS\Core\Http\ServerRequest;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function count;
 use function is_resource;
 use function sprintf;
 
@@ -102,6 +103,7 @@ final class MaterializationServiceTest extends FunctionalTestCase
         GeneralUtility::mkdir_deep($this->basePath.'_processed_');
         file_put_contents($this->basePath.'user_upload/provisional.jpg', 'placeholder-body');
         file_put_contents($this->basePath.'user_upload/broken.txt', 'placeholder-body');
+        file_put_contents($this->basePath.'user_upload/fallback.jpg', 'placeholder-body');
         file_put_contents($this->basePath.'_processed_/csm_provisional.jpg', 'placeholder-derivative');
     }
 
@@ -137,6 +139,41 @@ final class MaterializationServiceTest extends FunctionalTestCase
             ->fetchAssociative();
 
         self::assertSame('remote_instance', $row['tx_typo3_file_sync_identifier']);
+    }
+
+    #[Test]
+    public function aFileOnlyTheFallbackHandlerCouldDeliverIsReportedAsUnavailable(): void
+    {
+        // uid 3's original is an image the fixture server answers with 404,
+        // so the placeholder handler puts a file on disk. That is not a
+        // materialization: answering with a url would make the browser swap
+        // a placeholder for a placeholder and stop retrying that image.
+        $token = $this->get(DeferredTokenService::class)->create(30);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertFileExists($this->basePath.'user_upload/fallback.jpg');
+        self::assertSame('placeholder_image', $this->syncIdentifierOf(3));
+    }
+
+    #[Test]
+    public function severalRenditionsOfOneOriginalCauseASingleRemoteFetch(): void
+    {
+        self::resetHitLog();
+        $tokenService = $this->get(DeferredTokenService::class);
+        $tokens = [$tokenService->create(10), $tokenService->create(11), $tokenService->create(12)];
+
+        $result = $this->get(MaterializationService::class)->materialize($tokens);
+
+        // Without grouping by original, rendition two and three would each
+        // delete the real file rendition one just downloaded and fetch it
+        // again, which is three round trips and a window in which the real
+        // file is missing from disk.
+        self::assertSame(1, self::countHitsFor('provisional.jpg'));
+        foreach ($tokens as $token) {
+            self::assertArrayHasKey('url', $result[$token]);
+        }
     }
 
     #[Test]
@@ -177,6 +214,16 @@ final class MaterializationServiceTest extends FunctionalTestCase
         self::assertSame([], $this->get(MaterializationService::class)->materialize($tokens));
     }
 
+    private function syncIdentifierOf(int $fileUid): string
+    {
+        $row = $this->get(ConnectionPool::class)
+            ->getConnectionForTable('sys_file')
+            ->select(['tx_typo3_file_sync_identifier'], 'sys_file', ['uid' => $fileUid])
+            ->fetchAssociative();
+
+        return (string) ($row['tx_typo3_file_sync_identifier'] ?? '');
+    }
+
     private function addRenditionForBrokenOriginal(): void
     {
         $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_processedfile')->insert(
@@ -194,6 +241,34 @@ final class MaterializationServiceTest extends FunctionalTestCase
                 'height' => 200,
             ],
         );
+    }
+
+    /**
+     * The built-in server re-runs router.php from scratch for every
+     * request, so a file under the system temp directory is the only way
+     * for a test to observe how often a path really reached the server.
+     */
+    private static function hitLogPath(): string
+    {
+        return sys_get_temp_dir().'/typo3-file-sync-materialize-hits.log';
+    }
+
+    private static function resetHitLog(): void
+    {
+        @unlink(self::hitLogPath());
+    }
+
+    private static function countHitsFor(string $filename): int
+    {
+        $contents = @file_get_contents(self::hitLogPath());
+        if (false === $contents) {
+            return 0;
+        }
+
+        return count(array_filter(
+            explode(\PHP_EOL, $contents),
+            static fn (string $line): bool => $filename === $line,
+        ));
     }
 
     private static function findFreePort(): int

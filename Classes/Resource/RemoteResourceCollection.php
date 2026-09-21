@@ -137,6 +137,24 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         }
     }
 
+    /**
+     * The identifiers of the handlers a deferred render skips. Only a file
+     * one of them delivered has actually been materialized.
+     *
+     * @return list<string>
+     */
+    public function getDeferrableIdentifiers(): array
+    {
+        $identifiers = [];
+        foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof DeferrableResourceInterface) {
+                $identifiers[] = $resource['identifier'];
+            }
+        }
+
+        return $identifiers;
+    }
+
     private function resolveFileObject(string $fileIdentifier, string $filePath): void
     {
         if (array_key_exists($filePath, $this->fileIdentifierCache)) {

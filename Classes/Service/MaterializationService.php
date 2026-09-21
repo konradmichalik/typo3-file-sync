@@ -16,17 +16,20 @@ namespace KonradMichalik\Typo3FileSync\Service;
 use Closure;
 use Doctrine\DBAL\{ArrayParameterType, ParameterType};
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\FetchMode;
+use KonradMichalik\Typo3FileSync\Resource\{FetchMode, ResourceIdentifier};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use Throwable;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Resource\Driver\DriverInterface;
 use TYPO3\CMS\Core\Resource\{File, ProcessedFileRepository, ResourceFactory, ResourceStorage};
 
+use function array_merge;
 use function array_unique;
 use function array_values;
 use function count;
+use function in_array;
 use function is_array;
 use function is_file;
 use function sprintf;
@@ -66,6 +69,7 @@ final class MaterializationService implements LoggerAwareInterface
         private readonly ConnectionPool $connectionPool,
         private readonly ResourceFactory $resourceFactory,
         private readonly ProcessedFileRepository $processedFileRepository,
+        private readonly FileRepository $fileRepository,
     ) {}
 
     /**
@@ -148,6 +152,7 @@ final class MaterializationService implements LoggerAwareInterface
     {
         $results = [];
         $files = [];
+        $originals = [];
         foreach ($pending as $token => $processedRow) {
             $file = $this->resolveOriginal((int) $processedRow['original']);
             if (null === $file) {
@@ -155,15 +160,70 @@ final class MaterializationService implements LoggerAwareInterface
                 continue;
             }
             $files[$token] = $file;
+            $originals[$file->getUid()] = $file;
         }
 
-        $this->prefetchOriginals($files);
+        // Grouped by original, not by token: srcset routinely puts several
+        // renditions of one picture on a page, and fetching per rendition
+        // would delete a real file this batch just paid to download.
+        $accepted = $this->prepareStorages($originals);
+        $failures = [];
+        foreach ($originals as $fileUid => $file) {
+            $failure = $this->refetchOriginal($file, $accepted[$file->getStorage()->getUid()] ?? []);
+            if (null !== $failure) {
+                $failures[$fileUid] = $failure;
+            }
+        }
 
         foreach ($files as $token => $file) {
-            $results[$token] = $this->materializeOne($file, $pending[$token]);
+            $results[$token] = $failures[$file->getUid()] ?? $this->rebuildRendition($file, $pending[$token]);
         }
 
         return $results;
+    }
+
+    /**
+     * @param list<string> $accepted
+     *
+     * @return array{error: string}|null null once the real original is on disk
+     */
+    private function refetchOriginal(File $file, array $accepted): ?array
+    {
+        try {
+            if (!$this->isDelivered($file, $accepted)) {
+                // A provisional file on disk stops the driver from reaching
+                // for the remote, so it has to go before the fetch. An
+                // original a concurrent request already materialized is
+                // left alone: deleting it would throw away a real file.
+                $provisionalPath = $file->getForLocalProcessing(false);
+                if (is_file($provisionalPath)) {
+                    unlink($provisionalPath);
+                }
+            }
+
+            if (is_file($file->getForLocalProcessing(false)) && $this->isDelivered($file, $accepted)) {
+                return null;
+            }
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Fetching original %d failed: %s', $file->getUid(), $exception->getMessage()),
+            );
+        }
+
+        return $this->damp($file);
+    }
+
+    /**
+     * A fallback handler such as the placeholder generator will happily put
+     * *a* file on disk, which is not a materialization. Only a handler the
+     * render skipped counts; reporting otherwise would make the browser
+     * swap a placeholder for a placeholder and stop retrying that image.
+     *
+     * @param list<string> $accepted
+     */
+    private function isDelivered(File $file, array $accepted): bool
+    {
+        return in_array($this->fileRepository->findSyncData($file->getUid())['identifier'], $accepted, true);
     }
 
     /**
@@ -171,16 +231,10 @@ final class MaterializationService implements LoggerAwareInterface
      *
      * @return array{url: string}|array{error: string}
      */
-    private function materializeOne(File $file, array $processedRow): array
+    private function rebuildRendition(File $file, array $processedRow): array
     {
         try {
-            $this->discardProvisionalArtefacts($file, (int) $processedRow['uid']);
-
-            // The provisional file had to be gone first: the driver only
-            // reaches for the remote when nothing is on disk.
-            if (!is_file($file->getForLocalProcessing(false))) {
-                return $this->damp($file);
-            }
+            $this->discardProvisionalRendition((int) $processedRow['uid']);
 
             // No identifier bookkeeping here on purpose: the handler chain
             // already ran FileRepository::updateIdentifier() for whichever
@@ -198,7 +252,7 @@ final class MaterializationService implements LoggerAwareInterface
             return ['url' => $publicUrl.'?v='.time()];
         } catch (Throwable $exception) {
             $this->logger?->warning(
-                sprintf('Materializing file %d failed: %s', $file->getUid(), $exception->getMessage()),
+                sprintf('Rebuilding rendition %d failed: %s', $processedRow['uid'], $exception->getMessage()),
             );
 
             return $this->damp($file);
@@ -211,43 +265,58 @@ final class MaterializationService implements LoggerAwareInterface
      * entry, so dropping them all here would destroy the ones a previous
      * entry of the same batch just rebuilt.
      */
-    private function discardProvisionalArtefacts(File $file, int $processedFileUid): void
+    private function discardProvisionalRendition(int $processedFileUid): void
     {
         $processedFile = $this->processedFileRepository->findByUid($processedFileUid);
         if ($processedFile->exists()) {
             $processedFile->delete(true);
         }
-
-        $provisionalPath = $file->getForLocalProcessing(false);
-        if (is_file($provisionalPath)) {
-            unlink($provisionalPath);
-        }
     }
 
     /**
-     * @param array<string, File> $files
+     * Downloads every original of a storage in one batch and reports which
+     * resource identifiers count as materialized there. The render skips
+     * exactly the handlers marked DeferrableResourceInterface, so those are
+     * the ones whose delivery means the real file arrived.
+     * ResourceIdentifier::RemoteInstance is the one the extension ships and
+     * the one FileRepository's provisional queries key on; a project adding
+     * its own deferrable handler is picked up through the marker interface.
+     *
+     * @param array<int, File> $originals
+     *
+     * @return array<int, list<string>> accepted resource identifiers per storage uid
      */
-    private function prefetchOriginals(array $files): void
+    private function prepareStorages(array $originals): array
     {
         /** @var array<int, array{storage: ResourceStorage, paths: list<string>}> $batches */
         $batches = [];
-        foreach ($files as $file) {
+        foreach ($originals as $file) {
+            $storage = $file->getStorage();
+            $batches[$storage->getUid()] ??= ['storage' => $storage, 'paths' => []];
+
             $publicUrl = $file->getPublicUrl();
-            if (null === $publicUrl || '' === $publicUrl) {
+            if (null !== $publicUrl && '' !== $publicUrl) {
+                $batches[$storage->getUid()]['paths'][] = $publicUrl;
+            }
+        }
+
+        $accepted = [];
+        foreach ($batches as $storageUid => $batch) {
+            $accepted[$storageUid] = [ResourceIdentifier::RemoteInstance->value];
+
+            $driver = self::extractDriver($batch['storage']);
+            if (!$driver instanceof FileSyncDriver) {
                 continue;
             }
 
-            $storage = $file->getStorage();
-            $batches[$storage->getUid()] ??= ['storage' => $storage, 'paths' => []];
-            $batches[$storage->getUid()]['paths'][] = $publicUrl;
+            $driver->prefetch(array_values(array_unique($batch['paths'])));
+            $accepted[$storageUid] = array_values(array_unique(array_merge(
+                $accepted[$storageUid],
+                $driver->getDeferrableIdentifiers(),
+            )));
         }
 
-        foreach ($batches as $batch) {
-            $driver = self::extractDriver($batch['storage']);
-            if ($driver instanceof FileSyncDriver) {
-                $driver->prefetch(array_values(array_unique($batch['paths'])));
-            }
-        }
+        return $accepted;
     }
 
     private function resolveOriginal(int $fileUid): ?File

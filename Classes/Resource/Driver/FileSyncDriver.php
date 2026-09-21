@@ -136,6 +136,14 @@ final class FileSyncDriver extends LocalDriver
         $this->remoteResourceCollection->prefetch($filePaths);
     }
 
+    /**
+     * @return list<string>
+     */
+    public function getDeferrableIdentifiers(): array
+    {
+        return $this->remoteResourceCollection->getDeferrableIdentifiers();
+    }
+
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
         if ('' === $fileIdentifier) {
