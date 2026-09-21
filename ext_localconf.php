@@ -15,7 +15,6 @@ defined('TYPO3') || exit('Access denied.');
 
 call_user_func(static function (): void {
     $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][KonradMichalik\Typo3FileSync\Configuration::FEATURE_DEFERRED_LOADING] ??= false;
-    $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][KonradMichalik\Typo3FileSync\Configuration::FEATURE_PREVIEW_IMAGES] ??= false;
 
     $nodeRegistry = &$GLOBALS['TYPO3_CONF_VARS']['SYS']['formEngine']['nodeRegistry'];
 

@@ -39,10 +39,9 @@ final class ConfigurationTest extends TestCase
     }
 
     #[Test]
-    public function featureToggleNamesAreNamespaced(): void
+    public function featureToggleNameIsNamespaced(): void
     {
         self::assertSame('fileSync.deferredLoading', Configuration::FEATURE_DEFERRED_LOADING);
-        self::assertSame('fileSync.previewImages', Configuration::FEATURE_PREVIEW_IMAGES);
     }
 
     #[Test]
