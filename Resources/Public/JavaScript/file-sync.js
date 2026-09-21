@@ -6,6 +6,9 @@
 const ENDPOINT =
     document.querySelector('script[data-file-sync-endpoint]')?.dataset.fileSyncEndpoint ??
     '/tx-file-sync/materialize';
+// Must never exceed MaterializationService::MAX_TOKENS. The server answers a
+// larger batch with 400, request() swallows that into {}, and every image in
+// the batch silently stays a placeholder for the rest of the page view.
 const BATCH_SIZE = 50;
 
 const canAnimate = () =>
