@@ -58,3 +58,25 @@ TYPO3\CMS\Core\Utility\ExtensionManagementUtility::addToAllTCAtypes(
     '',
     'after:processingfolder',
 );
+
+// Literal feature toggle key, not Configuration::FEATURE_DEFERRED_LOADING: TCA override files must
+// stay loadable without the extension's autoloader being primed.
+if (($GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] ?? false) === true) {
+    TYPO3\CMS\Core\Utility\ExtensionManagementUtility::addTCAcolumns('sys_file_storage', [
+        'tx_typo3_file_sync_deferred' => [
+            'label' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.deferred',
+            'description' => 'LLL:EXT:typo3_file_sync/Resources/Private/Language/locallang_db.xlf:sys_file_storage.file_sync.deferred.description',
+            'displayCond' => 'FIELD:driver:=:Local',
+            'config' => [
+                'type' => 'check',
+                'default' => 0,
+            ],
+        ],
+    ]);
+    TYPO3\CMS\Core\Utility\ExtensionManagementUtility::addToAllTCAtypes(
+        'sys_file_storage',
+        'tx_typo3_file_sync_deferred',
+        '',
+        'after:tx_typo3_file_sync_resources',
+    );
+}

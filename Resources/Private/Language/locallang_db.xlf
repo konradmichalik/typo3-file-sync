@@ -18,6 +18,12 @@
 			<trans-unit id="sys_file_storage.file_sync.delete">
 				<source>Delete files</source>
 			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.deferred">
+				<source>Defer remote fetching in the frontend (experimental)</source>
+			</trans-unit>
+			<trans-unit id="sys_file_storage.file_sync.deferred.description">
+				<source>Renders a placeholder immediately and lets the browser pull the real file afterwards. Requires the fileSync.deferredLoading feature toggle.</source>
+			</trans-unit>
 			<trans-unit id="sys_file_storage.file_sync.remote_instance">
 				<source>Remote TYPO3 instance</source>
 			</trans-unit>

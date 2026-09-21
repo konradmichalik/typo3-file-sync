@@ -13,5 +13,6 @@ CREATE TABLE sys_file (
 #
 CREATE TABLE sys_file_storage (
     tx_typo3_file_sync_enable tinyint(4) DEFAULT '0' NOT NULL,
-    tx_typo3_file_sync_resources text
+    tx_typo3_file_sync_resources text,
+    tx_typo3_file_sync_deferred tinyint(4) DEFAULT '0' NOT NULL
 );
