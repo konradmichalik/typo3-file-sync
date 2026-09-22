@@ -418,7 +418,7 @@ final readonly class FileRepository
      *
      * @param list<int> $originalUids
      *
-     * @return array<int, array{identifier: string, storage: int, width: int, height: int}> keyed by original uid, absent where that original has no usable rendition
+     * @return array<int, array{identifier: string, storage: int}> keyed by original uid, absent where that original has no usable rendition
      */
     public function findSmallestRenditions(array $originalUids): array
     {
@@ -428,7 +428,11 @@ final readonly class FileRepository
 
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
         $expressionBuilder = $queryBuilder->expr();
-        $queryBuilder->select('original', 'identifier', 'storage', 'width', 'height', 'task_type')
+        // Not the width and height: they are what the ORDER BY and the
+        // gt() guards below are for, and no caller reads them. The preview's
+        // own dimensions come from the rendition the browser is waiting for,
+        // never from the one this picks.
+        $queryBuilder->select('original', 'identifier', 'storage', 'task_type')
             ->from('sys_file_processedfile')
             ->where(
                 $expressionBuilder->in('original', $queryBuilder->createNamedParameter($originalUids, ArrayParameterType::INTEGER)),
@@ -466,7 +470,7 @@ final readonly class FileRepository
      *
      * @param list<array<string, mixed>> $rows
      *
-     * @return array<int, array{identifier: string, storage: int, width: int, height: int}>
+     * @return array<int, array{identifier: string, storage: int}>
      */
     private static function narrowestPerOriginal(array $rows): array
     {
@@ -482,8 +486,6 @@ final readonly class FileRepository
             $winners[$original] = [
                 'identifier' => (string) $row['identifier'],
                 'storage' => (int) $row['storage'],
-                'width' => (int) $row['width'],
-                'height' => (int) $row['height'],
             ];
             $settled[$original] = $isThumbnail;
         }

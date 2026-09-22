@@ -55,7 +55,7 @@ use function time;
  * token must not cost the rest of the batch its previews.
  *
  * @phpstan-type PreviewLocation array{storage: int, identifier: string}
- * @phpstan-type PreviewPlan array{requested: PreviewLocation, source: array{identifier: string, storage: int, width: int, height: int}, width: int, height: int}
+ * @phpstan-type PreviewPlan array{requested: PreviewLocation, source: PreviewLocation, width: int, height: int}
  * @phpstan-type PreviewResult array{preview: string}|array{error: string}
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
@@ -170,8 +170,8 @@ final class PreviewService implements LoggerAwareInterface
      * What a single token resolves to before anything is fetched: a plan to
      * build a preview, or the answer it already has.
      *
-     * @param array<string, mixed>|null                                                    $row
-     * @param array<int, array{identifier: string, storage: int, width: int, height: int}> $sources the batch's resolved preview sources, keyed by original uid
+     * @param array<string, mixed>|null   $row
+     * @param array<int, PreviewLocation> $sources the batch's resolved preview sources, keyed by original uid
      *
      * @return array{plan: PreviewPlan}|array{result: PreviewResult}
      */
@@ -222,8 +222,8 @@ final class PreviewService implements LoggerAwareInterface
      * was chosen as the narrowest there is, so it stays a cheap proxy and
      * needs no threshold of its own.
      *
-     * @param array{identifier: string, storage: int, width: int, height: int} $source
-     * @param PreviewLocation                                                  $requested
+     * @param PreviewLocation $source
+     * @param PreviewLocation $requested
      */
     private static function isRequestedItself(array $source, array $requested): bool
     {
@@ -311,7 +311,7 @@ final class PreviewService implements LoggerAwareInterface
         }
 
         $bytes = $this->previewSourceReader->read(array_map(
-            static fn (array $plan): array => ['storage' => $plan['source']['storage'], 'identifier' => $plan['source']['identifier']],
+            static fn (array $plan): array => $plan['source'],
             $plans,
         ));
 
