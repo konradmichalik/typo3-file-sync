@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -eu
+
+## Description: Publish the fake remote instance's originals and renditions, so both experimental features have something to fetch.
+## Usage: stage-remote [version]
+## Example: "ddev stage-remote" or "ddev stage-remote 13"
+
+. /var/www/html/.ddev/.setup/scripts/utils.sh
+
+VERSION=${1:-$(get_lowest_supported_typo3_versions)}
+INSTANCE="/var/www/html/.Build/${VERSION}"
+REMOTE_ROOT="/var/www/html/.Build"
+FIXTURES="/var/www/html/Tests/Acceptance/Fixtures/remote-files"
+
+[ -d "$INSTANCE" ] || { message red "TYPO3 instance not found for version ${VERSION}"; exit 1; }
+
+# The originals. The vhost remote.<project>.ddev.site serves .Build, so this is
+# what turns a 404 from the remote handler into a real download.
+mkdir -p "$REMOTE_ROOT"
+cp -r "$FIXTURES"/. "$REMOTE_ROOT"/
+
+# The renditions the preview stage reads. A production instance already has
+# these; here they only exist once a page has been rendered, so the identifiers
+# come out of the database rather than off the disk. The real picture is copied
+# under each one, not the local grey placeholder, so the blur looks like the
+# image it stands in for.
+mapfile -t ROWS < <(mysql -h db -u root -proot "database_${VERSION}" -N -e "
+    SELECT p.identifier, f.identifier
+    FROM sys_file_processedfile p
+    JOIN sys_file f ON f.uid = p.original
+    WHERE p.identifier <> ''
+")
+
+if [ ${#ROWS[@]} -eq 0 ]; then
+    message yellow "No renditions recorded yet. Open a page once, then run this again."
+    exit 0
+fi
+
+COUNT=0
+for ROW in "${ROWS[@]}"; do
+    RENDITION=$(echo "$ROW" | cut -f1)
+    ORIGINAL=$(echo "$ROW" | cut -f2)
+    SOURCE="${FIXTURES}/fileadmin${ORIGINAL}"
+    TARGET="${REMOTE_ROOT}/fileadmin${RENDITION}"
+    [ -f "$SOURCE" ] || continue
+    mkdir -p "$(dirname "$TARGET")"
+    cp "$SOURCE" "$TARGET"
+    COUNT=$((COUNT + 1))
+done
+
+message green "Published ${COUNT} rendition(s) and the originals to the fake remote."
