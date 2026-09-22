@@ -186,9 +186,9 @@ It requires `fileSync.deferredLoading` and does nothing without it: no image is 
 
 A preview is a WebP of 32 pixels on its longest edge, blurred twice. It weighs a couple of hundred bytes, so roughly 300 characters once it is base64-encoded into the HTML. A GD build without WebP support produces no previews at all and leaves the grey placeholder in place.
 
-The source it is built from is the narrowest rendition of the same original recorded in `sys_file_processedfile`, by preference the backend thumbnail, fetched from the remote instance and blurred locally with GD. That is where the traffic goes, not into the previews themselves: a backend thumbnail is a few kilobytes against an original in the megabytes, but where no small rendition is recorded the lookup falls back to the narrowest one that is, which can be full-size. The preview then costs as much to fetch as that rendition does, to produce the same couple of hundred bytes of blur.
+The source it is built from is another rendition of the same original recorded in `sys_file_processedfile`, preferring the backend thumbnail and otherwise taking the narrowest one there is, fetched from the remote instance and blurred locally with GD. That is where the traffic goes, not into the previews themselves. Where a backend thumbnail exists it is a few kilobytes against an original in the megabytes. Where none does, the narrowest recorded rendition can be a full-size one, and the preview then costs as much to fetch as that rendition does, to produce the same couple of hundred bytes of blur.
 
-The crop follows the aspect ratio of the rendition the browser is waiting for, so a square slot is not filled with a stretched landscape blur. That means one preview per rendition, not per picture: three renditions of one picture are three previews, each fetching its source separately once. Within a single page view the download is shared, so all renditions of one picture fetch their source once per batch.
+The crop follows the aspect ratio of the rendition the browser is waiting for, so a square slot is not filled with a stretched landscape blur. That means one preview per rendition, not per picture: three renditions of one picture are three previews, each fetching its source once over the lifetime of the store. Within a single page view that download is shared, so all renditions of one picture fetch their source once per batch.
 
 Previews live in `var/file-sync/previews/`, outside the database and outside the file storage. A database sync from production does not touch them, and neither does `file-sync:delete` or `file-sync:reset`. A sync does replace `sys_file_processedfile`, though, and previews are keyed by the processed identifier, so the previews belonging to the renditions it replaced become orphans that nothing prunes. Deleting the directory costs nothing but a repeat of the preview stage, since every preview is rebuilt the next time a page holding that image is visited.
 
@@ -216,6 +216,8 @@ After a database sync from production, `tx_typo3_file_sync_identifier` is empty 
 vendor/bin/typo3 file-sync:delete --identifier=placeholder_image
 vendor/bin/typo3 file-sync:reset
 ```
+
+A sync also replaces `sys_file_processedfile`, so previews stored under the replaced renditions' identifiers are orphaned. Nothing prunes them, and nothing reads them either. Deleting `var/file-sync/previews/` belongs in the same routine if the directory matters to you.
 
 ## 🧩 Custom Resource Handlers
 
