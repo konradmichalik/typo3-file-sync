@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Preview;
 
+use RuntimeException;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -74,11 +75,20 @@ final class PreviewStore
         return $this->contents($storageUid, $markerIdentifier);
     }
 
+    /**
+     * A write that did not happen has to say so. Silence here means the
+     * caller logs nothing, keeps answering from a store that never grows,
+     * and every visitor pays the fetch the store exists to avoid.
+     *
+     * @throws RuntimeException when the preview could not be written
+     */
     public function write(int $storageUid, string $fileIdentifier, string $webp): void
     {
         $path = $this->path($storageUid, $fileIdentifier);
         GeneralUtility::mkdir_deep(dirname($path));
-        GeneralUtility::writeFile($path, $webp, true);
+        if (!GeneralUtility::writeFile($path, $webp, true)) {
+            throw new RuntimeException('Preview could not be written to "'.$path.'".', 1790035200);
+        }
     }
 
     public function remove(int $storageUid, string $fileIdentifier): void
