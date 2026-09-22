@@ -24,7 +24,7 @@ use Stringable;
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Http\{NormalizedParams, Response, ServerRequest, Stream};
-use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
+use TYPO3\CMS\Core\Resource\{ProcessedFileRepository, ResourceFactory};
 use TYPO3\CMS\Core\Resource\Processing\TaskTypeRegistry;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
@@ -476,11 +476,19 @@ final class MaterializationServiceTest extends FunctionalTestCase
         self::assertSame(['9999.deadbeef' => ['error' => 'invalid']], $result);
     }
 
+    /**
+     * The other half of the placeholder case below: a remote that really
+     * cannot deliver still has to be left alone for the window, and the
+     * failure is recorded where nothing else means anything by it. The sync
+     * timestamp is not that place, since the backend shows it as the moment
+     * a handler delivered this file.
+     */
     #[Test]
     public function anOriginalRetriedWithinTheDampingWindowIsRejected(): void
     {
         $tokenService = $this->get(DeferredTokenService::class);
         $service = $this->get(MaterializationService::class);
+        $this->setSyncTimestampOf(2, 1700000000);
 
         // uid 20's original is a text file the fixture server answers with
         // 404 and the placeholder handler refuses, so no handler delivers.
@@ -496,6 +504,32 @@ final class MaterializationServiceTest extends FunctionalTestCase
 
         self::assertSame(['error' => 'unavailable'], $first[$failingToken]);
         self::assertSame(['error' => 'throttled'], $service->materialize([$retryToken])[$retryToken]);
+        self::assertSame(1700000000, $this->syncTimestampOf(2));
+    }
+
+    /**
+     * The first visit to a freshly synced installation, which is the whole
+     * point of the feature. The render that put the grey placeholder on the
+     * page stamps the file as it delivers, and the browser posts its tokens
+     * milliseconds later. Read as a recent failure, that stamp throttles
+     * every image of every page until five minutes after the render, so the
+     * visitor only ever sees real files on a much later reload.
+     */
+    #[Test]
+    public function aPlaceholderRenderedByThisPageViewDoesNotThrottleItsOwnMaterialization(): void
+    {
+        unlink($this->basePath.'user_upload/provisional.jpg');
+        // Exactly what the render does: the deferred storage skips the
+        // remote handler, the placeholder handler answers, and delivering
+        // writes the identifier and the sync timestamp.
+        $this->get(ResourceFactory::class)->getFileObject(1)->getForLocalProcessing(false);
+        self::assertSame('placeholder_image', $this->syncIdentifierOf(1));
+
+        $token = $this->get(DeferredTokenService::class)->create(10);
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertArrayHasKey('url', $result[$token], 'The placeholder this render wrote damped its own replacement.');
+        self::assertSame('remote-body', file_get_contents($this->basePath.'user_upload/provisional.jpg'));
     }
 
     #[Test]
@@ -585,6 +619,25 @@ final class MaterializationServiceTest extends FunctionalTestCase
         return (bool) $this->get(ConnectionPool::class)
             ->getConnectionForTable('sys_file_processedfile')
             ->count('uid', 'sys_file_processedfile', ['uid' => $processedFileUid]);
+    }
+
+    private function setSyncTimestampOf(int $fileUid, int $tstamp): void
+    {
+        $this->get(ConnectionPool::class)->getConnectionForTable('sys_file')->update(
+            'sys_file',
+            [Configuration::FIELD_TSTAMP => $tstamp],
+            ['uid' => $fileUid],
+        );
+    }
+
+    private function syncTimestampOf(int $fileUid): int
+    {
+        $row = $this->get(ConnectionPool::class)
+            ->getConnectionForTable('sys_file')
+            ->select([Configuration::FIELD_TSTAMP], 'sys_file', ['uid' => $fileUid])
+            ->fetchAssociative();
+
+        return (int) ($row[Configuration::FIELD_TSTAMP] ?? 0);
     }
 
     private function syncIdentifierOf(int $fileUid): string

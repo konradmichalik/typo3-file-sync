@@ -217,11 +217,14 @@ final readonly class FileRepository
     }
 
     /**
-     * Batched sibling of findSyncData() for a whole materialization request.
+     * Batched sibling of findSyncData() for a whole materialization request,
+     * which asks a different question than the backend does: not when a
+     * handler last delivered, but whether an on-demand fetch failed recently
+     * enough to still be damped.
      *
      * @param list<int> $fileUids
      *
-     * @return array<int, array{identifier: string, tstamp: int}>
+     * @return array<int, array{identifier: string, failed: int}>
      */
     public function findSyncDataByUids(array $fileUids): array
     {
@@ -231,7 +234,7 @@ final readonly class FileRepository
 
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
         $rows = $queryBuilder
-            ->select('uid', Configuration::FIELD_IDENTIFIER, Configuration::FIELD_TSTAMP)
+            ->select('uid', Configuration::FIELD_IDENTIFIER, Configuration::FIELD_FAILED)
             ->from('sys_file')
             ->where(
                 $queryBuilder->expr()->in(
@@ -246,7 +249,7 @@ final readonly class FileRepository
         foreach ($rows as $row) {
             $result[(int) $row['uid']] = [
                 'identifier' => (string) ($row[Configuration::FIELD_IDENTIFIER] ?? ''),
-                'tstamp' => (int) ($row[Configuration::FIELD_TSTAMP] ?? 0),
+                'failed' => (int) ($row[Configuration::FIELD_FAILED] ?? 0),
             ];
         }
 
@@ -290,12 +293,16 @@ final readonly class FileRepository
     }
 
     /**
-     * Stamps the sync timestamp without touching the identifier, which is
-     * still whatever the fallback chain last made it. Arms the damping
-     * window that keeps a file the remote cannot deliver from being
-     * retried on every page view.
+     * Records that an on-demand fetch just failed, which arms the damping
+     * window that keeps a file the remote cannot deliver from being retried
+     * on every page view.
+     *
+     * Its own field rather than the sync timestamp: that one says when a
+     * handler delivered, and a deferred render delivering a placeholder
+     * writes it milliseconds before the browser asks for the real file. Read
+     * as a failure, it damped the very request the render was made for.
      */
-    public function touchSyncTimestamp(int $fileUid): void
+    public function markFetchFailure(int $fileUid): void
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
         $queryBuilder->update('sys_file')
@@ -305,7 +312,7 @@ final readonly class FileRepository
                     $queryBuilder->createNamedParameter($fileUid, ParameterType::INTEGER),
                 ),
             )
-            ->set(Configuration::FIELD_TSTAMP, time(), true, ParameterType::INTEGER)
+            ->set(Configuration::FIELD_FAILED, time(), true, ParameterType::INTEGER)
             ->executeStatement();
     }
 

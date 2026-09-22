@@ -120,7 +120,7 @@ final class MaterializationService implements LoggerAwareInterface
 
     /**
      * @param array<string, mixed>|null                          $processedRow
-     * @param array<int, array{identifier: string, tstamp: int}> $syncData
+     * @param array<int, array{identifier: string, failed: int}> $syncData
      *
      * @return array<string, mixed>|string the processed file row, or the error key describing why it was dropped
      */
@@ -133,19 +133,22 @@ final class MaterializationService implements LoggerAwareInterface
 
         // An original that already carries a materialized identifier is
         // done, not throttled: its remaining renditions must still be
-        // rebuilt. tx_typo3_file_sync_tstamp is written by damp() on
-        // failure and by updateIdentifier() on success, so a fresh
-        // timestamp alone does not mean "failed recently".
+        // rebuilt, and a marker left over from an earlier failure would
+        // hold them back for the rest of the window.
         if (in_array($original['identifier'], self::materializedIdentifiers(), true)) {
             return $processedRow;
         }
 
-        return time() - $original['tstamp'] < self::DAMPING_SECONDS ? 'throttled' : $processedRow;
+        // Only a failed fetch damps. The render that produced the
+        // placeholder this batch is here to replace is a success, and it
+        // happened milliseconds ago, so reading anything a successful
+        // render writes would throttle every first visit.
+        return time() - $original['failed'] < self::DAMPING_SECONDS ? 'throttled' : $processedRow;
     }
 
     /**
      * @param array<string, array<string, mixed>>                $pending
-     * @param array<int, array{identifier: string, tstamp: int}> $syncData
+     * @param array<int, array{identifier: string, failed: int}> $syncData
      *
      * @return array<string, array{url: string}|array{error: string}>
      */
@@ -318,7 +321,7 @@ final class MaterializationService implements LoggerAwareInterface
      * the ones whose delivery means the real file arrived.
      *
      * @param array<int, File>                                   $originals
-     * @param array<int, array{identifier: string, tstamp: int}> $syncData
+     * @param array<int, array{identifier: string, failed: int}> $syncData
      *
      * @return array<int, list<string>> accepted resource identifiers per storage uid
      */
@@ -359,7 +362,7 @@ final class MaterializationService implements LoggerAwareInterface
 
     /**
      * @param list<File>                                         $files
-     * @param array<int, array{identifier: string, tstamp: int}> $syncData
+     * @param array<int, array{identifier: string, failed: int}> $syncData
      *
      * @return list<string>
      */
@@ -452,7 +455,7 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function damp(File $file): array
     {
-        $this->fileRepository->touchSyncTimestamp($file->getUid());
+        $this->fileRepository->markFetchFailure($file->getUid());
 
         return ['error' => 'unavailable'];
     }

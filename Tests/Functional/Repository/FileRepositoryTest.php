@@ -115,14 +115,19 @@ final class FileRepositoryTest extends FunctionalTestCase
         self::assertSame(1, $count);
     }
 
+    /**
+     * The failure stamp rather than the sync timestamp, which are different
+     * moments: uid 2 was delivered at 1700000000 and failed a fetch before
+     * that, so a query reading the wrong column answers the wrong second.
+     */
     #[Test]
-    public function findSyncDataByUidsReturnsIdentifierAndTimestampKeyedByUid(): void
+    public function findSyncDataByUidsReturnsIdentifierAndFailureStampKeyedByUid(): void
     {
         $result = $this->subject->findSyncDataByUids([1, 2]);
 
         self::assertSame([
-            1 => ['identifier' => '', 'tstamp' => 0],
-            2 => ['identifier' => '/synced/baz.jpg', 'tstamp' => 1700000000],
+            1 => ['identifier' => '', 'failed' => 0],
+            2 => ['identifier' => '/synced/baz.jpg', 'failed' => 1699999000],
         ], $result);
     }
 
@@ -163,15 +168,22 @@ final class FileRepositoryTest extends FunctionalTestCase
         self::assertSame(200, (int) $result[110]['height']);
     }
 
+    /**
+     * The sync timestamp is what the backend shows as the moment a handler
+     * delivered this file, so a failed fetch must leave it alone. Writing
+     * the failure there is what made a placeholder render damp the very
+     * request it was rendered for.
+     */
     #[Test]
-    public function touchSyncTimestampStampsTheTimestampAndLeavesTheIdentifierAlone(): void
+    public function markFetchFailureStampsItsOwnFieldAndLeavesTheSyncDataAlone(): void
     {
-        $this->subject->touchSyncTimestamp(2);
+        $this->subject->markFetchFailure(2);
 
         $result = $this->subject->findSyncData(2);
 
         self::assertSame('/synced/baz.jpg', $result['identifier']);
-        self::assertGreaterThan(1700000000, $result['tstamp']);
+        self::assertSame(1700000000, $result['tstamp']);
+        self::assertGreaterThan(1700000000, $this->subject->findSyncDataByUids([2])[2]['failed']);
     }
 
     #[Test]
