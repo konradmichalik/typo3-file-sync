@@ -244,8 +244,10 @@ final class MaterializationService implements LoggerAwareInterface
      */
     private function rebuildRendition(File $file, array $processedRow): array
     {
+        $stashed = null;
+
         try {
-            $this->discardProvisionalRendition((int) $processedRow['uid']);
+            $stashed = $this->stashProvisionalRendition((int) $processedRow['uid']);
 
             // No identifier bookkeeping here on purpose: the handler chain
             // already ran FileRepository::updateIdentifier() for whichever
@@ -255,8 +257,12 @@ final class MaterializationService implements LoggerAwareInterface
             $publicUrl = $processedFile->getPublicUrl();
 
             if (null === $publicUrl) {
+                $stashed?->restore();
+
                 return $this->damp($file);
             }
+
+            $stashed?->discard();
 
             // The rendition is rebuilt behind the URL the browser already
             // holds, so only the query string makes it load the new bytes.
@@ -266,6 +272,7 @@ final class MaterializationService implements LoggerAwareInterface
             // the page it is on rather than against the document root.
             return ['url' => SitePath::absolute($publicUrl).'?v='.time()];
         } catch (Throwable $exception) {
+            $stashed?->restore();
             $this->logger?->warning(
                 sprintf('Rebuilding rendition %d failed: %s', $processedRow['uid'], $exception->getMessage()),
             );
@@ -275,17 +282,33 @@ final class MaterializationService implements LoggerAwareInterface
     }
 
     /**
-     * Only the rendition this token names is dropped. Every other rendition
-     * of the same original carries its own token and is handled by its own
-     * entry, so dropping them all here would destroy the ones a previous
-     * entry of the same batch just rebuilt.
+     * Only the rendition this token names is moved aside. Every other
+     * rendition of the same original carries its own token and is handled by
+     * its own entry, so dropping them all here would destroy the ones a
+     * previous entry of the same batch just rebuilt.
+     *
+     * Moved rather than deleted, and the sys_file_processedfile row is left
+     * alone. process() reprocesses on a missing file either way, but a delete
+     * could not be undone: if the rebuild then fails, the already cached HTML
+     * still points at that URL, and the original is by now marked
+     * remote_instance, so no later render classifies this rendition as
+     * provisional and nothing ever retries it. The visitor would be left with
+     * a permanently broken image rather than the placeholder that was there.
      */
-    private function discardProvisionalRendition(int $processedFileUid): void
+    private function stashProvisionalRendition(int $processedFileUid): ?StashedFile
     {
         $processedFile = $this->processedFileRepository->findByUid($processedFileUid);
-        if ($processedFile->exists()) {
-            $processedFile->delete(true);
+        if (!$processedFile->exists()) {
+            return null;
         }
+
+        $stashed = StashedFile::stash($processedFile->getForLocalProcessing(false));
+        // The row has to go with it: process() reuses an existing row and
+        // would hand back a URL for bytes that are no longer there. The file
+        // is already moved aside, so this only drops the database record.
+        $processedFile->delete(true);
+
+        return $stashed;
     }
 
     /**

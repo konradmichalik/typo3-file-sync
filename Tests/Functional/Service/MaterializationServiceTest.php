@@ -32,6 +32,7 @@ use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 use function array_filter;
 use function array_values;
 use function count;
+use function file_get_contents;
 use function is_resource;
 use function preg_match;
 use function sprintf;
@@ -149,6 +150,30 @@ final class MaterializationServiceTest extends FunctionalTestCase
         GeneralUtility::rmdir($this->basePath, true);
         putenv('TYPO3_FILE_SYNC_REMOTE_URL');
         parent::tearDown();
+    }
+
+    /**
+     * The rendition is moved aside rather than deleted, so a rebuild that
+     * cannot finish leaves the already cached HTML pointing at bytes that are
+     * still there. Deleting it would be permanent: refetchOriginal() has by
+     * now marked the original remote_instance, so no later render classifies
+     * this rendition as provisional and nothing ever retries it.
+     */
+    #[Test]
+    public function aRenditionSurvivesARebuildThatCannotFinish(): void
+    {
+        $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_processedfile')->update(
+            'sys_file_processedfile',
+            ['task_type' => 'Image.NoSuchTask'],
+            ['uid' => 10],
+        );
+
+        $result = $this->get(MaterializationService::class)
+            ->materialize([$this->get(DeferredTokenService::class)->create(10)]);
+
+        self::assertSame(['error' => 'unavailable'], array_values($result)[0]);
+        self::assertFileExists($this->basePath.'_processed_/csm_provisional.jpg');
+        self::assertSame('placeholder-derivative', file_get_contents($this->basePath.'_processed_/csm_provisional.jpg'));
     }
 
     #[Test]
