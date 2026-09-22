@@ -23,8 +23,9 @@ use Psr\Log\AbstractLogger;
 use Stringable;
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
+use TYPO3\CMS\Core\Http\{NormalizedParams, Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Resource\ProcessedFileRepository;
+use TYPO3\CMS\Core\Resource\Processing\TaskTypeRegistry;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
@@ -114,8 +115,15 @@ final class MaterializationServiceTest extends FunctionalTestCase
         // situation in which the driver refuses to fetch. Without both of
         // these the service would be exercised in a mode it never runs in.
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
-        $GLOBALS['TYPO3_REQUEST'] = (new ServerRequest('https://example.com/'))
+        $globalRequest = (new ServerRequest('https://example.com/'))
             ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+        // TYPO3 v14 resolves an extension asset URL through the system
+        // resource publisher, which falls back to $GLOBALS['TYPO3_REQUEST']
+        // and reads normalizedParams off it. Core sets that attribute early
+        // in every real frontend request, so a global without it models an
+        // installation that cannot exist.
+        $GLOBALS['TYPO3_REQUEST'] = $globalRequest
+            ->withAttribute('normalizedParams', NormalizedParams::createFromRequest($globalRequest));
 
         // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
         // TYPO3 read the site path as "vendor/bin/". Pinning it is what lets
@@ -463,9 +471,15 @@ final class MaterializationServiceTest extends FunctionalTestCase
      */
     private function parkRenditionAtItsTargetName(int $processedFileUid): string
     {
-        $targetName = $this->get(ProcessedFileRepository::class)
-            ->findByUid($processedFileUid)
-            ->getTask()
+        $processedFile = $this->get(ProcessedFileRepository::class)->findByUid($processedFileUid);
+        // ProcessedFile::getTask() was removed in TYPO3 v14. This is what
+        // v13's getTask() does internally, and both versions expose it.
+        $targetName = $this->get(TaskTypeRegistry::class)
+            ->getTaskForType(
+                $processedFile->getTaskIdentifier(),
+                $processedFile,
+                $processedFile->getProcessingConfiguration(),
+            )
             ->getTargetFileName();
 
         unlink($this->basePath.'_processed_/csm_provisional.jpg');
