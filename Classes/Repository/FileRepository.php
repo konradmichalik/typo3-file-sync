@@ -32,6 +32,14 @@ use function unlink;
  */
 final readonly class FileRepository
 {
+    /**
+     * Upper bound on how many candidate renditions of a single original are
+     * fetched before picking one in PHP. A file realistically carries a
+     * handful of processed renditions (one per registered task type times a
+     * few configurations), so this is a safety cap, not an expected count.
+     */
+    private const MAX_RENDITION_CANDIDATES = 50;
+
     public function __construct(
         private ConnectionPool $connectionPool,
         private ProcessedFileRepository $processedFileRepository,
@@ -391,7 +399,7 @@ final readonly class FileRepository
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
         $expressionBuilder = $queryBuilder->expr();
-        $queryBuilder->select('identifier', 'storage', 'width', 'height')
+        $queryBuilder->select('identifier', 'storage', 'width', 'height', 'task_type')
             ->from('sys_file_processedfile')
             ->where(
                 $expressionBuilder->eq('original', $queryBuilder->createNamedParameter($originalUid, ParameterType::INTEGER)),
@@ -399,18 +407,33 @@ final readonly class FileRepository
                 $expressionBuilder->gt('height', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
                 $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('')),
             )
-            // 'Image.Preview' sorts *after* 'Image.CropScaleMask' alphabetically
-            // ('P' > 'C'), so task_type has to be ordered DESC to prefer the
-            // backend thumbnail over a content rendition. A renamed core task
-            // type would silently change that preference.
-            ->addOrderBy('task_type', 'DESC')
             ->addOrderBy('width', 'ASC')
-            ->setMaxResults(1);
+            ->setMaxResults(self::MAX_RENDITION_CANDIDATES);
 
-        $row = $queryBuilder->executeQuery()->fetchAssociative();
-        if (false === $row) {
+        $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
+        if ([] === $rows) {
             return null;
         }
+
+        // The backend thumbnail (task_type 'Image.Preview') is preferred over
+        // every other rendition regardless of width. Picking it here in PHP,
+        // rather than through an ORDER BY expression on task_type, keeps that
+        // preference correct no matter how many other task types a
+        // ProcessorRegistry ends up registering (Image.Thumbnail,
+        // Image.Watermark, ...); it does not depend on their names sorting a
+        // particular way relative to 'Image.Preview'.
+        foreach ($rows as $row) {
+            if ('Image.Preview' === $row['task_type']) {
+                return [
+                    'identifier' => (string) $row['identifier'],
+                    'storage' => (int) $row['storage'],
+                    'width' => (int) $row['width'],
+                    'height' => (int) $row['height'],
+                ];
+            }
+        }
+
+        $row = $rows[0];
 
         return [
             'identifier' => (string) $row['identifier'],
