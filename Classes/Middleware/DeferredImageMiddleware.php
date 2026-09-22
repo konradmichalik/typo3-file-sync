@@ -57,12 +57,13 @@ use function substr_replace;
  * rendition and injects the module that asks the materialize endpoint to
  * replace them.
  *
- * Where a preview of such a rendition is already stored it also inlines it
- * as a data URI, which is what makes every encounter after the first one
- * cost neither a preview request nor, for a tag the browser actually renders
- * from its src, a request for the grey placeholder. A tag carrying srcset
- * still fetches the placeholder, because the browser picks its candidate
- * from there and ignores src entirely.
+ * Where a preview of such a rendition is already stored, and the tag states
+ * its own width and height, it also inlines it as a data URI, which is what
+ * makes every encounter after the first one cost neither a preview request
+ * nor, for a tag the browser actually renders from its src, a request for
+ * the grey placeholder. A tag carrying srcset still fetches the placeholder,
+ * because the browser picks its candidate from there and ignores src
+ * entirely.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later

@@ -348,11 +348,12 @@ final readonly class FileRepository
      *
      * Keying the result by the identifier alone is nevertheless safe across
      * those storages: ProcessedFile builds every processed basename from the
-     * original's own sys_file uid, a primary key all storages share, and
-     * ResourceStorage::getProcessingFolder() resolves the folder from that
-     * same original's storage, so renditions of one original never spread
-     * over several. Only a driver that invents its own processed names could
-     * put one identifier in two storages.
+     * original's own sys_file uid, a primary key all storages share, so two
+     * different originals cannot collide however their storages are
+     * configured. That argument covers different originals and nothing else.
+     * It says nothing about a driver that invents its own processed names,
+     * and nothing about a storage whose processing folder was repointed at a
+     * path a second storage also serves.
      *
      * @param list<int>    $storageUids
      * @param list<string> $identifiers
