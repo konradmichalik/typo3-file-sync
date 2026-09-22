@@ -14,7 +14,8 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Functional\Service;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewSourceReader, PreviewStore};
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader, PreviewStore};
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PreviewService};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
@@ -288,6 +289,30 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame([], self::hits());
     }
 
+    /**
+     * The guard belongs in front of the fetch rather than inside the
+     * generator. A build that cannot encode WebP stores nothing, so every
+     * rendition is marked again on every response and asked for again on
+     * every page view, and each ask would pay a real download from the
+     * remote instance for bytes discarded a line later.
+     *
+     * The generator is constructed rather than resolved, because a GD build
+     * without the encoder cannot be reproduced inside this process.
+     */
+    #[Test]
+    public function aBuildWithoutAWebPEncoderDownloadsNothing(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->withoutWebPSupport()->preview([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertSame([], self::hits(), 'A source rendition was downloaded to feed an encoder that does not exist.');
+        // Damping would be the wrong answer here as well: it bounds how
+        // often that download happens, never that it happens at all.
+        self::assertFalse((new PreviewStore())->has(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
+    }
+
     #[Test]
     public function aNotFoundFromTheRemoteYieldsUnavailable(): void
     {
@@ -399,6 +424,21 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$bad]);
         self::assertSame(['error' => 'invalid'], $result['9999.deadbeef']);
         self::assertArrayHasKey('preview', $result[$good]);
+    }
+
+    /**
+     * The service as it runs on a GD build compiled without WebP support,
+     * which is the one collaborator this environment cannot provide.
+     */
+    private function withoutWebPSupport(): PreviewService
+    {
+        return new PreviewService(
+            $this->get(DeferredTokenService::class),
+            $this->get(FileRepository::class),
+            new PreviewGenerator(false),
+            $this->get(PreviewSourceReader::class),
+            new PreviewStore(),
+        );
     }
 
     /**

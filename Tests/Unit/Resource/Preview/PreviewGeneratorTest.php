@@ -32,7 +32,7 @@ final class PreviewGeneratorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->subject = new PreviewGenerator();
+        $this->subject = new PreviewGenerator(null);
     }
 
     #[Test]
@@ -125,6 +125,22 @@ final class PreviewGeneratorTest extends TestCase
     public function outputStaysWellUnderOneKilobyte(): void
     {
         self::assertLessThan(1024, strlen((string) $this->subject->generate($this->jpeg(1600, 1200), 1600, 1200)));
+    }
+
+    /**
+     * A GD build without a WebP encoder is what the constructor argument
+     * stands in for: imagewebp() is absent there, so this build cannot be
+     * made to reproduce it. The generator answers null rather than reaching
+     * a call that would be a fatal error, and callers are expected to have
+     * asked isSupported() before spending a download on the source.
+     */
+    #[Test]
+    public function aBuildWithoutAWebPEncoderProducesNothing(): void
+    {
+        $subject = new PreviewGenerator(false);
+
+        self::assertFalse($subject->isSupported());
+        self::assertNull($subject->generate($this->jpeg(400, 300), 400, 300));
     }
 
     #[Test]

@@ -184,7 +184,7 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.previewImages'] = true;
 
 It requires `fileSync.deferredLoading` and does nothing without it: no image is marked, so nothing ever asks for a preview. Set on its own it is simply inert, and nothing warns about it.
 
-A preview is a WebP of 32 pixels on its longest edge, blurred twice. It weighs a couple of hundred bytes, so roughly 300 characters once it is base64-encoded into the HTML. A GD build without WebP support produces no previews at all and leaves the grey placeholder in place.
+A preview is a WebP of 32 pixels on its longest edge, blurred twice. It weighs a couple of hundred bytes, so roughly 300 characters once it is base64-encoded into the HTML. A GD build without WebP support produces no previews at all and leaves the grey placeholder in place. The stage answers before it fetches, so nothing is downloaded from the remote instance either.
 
 The source it is built from is another rendition of the same original recorded in `sys_file_processedfile`, preferring the backend thumbnail and otherwise taking the narrowest one there is, fetched from the remote instance and blurred locally with GD. That is where the traffic goes, not into the previews themselves. Where a backend thumbnail exists it is a few kilobytes against an original in the megabytes. Where none does, the narrowest recorded rendition can be a full-size one, and the preview then costs as much to fetch as that rendition does, to produce the same couple of hundred bytes of blur.
 

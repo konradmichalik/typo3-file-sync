@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSour
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use Throwable;
 
+use function array_fill_keys;
 use function array_key_exists;
 use function array_map;
 use function array_values;
@@ -98,6 +99,17 @@ final class PreviewService implements LoggerAwareInterface
         // definitions of "a page's worth of images" would drift.
         if (count($tokens) > MaterializationService::MAX_TOKENS) {
             return [];
+        }
+
+        // Ahead of every lookup and every fetch. On a GD build without a WebP
+        // encoder no preview is ever produced and therefore none is ever
+        // stored, so each rendition is marked again on every response and
+        // asked for again on every page view. Letting that reach the source
+        // reader would buy a real download from the remote instance per ask,
+        // for bytes thrown away on the next line. Damping bounds how often
+        // that happens, never how long it goes on for.
+        if (!$this->previewGenerator->isSupported()) {
+            return array_fill_keys($tokens, ['error' => 'unavailable']);
         }
 
         $results = [];

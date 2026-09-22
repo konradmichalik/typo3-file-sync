@@ -38,13 +38,36 @@ final readonly class PreviewGenerator
     private const QUALITY = 60;
     private const BLUR_PASSES = 2;
 
+    /**
+     * @param bool|null $webpSupported what this build can encode, asked of GD
+     *                                 when null, which is what Services.yaml passes. It is a
+     *                                 parameter because a build without the encoder cannot be
+     *                                 reproduced in process: function_exists() is imported here, so
+     *                                 no namespace-local stub reaches it
+     */
+    public function __construct(private ?bool $webpSupported) {}
+
+    /**
+     * Whether a preview can be produced at all on this build. A GD compiled
+     * without WebP support has no imagewebp(), and calling it would be an
+     * uncaught Error on a request whose whole contract is that it degrades
+     * to the grey placeholder.
+     *
+     * Public because the caller has to ask before it fetches: the source
+     * rendition is downloaded from the remote instance, and downloading it
+     * to feed an encoder that does not exist is traffic paid for nothing.
+     */
+    public function isSupported(): bool
+    {
+        return $this->webpSupported ?? function_exists('imagewebp');
+    }
+
     public function generate(string $bytes, int $targetWidth, int $targetHeight): ?string
     {
-        // A GD build compiled without WebP support has no imagewebp() at all,
-        // and calling it would be an uncaught Error on a request whose whole
-        // contract is that it degrades to the grey placeholder. Checked before
-        // anything is allocated, so there is no buffer and no canvas to unwind.
-        if (!function_exists('imagewebp')) {
+        // Checked before anything is allocated, so there is no buffer and no
+        // canvas to unwind. Callers are expected to ask isSupported() long
+        // before this, but this method is the one that would fatal.
+        if (!$this->isSupported()) {
             return null;
         }
 
