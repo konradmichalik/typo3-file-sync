@@ -174,6 +174,13 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
      * POST is the only shape this endpoint has; but the header is absent on
      * older browsers and on every non-browser caller, so an absent one
      * cannot be read as a refusal without breaking them.
+     *
+     * "none" is refused on purpose, along with "cross-site" and "same-site".
+     * A browser sends it for a user-initiated navigation, from the address
+     * bar or a bookmark, which is a GET and never reaches here because the
+     * method check answers it first. So the value can only arrive on a
+     * request no browser produces, and refusing it costs nothing legitimate.
+     * It is not an oversight to be turned into an allow.
      */
     private static function isCrossSite(ServerRequestInterface $request): bool
     {
