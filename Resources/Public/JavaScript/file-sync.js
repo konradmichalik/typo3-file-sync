@@ -39,19 +39,26 @@ const request = async (tokens, stage) => {
 };
 
 const apply = async (elements, result) => {
-    const swaps = [];
-    for (const element of elements) {
-        const url = result[element.dataset.fileSync]?.url;
-        if (!url) continue;
-        const next = new Image();
-        next.src = url;
-        try {
-            await next.decode();
-        } catch {
-            continue;
-        }
-        swaps.push([element, url]);
-    }
+    // Every src is assigned before anything is awaited, so the browser starts
+    // all the downloads at once. Awaiting decode() inside the loop instead
+    // would delay the single commit by the sum of the load times, which for a
+    // batch of fifty is most of what this feature exists to avoid.
+    const pending = elements
+        .map((element) => [element, result[element.dataset.fileSync]?.url])
+        .filter(([, url]) => Boolean(url))
+        .map(([element, url]) => {
+            const next = new Image();
+            next.src = url;
+            return next.decode().then(
+                () => [element, url],
+                () => null,
+            );
+        });
+
+    // Each decode already resolves to null on failure, so Promise.all cannot
+    // reject here: one image the browser refuses must not take the rest of
+    // the batch down with it.
+    const swaps = (await Promise.all(pending)).filter(Boolean);
     if (swaps.length === 0) return;
 
     // decode() already ran above, so the assignment below never shows a
