@@ -13,16 +13,14 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Middleware;
 
-use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, SitePath, StorageService};
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PublicUrlResolver, SitePath, StorageService};
 use Psr\Http\Message\{ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Configuration\Features;
-use TYPO3\CMS\Core\Resource\{ResourceStorage, StorageRepository};
 use TYPO3\CMS\Core\Utility\PathUtility;
 
 use function array_map;
@@ -32,24 +30,18 @@ use function htmlspecialchars;
 use function intval;
 use function is_array;
 use function is_string;
-use function ltrim;
-use function parse_url;
 use function preg_match;
 use function preg_match_all;
 use function preg_replace;
 use function preg_replace_callback;
-use function rawurldecode;
 use function rtrim;
 use function str_contains;
 use function str_ends_with;
 use function str_starts_with;
 use function strlen;
-use function strpos;
 use function strripos;
 use function strtolower;
 use function substr;
-use function trim;
-use function usort;
 
 /**
  * DeferredImageMiddleware.
@@ -99,7 +91,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         private DeferredTokenService $deferredTokenService,
         private Features $features,
         private FileRepository $fileRepository,
-        private StorageRepository $storageRepository,
+        private PublicUrlResolver $publicUrlResolver,
         private StorageService $storageService,
         private StreamFactoryInterface $streamFactory,
     ) {}
@@ -152,7 +144,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
-        $identifierByUrl = $this->identifiersByUrl(array_values(array_unique($matches[2])), $storageUids);
+        $identifierByUrl = $this->publicUrlResolver->identifiersByUrl(array_values(array_unique($matches[2])), $storageUids);
         if ([] === $identifierByUrl) {
             return null;
         }
@@ -292,109 +284,6 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         return 200 === $response->getStatusCode()
             && '' === $response->getHeaderLine('Content-Encoding')
             && str_starts_with(strtolower($response->getHeaderLine('Content-Type')), 'text/html');
-    }
-
-    /**
-     * @param list<string> $urls
-     * @param list<int>    $storageUids
-     *
-     * @return array<string, string>
-     */
-    private function identifiersByUrl(array $urls, array $storageUids): array
-    {
-        $prefixes = $this->publicPrefixes($storageUids);
-        $map = [];
-        foreach ($urls as $url) {
-            $identifier = self::toIdentifier($url, $prefixes);
-            if (null !== $identifier) {
-                $map[$url] = $identifier;
-            }
-        }
-
-        return $map;
-    }
-
-    /**
-     * A src is whatever the renderer produced: site-relative with or without
-     * a leading slash depending on absRefPrefix, or absolute when the site
-     * points its assets at another host. Anchoring on the storage prefix as
-     * a path segment covers all three, and a wrong guess costs nothing
-     * because the lookup is an exact match on the processed file identifier.
-     *
-     * @param list<string> $prefixes
-     */
-    private static function toIdentifier(string $url, array $prefixes): ?string
-    {
-        $path = parse_url($url, \PHP_URL_PATH);
-        if (!is_string($path) || '' === $path) {
-            return null;
-        }
-
-        $path = '/'.ltrim(rawurldecode($path), '/');
-        foreach ($prefixes as $prefix) {
-            $position = strpos($path, $prefix);
-            if (false !== $position) {
-                return '/'.substr($path, $position + strlen($prefix));
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param list<int> $storageUids
-     *
-     * @return list<string>
-     */
-    private function publicPrefixes(array $storageUids): array
-    {
-        $prefixes = [];
-        foreach ($storageUids as $storageUid) {
-            $prefix = $this->publicPrefixOfStorage($storageUid);
-            if (null !== $prefix) {
-                $prefixes[] = $prefix;
-            }
-        }
-
-        $prefixes = array_values(array_unique($prefixes));
-        // A nested storage must win over the one it sits inside, otherwise
-        // its files are resolved against the wrong root.
-        usort($prefixes, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
-
-        return $prefixes;
-    }
-
-    private function publicPrefixOfStorage(int $storageUid): ?string
-    {
-        // Storage 0 is the fallback storage and is never a deferred one.
-        if ($storageUid < 1) {
-            return null;
-        }
-
-        try {
-            return self::publicPrefix($this->storageRepository->getStorageObject($storageUid));
-        } catch (InvalidArgumentException) {
-            return null;
-        }
-    }
-
-    private static function publicPrefix(ResourceStorage $storage): ?string
-    {
-        // getRootLevelFolder(false) bypasses backend file mounts, which are
-        // irrelevant to a frontend URL and would yield a subfolder.
-        $publicUrl = $storage->getPublicUrl($storage->getRootLevelFolder(false));
-        if (null === $publicUrl) {
-            return null;
-        }
-
-        $path = parse_url($publicUrl, \PHP_URL_PATH);
-        if (!is_string($path)) {
-            return null;
-        }
-
-        $path = trim(rawurldecode($path), '/');
-
-        return '' === $path ? '/' : '/'.$path.'/';
     }
 
     private function injectSnippet(string $body): string

@@ -1,0 +1,4 @@
+"sys_file_storage"
+,"uid","pid","name","driver","configuration","is_default","is_browsable","is_public","is_writable","is_online","tx_typo3_file_sync_enable","tx_typo3_file_sync_deferred"
+,9,0,"Outer Storage","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>fileadmin/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,1,1
+,10,0,"Nested Storage","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>fileadmin/nested/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,1,1
