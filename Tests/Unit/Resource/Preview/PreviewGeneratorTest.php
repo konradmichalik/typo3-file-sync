@@ -16,6 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Preview;
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewGenerator;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 use function strlen;
 
@@ -201,6 +202,47 @@ final class PreviewGeneratorTest extends TestCase
     public function aSourceExactlyAtTheMegapixelCapIsStillGenerated(): void
     {
         self::assertNotNull($this->subject->generate($this->png(2048, 2048), 400, 300));
+    }
+
+    /**
+     * A source rejected for its size is damped, fetched again after every
+     * window and dropped again, for as long as it stays that size. Without a
+     * line naming the cap it hit, that steady state looks exactly like a GD
+     * build that cannot encode or a remote that is down.
+     */
+    #[Test]
+    public function aSourcePastTheMegapixelCapReportsWhyItWasRejected(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('warning')->with(self::stringContains('2048x2049 pixels'));
+        $this->subject->setLogger($logger);
+
+        self::assertNull($this->subject->generate($this->png(2048, 2049), 400, 300));
+    }
+
+    #[Test]
+    public function anOversizedPayloadReportsWhyItWasRejected(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('warning')->with(self::stringContains('byte cap'));
+        $this->subject->setLogger($logger);
+
+        self::assertNull($this->subject->generate($this->oversizedButValidJpeg(), 400, 300));
+    }
+
+    /**
+     * Distinct means distinct: a payload that is not an image at all is a
+     * remote answering with a login page, which is already visible in what it
+     * served, and a line for it would bury the size case in noise.
+     */
+    #[Test]
+    public function aPayloadThatIsNotAnImageIsRejectedWithoutASizeWarning(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+        $this->subject->setLogger($logger);
+
+        self::assertNull($this->subject->generate('<html>not an image</html>', 400, 300));
     }
 
     /**

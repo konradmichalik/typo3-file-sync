@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader, PreviewStore};
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PreviewService};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Http\{NormalizedParams, ServerRequest};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -449,6 +450,26 @@ final class PreviewServiceTest extends FunctionalTestCase
             $held,
             sprintf('The 32 MiB body reached the heap: %d bytes were held at peak.', $held),
         );
+    }
+
+    /**
+     * The cap the reader applies is its own and is reached before any
+     * decoder sees the bytes, so the generator's warning cannot cover it.
+     * Read directly rather than through the service, because the service
+     * answers 'unavailable' for a dozen reasons and only the line says which.
+     */
+    #[Test]
+    public function anOversizedSourceReportsWhyItWasNotRead(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('warning')
+            ->with(self::stringContains('fileadmin/_processed_/csm_oversized_small.jpg'));
+        $reader = $this->get(PreviewSourceReader::class);
+        $reader->setLogger($logger);
+
+        $bytes = $reader->read(['token' => ['storage' => self::STORAGE, 'identifier' => '/_processed_/csm_oversized_small.jpg']]);
+
+        self::assertNull($bytes['token']);
     }
 
     #[Test]

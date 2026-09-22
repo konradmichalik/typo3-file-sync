@@ -14,8 +14,10 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Resource\Preview;
 
 use GdImage;
+use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 
 use function function_exists;
+use function sprintf;
 use function strlen;
 
 /**
@@ -31,8 +33,13 @@ use function strlen;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final readonly class PreviewGenerator
+final class PreviewGenerator implements LoggerAwareInterface
 {
+    // Not readonly as a class any more: the injected logger is mutable state
+    // by the interface's own contract. Everything this class decides with is
+    // still readonly.
+    use LoggerAwareTrait;
+
     /**
      * The largest payload this class will decode.
      *
@@ -68,7 +75,7 @@ final readonly class PreviewGenerator
      *                                 reproduced in process: function_exists() is imported here, so
      *                                 no namespace-local stub reaches it
      */
-    public function __construct(private ?bool $webpSupported) {}
+    public function __construct(private readonly ?bool $webpSupported) {}
 
     /**
      * Whether a preview can be produced at all on this build. A GD compiled
@@ -94,7 +101,13 @@ final readonly class PreviewGenerator
             return null;
         }
 
-        if ('' === $bytes || strlen($bytes) > self::MAX_BYTES || $targetWidth < 1 || $targetHeight < 1) {
+        if ('' === $bytes || $targetWidth < 1 || $targetHeight < 1) {
+            return null;
+        }
+
+        if (strlen($bytes) > self::MAX_BYTES) {
+            $this->rejectedForSize(sprintf('%d bytes, over the %d byte cap', strlen($bytes), self::MAX_BYTES));
+
             return null;
         }
 
@@ -152,10 +165,32 @@ final readonly class PreviewGenerator
         if ($info[0] > self::MAX_SOURCE_DIMENSION || $info[1] > self::MAX_SOURCE_DIMENSION
             || $info[0] * $info[1] > self::MAX_SOURCE_PIXELS
         ) {
+            $this->rejectedForSize(sprintf(
+                '%dx%d pixels, over the %d pixel cap or the %d pixel edge',
+                $info[0],
+                $info[1],
+                self::MAX_SOURCE_PIXELS,
+                self::MAX_SOURCE_DIMENSION,
+            ));
+
             return null;
         }
 
         return [$info[0], $info[1]];
+    }
+
+    /**
+     * The one rejection an operator has to be able to tell apart from the
+     * others. A source that is simply too big is not a dead remote and not a
+     * failing encoder: the rendition is damped, fetched again once the window
+     * passes and thrown away again, for as long as that source stays that
+     * size. Every other rejection here is a payload that is not an image,
+     * which needs no line of its own because the remote answering with
+     * something else is already visible in what it served.
+     */
+    private function rejectedForSize(string $reason): void
+    {
+        $this->logger?->warning(sprintf('A preview source was rejected: %s.', $reason));
     }
 
     /**

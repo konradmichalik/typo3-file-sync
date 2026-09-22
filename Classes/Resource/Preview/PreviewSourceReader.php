@@ -184,7 +184,7 @@ final class PreviewSourceReader implements LoggerAwareInterface
 
         foreach ($driver->getBatchHandlers() as $handler) {
             try {
-                $bytes = self::readStream($handler->getFile($source['identifier'], $source['path']));
+                $bytes = $this->readStream($handler->getFile($source['identifier'], $source['path']), $source['path']);
             } catch (Throwable $exception) {
                 $this->logger?->warning(
                     sprintf('Fetching preview source %s failed: %s', $source['path'], $exception->getMessage()),
@@ -211,7 +211,7 @@ final class PreviewSourceReader implements LoggerAwareInterface
      * The extra byte is what makes "exactly at the cap" and "over it"
      * distinguishable without a second read.
      */
-    private static function readStream(mixed $stream): ?string
+    private function readStream(mixed $stream, string $path): ?string
     {
         if (!is_resource($stream)) {
             return null;
@@ -220,7 +220,21 @@ final class PreviewSourceReader implements LoggerAwareInterface
         $bytes = stream_get_contents($stream, PreviewGenerator::MAX_BYTES + 1);
         fclose($stream);
 
-        if (!is_string($bytes) || '' === $bytes || strlen($bytes) > PreviewGenerator::MAX_BYTES) {
+        if (!is_string($bytes) || '' === $bytes) {
+            return null;
+        }
+
+        if (strlen($bytes) > PreviewGenerator::MAX_BYTES) {
+            // Said out loud, because nothing else on this path says it. The
+            // rendition is damped, asked for again once the window passes and
+            // dropped again, and from the visitor's side that is
+            // indistinguishable from a remote that is simply down.
+            $this->logger?->warning(sprintf(
+                'Preview source %s is larger than the %d byte cap and was not read.',
+                $path,
+                PreviewGenerator::MAX_BYTES,
+            ));
+
             return null;
         }
 
