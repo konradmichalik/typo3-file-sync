@@ -409,22 +409,35 @@ final readonly class FileRepository
     }
 
     /**
-     * @return array{identifier: string, storage: int, width: int, height: int}|null
+     * The smallest usable rendition of each original, in one query.
+     *
+     * Batched rather than asked per original, because the WHERE below is
+     * deliberately uncapped and the caller runs up to fifty tokens through
+     * it on a public request: one per token is fifty unbounded queries in
+     * one call.
+     *
+     * @param list<int> $originalUids
+     *
+     * @return array<int, array{identifier: string, storage: int, width: int, height: int}> keyed by original uid, absent where that original has no usable rendition
      */
-    public function findSmallestRendition(int $originalUid): ?array
+    public function findSmallestRenditions(array $originalUids): array
     {
+        if ([] === $originalUids) {
+            return [];
+        }
+
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
         $expressionBuilder = $queryBuilder->expr();
-        $queryBuilder->select('identifier', 'storage', 'width', 'height', 'task_type')
+        $queryBuilder->select('original', 'identifier', 'storage', 'width', 'height', 'task_type')
             ->from('sys_file_processedfile')
             ->where(
-                $expressionBuilder->eq('original', $queryBuilder->createNamedParameter($originalUid, ParameterType::INTEGER)),
+                $expressionBuilder->in('original', $queryBuilder->createNamedParameter($originalUids, ArrayParameterType::INTEGER)),
                 $expressionBuilder->gt('width', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
                 $expressionBuilder->gt('height', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
                 $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('')),
             )
             // No LIMIT here: the WHERE above already scopes this to the
-            // renditions of a single original, a set bounded only by the
+            // renditions of the originals asked for, a set bounded only by the
             // task types and configurations the site actually uses. Capping
             // it would let a wide Image.Preview thumbnail sort outside the
             // window and silently defeat the preference below, the exact
@@ -436,36 +449,45 @@ final readonly class FileRepository
             // source would then be a different picture per database.
             ->addOrderBy('uid', 'ASC');
 
-        $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
-        if ([] === $rows) {
-            return null;
-        }
+        return self::narrowestPerOriginal($queryBuilder->executeQuery()->fetchAllAssociative());
+    }
 
-        // The backend thumbnail (task_type 'Image.Preview') is preferred over
-        // every other rendition regardless of width. Picking it here in PHP,
-        // rather than through an ORDER BY expression on task_type, keeps that
-        // preference correct no matter how many other task types a
-        // ProcessorRegistry ends up registering (Image.Thumbnail,
-        // Image.Watermark, ...); it does not depend on their names sorting a
-        // particular way relative to 'Image.Preview'.
+    /**
+     * Groups rows already ordered narrowest-first into one winner per
+     * original.
+     *
+     * The backend thumbnail (task_type 'Image.Preview') is preferred over
+     * every other rendition regardless of width. Picking it here in PHP,
+     * rather than through an ORDER BY expression on task_type, keeps that
+     * preference correct no matter how many other task types a
+     * ProcessorRegistry ends up registering (Image.Thumbnail,
+     * Image.Watermark, ...); it does not depend on their names sorting a
+     * particular way relative to 'Image.Preview'.
+     *
+     * @param list<array<string, mixed>> $rows
+     *
+     * @return array<int, array{identifier: string, storage: int, width: int, height: int}>
+     */
+    private static function narrowestPerOriginal(array $rows): array
+    {
+        $winners = [];
+        $settled = [];
         foreach ($rows as $row) {
-            if ('Image.Preview' === $row['task_type']) {
-                return [
-                    'identifier' => (string) $row['identifier'],
-                    'storage' => (int) $row['storage'],
-                    'width' => (int) $row['width'],
-                    'height' => (int) $row['height'],
-                ];
+            $original = (int) $row['original'];
+            $isThumbnail = 'Image.Preview' === $row['task_type'];
+            if (($settled[$original] ?? false) || (isset($winners[$original]) && !$isThumbnail)) {
+                continue;
             }
+
+            $winners[$original] = [
+                'identifier' => (string) $row['identifier'],
+                'storage' => (int) $row['storage'],
+                'width' => (int) $row['width'],
+                'height' => (int) $row['height'],
+            ];
+            $settled[$original] = $isThumbnail;
         }
 
-        $row = $rows[0];
-
-        return [
-            'identifier' => (string) $row['identifier'],
-            'storage' => (int) $row['storage'],
-            'width' => (int) $row['width'],
-            'height' => (int) $row['height'],
-        ];
+        return $winners;
     }
 }

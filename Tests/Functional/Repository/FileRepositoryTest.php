@@ -17,6 +17,8 @@ use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function array_map;
+
 /**
  * FileRepositoryTest.
  *
@@ -244,35 +246,35 @@ final class FileRepositoryTest extends FunctionalTestCase
     }
 
     #[Test]
-    public function findSmallestRenditionPrefersTheBackendThumbnail(): void
+    public function findSmallestRenditionsPrefersTheBackendThumbnail(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
-        $result = $this->subject->findSmallestRendition(101);
+        $result = $this->subject->findSmallestRenditions([101]);
 
-        self::assertSame('/_processed_/a/b/csm_provisional_thumb.jpg', $result['identifier']);
-        self::assertSame(1, $result['storage']);
+        self::assertSame('/_processed_/a/b/csm_provisional_thumb.jpg', $result[101]['identifier']);
+        self::assertSame(1, $result[101]['storage']);
     }
 
     #[Test]
-    public function findSmallestRenditionFallsBackToTheNarrowestRendition(): void
+    public function findSmallestRenditionsFallsBackToTheNarrowestRendition(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
         self::assertSame(
             '/_processed_/a/b/csm_real_bbb.jpg',
-            $this->subject->findSmallestRendition(102)['identifier'],
+            $this->subject->findSmallestRenditions([102])[102]['identifier'],
         );
     }
 
     #[Test]
-    public function findSmallestRenditionIgnoresRowsWithoutDimensions(): void
+    public function findSmallestRenditionsIgnoresRowsWithoutDimensions(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
         self::assertSame(
             '/_processed_/a/b/csm_untouched_ccc.jpg',
-            $this->subject->findSmallestRendition(103)['identifier'],
+            $this->subject->findSmallestRenditions([103])[103]['identifier'],
         );
     }
 
@@ -288,21 +290,52 @@ final class FileRepositoryTest extends FunctionalTestCase
      * show the removal, and the suite does not run against it locally.
      */
     #[Test]
-    public function findSmallestRenditionBreaksAWidthTieByUid(): void
+    public function findSmallestRenditionsBreaksAWidthTieByUid(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
         self::assertSame(
             '/_processed_/a/b/csm_tie_low.jpg',
-            $this->subject->findSmallestRendition(105)['identifier'],
+            $this->subject->findSmallestRenditions([105])[105]['identifier'],
         );
     }
 
     #[Test]
-    public function findSmallestRenditionReturnsNullWhenNoneExists(): void
+    public function findSmallestRenditionsOmitsAnOriginalWithoutAUsableRendition(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
-        self::assertNull($this->subject->findSmallestRendition(999));
+        self::assertSame([], $this->subject->findSmallestRenditions([999]));
+    }
+
+    #[Test]
+    public function findSmallestRenditionsReturnsEmptyArrayForAnEmptyList(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame([], $this->subject->findSmallestRenditions([]));
+    }
+
+    /**
+     * The whole point of the batch: every original of one request is resolved
+     * together, and the width ordering that spans them all must not leak one
+     * original's rows into another's winner. 102's own narrowest is wider
+     * than 101's thumbnail and narrower than 103's only usable rendition, so
+     * an implementation that took the first row overall, or the last, would
+     * show it here.
+     */
+    #[Test]
+    public function findSmallestRenditionsResolvesEveryOriginalOfABatch(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findSmallestRenditions([101, 102, 103, 105, 999]);
+
+        self::assertSame([
+            101 => '/_processed_/a/b/csm_provisional_thumb.jpg',
+            102 => '/_processed_/a/b/csm_real_bbb.jpg',
+            103 => '/_processed_/a/b/csm_untouched_ccc.jpg',
+            105 => '/_processed_/a/b/csm_tie_low.jpg',
+        ], array_map(static fn (array $row): string => $row['identifier'], $result));
     }
 }

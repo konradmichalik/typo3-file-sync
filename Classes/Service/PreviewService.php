@@ -21,6 +21,7 @@ use Throwable;
 use function array_fill_keys;
 use function array_key_exists;
 use function array_map;
+use function array_unique;
 use function array_values;
 use function base64_encode;
 use function count;
@@ -142,10 +143,18 @@ final class PreviewService implements LoggerAwareInterface
     {
         $processedRows = $this->fileRepository->findProcessedFilesByUids(array_values($uidsByToken));
 
+        // One query for the batch rather than one per token. The rendition
+        // lookup is uncapped by design, and this method already holds every
+        // row it would be asked about.
+        $sources = $this->fileRepository->findSmallestRenditions(array_values(array_unique(array_map(
+            static fn (array $row): int => (int) $row['original'],
+            $processedRows,
+        ))));
+
         $plans = [];
         $results = [];
         foreach ($uidsByToken as $token => $uid) {
-            $outcome = $this->decide($processedRows[$uid] ?? null);
+            $outcome = $this->decide($processedRows[$uid] ?? null, $sources);
             if (array_key_exists('plan', $outcome)) {
                 $plans[$token] = $outcome['plan'];
                 continue;
@@ -161,11 +170,12 @@ final class PreviewService implements LoggerAwareInterface
      * What a single token resolves to before anything is fetched: a plan to
      * build a preview, or the answer it already has.
      *
-     * @param array<string, mixed>|null $row
+     * @param array<string, mixed>|null                                                    $row
+     * @param array<int, array{identifier: string, storage: int, width: int, height: int}> $sources the batch's resolved preview sources, keyed by original uid
      *
      * @return array{plan: PreviewPlan}|array{result: PreviewResult}
      */
-    private function decide(?array $row): array
+    private function decide(?array $row, array $sources): array
     {
         if (null === $row) {
             return ['result' => ['error' => 'invalid']];
@@ -190,7 +200,7 @@ final class PreviewService implements LoggerAwareInterface
             return ['result' => ['error' => 'unavailable']];
         }
 
-        $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
+        $source = $sources[(int) $row['original']] ?? null;
         if (null === $source || self::isRequestedItself($source, $requested)) {
             return ['result' => ['error' => 'unavailable']];
         }
