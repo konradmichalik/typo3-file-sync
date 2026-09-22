@@ -65,21 +65,6 @@ final class PreviewService implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
-    /**
-     * How long a rendition the remote could not deliver stays unasked.
-     *
-     * Deliberately the same 300 seconds MaterializationService damps an
-     * original for, although a preview source is kilobytes where an original
-     * is megabytes. The cheaper fetch is not the quantity that matters here:
-     * the rate limiter admits 60 requests a minute of 50 tokens each, so a
-     * page whose renditions no longer exist upstream drives thousands of
-     * fetches a minute per visitor, which is the more failing requests, not
-     * the fewer. Cheaper each, fifty times as many, so the same window. And
-     * one number for both stages of one endpoint is one number to reason
-     * about rather than two to explain.
-     */
-    private const DAMPING_SECONDS = 300;
-
     public function __construct(
         private readonly DeferredTokenService $deferredTokenService,
         private readonly FileRepository $fileRepository,
@@ -256,6 +241,13 @@ final class PreviewService implements LoggerAwareInterface
      * holds nothing but the second it was written in, so a stale one expires
      * by being read rather than by being swept.
      *
+     * The window is the endpoint's, not this stage's, although a preview
+     * source is kilobytes where an original is megabytes. The cheaper fetch
+     * is not the quantity that matters: the rate limiter admits 60 requests a
+     * minute of 50 tokens each, so a page whose renditions no longer exist
+     * upstream drives thousands of failing fetches a minute per visitor.
+     * Cheaper each, fifty times as many, so the same window.
+     *
      * @param PreviewLocation $requested
      */
     private function isDamped(array $requested): bool
@@ -268,7 +260,7 @@ final class PreviewService implements LoggerAwareInterface
         $marker = self::damped($requested);
         $marked = $this->previewStore->readMarker($marker['storage'], $marker['identifier']);
 
-        return null !== $marked && time() - (int) $marked < self::DAMPING_SECONDS;
+        return null !== $marked && time() - (int) $marked < MaterializationService::DAMPING_SECONDS;
     }
 
     /**

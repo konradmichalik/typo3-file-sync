@@ -57,8 +57,12 @@ final class MaterializationService implements LoggerAwareInterface
     /**
      * How long a file the remote could not deliver stays untouched. Without
      * it every visitor of the same page would retry the same failing fetch.
+     *
+     * Public for the same reason MAX_TOKENS is: the preview stage of this
+     * endpoint damps for the same window, and two definitions of "how long a
+     * dead fetch stays dead" would drift into two answers for one endpoint.
      */
-    private const DAMPING_SECONDS = 300;
+    public const DAMPING_SECONDS = 300;
 
     public function __construct(
         private readonly DeferredTokenService $deferredTokenService,
