@@ -111,7 +111,10 @@ final class PreviewServiceTest extends FunctionalTestCase
             self::stopServer();
         }
 
-        self::markTestSkipped('The PHP built-in server did not become reachable.');
+        // Failed rather than skipped: this class is the only coverage the
+        // preview stage has against a real remote, and a skip would let a
+        // run go green having exercised none of it.
+        self::fail('The PHP built-in server did not become reachable.');
     }
 
     public static function tearDownAfterClass(): void
