@@ -346,6 +346,14 @@ final readonly class FileRepository
      * that was queried: together with the identifier it is the key a stored
      * preview lives under, and a caller passes every deferred storage at once.
      *
+     * Keying the result by the identifier alone is nevertheless safe across
+     * those storages: ProcessedFile builds every processed basename from the
+     * original's own sys_file uid, a primary key all storages share, and
+     * ResourceStorage::getProcessingFolder() resolves the folder from that
+     * same original's storage, so renditions of one original never spread
+     * over several. Only a driver that invents its own processed names could
+     * put one identifier in two storages.
+     *
      * @param list<int>    $storageUids
      * @param list<string> $identifiers
      *
