@@ -73,6 +73,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         '/_processed_/csm_broken.png',
         '/_processed_/csm_fallback_large.jpg',
         '/_processed_/csm_onlyself.jpg',
+        '/_processed_/csm_oversized.jpg',
     ];
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
@@ -418,6 +419,36 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$token]);
         self::assertSame(['/fileadmin/_processed_/csm_fallback.jpg'], self::hits());
         self::assertNull((new PreviewStore())->readMarker(self::STORAGE, '/_processed_/csm_fallback_large.jpg'));
+    }
+
+    /**
+     * The remote decides how large a rendition in its _processed_ folder is,
+     * and nothing in the local database constrains it. Reading the spooled
+     * response back unbounded would put that whole body on the heap, fifty
+     * times over on a full batch, on an endpoint anyone can post to.
+     *
+     * The peak is measured rather than the answer, because the answer is
+     * 'unavailable' either way: the generator rejects an over-cap payload as
+     * well, only after it has already been buffered whole.
+     */
+    #[Test]
+    public function anOversizedSourceIsRejectedWithoutBufferingTheWholeBody(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(60);
+        $service = $this->get(PreviewService::class);
+
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+        $result = $service->preview([$token]);
+        $held = memory_get_peak_usage() - $before;
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertSame(['/fileadmin/_processed_/csm_oversized_small.jpg'], self::hits());
+        self::assertLessThan(
+            8 * 1024 * 1024,
+            $held,
+            sprintf('The 32 MiB body reached the heap: %d bytes were held at peak.', $held),
+        );
     }
 
     #[Test]

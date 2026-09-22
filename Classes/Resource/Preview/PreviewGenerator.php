@@ -32,7 +32,15 @@ use function strlen;
  */
 final readonly class PreviewGenerator
 {
-    private const MAX_BYTES = 2_097_152;
+    /**
+     * The largest payload this class will decode.
+     *
+     * Public because the reader has to know it before it buffers anything:
+     * a cap of its own would be a second number for the same quantity, and
+     * the two would drift into a reader that holds bytes this class then
+     * rejects, or one that drops bytes it would have taken.
+     */
+    public const MAX_BYTES = 2_097_152;
     private const MAX_SOURCE_DIMENSION = 4096;
     private const EDGE = 32;
     private const QUALITY = 60;

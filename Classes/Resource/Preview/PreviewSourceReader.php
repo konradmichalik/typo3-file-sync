@@ -27,6 +27,7 @@ use function is_resource;
 use function is_string;
 use function sprintf;
 use function stream_get_contents;
+use function strlen;
 
 /**
  * PreviewSourceReader.
@@ -199,16 +200,31 @@ final class PreviewSourceReader implements LoggerAwareInterface
         return null;
     }
 
+    /**
+     * One byte past the generator's cap, never the whole body. The handler
+     * spools a response into php://temp precisely so that a large one spills
+     * to disk instead of onto the heap, and reading it back unbounded undoes
+     * that: this endpoint is public, unauthenticated and accepts fifty
+     * sources per request, and the sources are renditions whose size no
+     * local record constrains.
+     *
+     * The extra byte is what makes "exactly at the cap" and "over it"
+     * distinguishable without a second read.
+     */
     private static function readStream(mixed $stream): ?string
     {
         if (!is_resource($stream)) {
             return null;
         }
 
-        $bytes = stream_get_contents($stream);
+        $bytes = stream_get_contents($stream, PreviewGenerator::MAX_BYTES + 1);
         fclose($stream);
 
-        return is_string($bytes) && '' !== $bytes ? $bytes : null;
+        if (!is_string($bytes) || '' === $bytes || strlen($bytes) > PreviewGenerator::MAX_BYTES) {
+            return null;
+        }
+
+        return $bytes;
     }
 
     private function driver(int $storageUid): ?FileSyncDriver

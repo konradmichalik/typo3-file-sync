@@ -40,6 +40,19 @@ if ('/fileadmin/_processed_/csm_provisional_small.jpg' === $path) {
     return;
 }
 
+if ('/fileadmin/_processed_/csm_oversized_small.jpg' === $path) {
+    // Far past PreviewGenerator::MAX_BYTES, and sent in chunks so that the
+    // server does not hold it either. A remote instance is not obliged to
+    // keep its _processed_ folder small, and nothing in the local database
+    // records how large a rendition on the other side is.
+    header('Content-Type: image/jpeg');
+    for ($chunk = 0; $chunk < 32; ++$chunk) {
+        echo str_repeat('x', 1_048_576);
+    }
+
+    return;
+}
+
 if ('/fileadmin/_processed_/csm_fallback.jpg' === $path) {
     // A remote instance answering 200 with something that is not an image is
     // the ordinary shape of a login page or an error document.

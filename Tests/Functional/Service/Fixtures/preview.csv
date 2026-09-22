@@ -2,6 +2,7 @@
 ,"uid","pid","storage","identifier","identifier_hash","folder_hash","name","extension","mime_type","type","size","missing","tx_typo3_file_sync_identifier","tx_typo3_file_sync_tstamp"
 ,4,0,9,"/user_upload/norendition.jpg","957702b93c87f7a0566a3d95bf02d749df55f5a5","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","norendition.jpg","jpg","image/jpeg",2,16,0,"placeholder_image",0
 ,5,0,9,"/user_upload/onlyself.jpg","08d956d9ed136ce99e3f6a14c7a79bae6b8efe25","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","onlyself.jpg","jpg","image/jpeg",2,16,0,"placeholder_image",0
+,6,0,9,"/user_upload/oversized.jpg","6d270f1939131dfca1dc624d8ae1a076dc8fc72f","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","oversized.jpg","jpg","image/jpeg",2,16,0,"placeholder_image",0
 "sys_file_processedfile"
 ,"uid","storage","original","identifier","name","configuration","configurationsha1","task_type","width","height"
 ,13,9,1,"/_processed_/csm_provisional_square.jpg","csm_provisional_square.jpg","a:2:{s:5:""width"";i:200;s:6:""height"";i:200;}","9c1db1b4e0ee49e2dc9e7b0e0a4ea04ab6f8ba61","Image.CropScaleMask",200,200
@@ -10,3 +11,5 @@
 ,50,9,5,"/_processed_/csm_onlyself.jpg","csm_onlyself.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
 ,51,9,2,"/_processed_/csm_broken_small.png","csm_broken_small.png","a:2:{s:5:""width"";i:150;s:6:""height"";i:100;}","5c3eacaf81f3ac4967b93f97657abab7529abf64","Image.CropScaleMask",150,100
 ,52,9,3,"/_processed_/csm_fallback_large.jpg","csm_fallback_large.jpg","a:2:{s:5:""width"";i:600;s:6:""height"";i:400;}","021e215cff73b74774d22693475dceba7fbe1989","Image.CropScaleMask",600,400
+,60,9,6,"/_processed_/csm_oversized.jpg","csm_oversized.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
+,61,9,6,"/_processed_/csm_oversized_small.jpg","csm_oversized_small.jpg","a:2:{s:5:""width"";i:150;s:6:""height"";i:100;}","5c3eacaf81f3ac4967b93f97657abab7529abf64","Image.CropScaleMask",150,100
