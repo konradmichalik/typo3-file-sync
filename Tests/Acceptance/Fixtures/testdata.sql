@@ -20,6 +20,20 @@ INSERT INTO `pages` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `title`, `slug
 VALUES (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'Gallery', '/gallery', 1, 0);
 
 -- =====================================================
+-- sys_file_storage — the default fileadmin storage
+-- =====================================================
+-- `ddev install` runs the TYPO3 setup with no site setup type, which never
+-- creates one. Without this row every sys_file below points at a storage that
+-- does not exist and nothing renders at all.
+
+INSERT INTO `sys_file_storage`
+    (`uid`, `pid`, `tstamp`, `crdate`, `name`, `description`, `driver`, `configuration`, `is_default`, `is_browsable`, `is_public`, `is_writable`, `is_online`, `auto_extract_metadata`, `processingfolder`)
+VALUES
+    (1, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 'fileadmin/ (auto-created)', 'This is the local fileadmin/ directory.', 'Local',
+     '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<T3FlexForms>\n    <data>\n        <sheet index="sDEF">\n            <language index="lDEF">\n                <field index="basePath">\n                    <value index="vDEF">fileadmin/</value>\n                </field>\n                <field index="pathType">\n                    <value index="vDEF">relative</value>\n                </field>\n                <field index="caseSensitive">\n                    <value index="vDEF">1</value>\n                </field>\n            </language>\n        </sheet>\n    </data>\n</T3FlexForms>',
+     1, 1, 1, 1, 1, 1, '');
+
+-- =====================================================
 -- sys_file — image records (files don't exist locally)
 -- =====================================================
 
@@ -42,20 +56,24 @@ VALUES
     (103, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 103, 600, 400);
 
 -- =====================================================
--- tt_content — textmedia content elements
+-- tt_content, textmedia content elements
 -- =====================================================
+-- imagewidth is set on purpose: rendered at their native size the test
+-- images pass through unprocessed, and both the deferred loading and the
+-- preview feature work on renditions rather than on originals. Scaling
+-- them is what makes TYPO3 write sys_file_processedfile rows at all.
 
 -- Page uid=1 (Home): 2 content elements
-INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`)
+INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1),
-    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1);
+    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1, 100),
+    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1, 100);
 
 -- Page uid=100 (Gallery): 2 content elements
-INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`)
+INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1),
-    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1);
+    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1, 100),
+    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1, 100);
 
 -- =====================================================
 -- sys_file_reference — connect images to content
