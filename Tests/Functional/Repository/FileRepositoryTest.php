@@ -308,6 +308,13 @@ final class FileRepositoryTest extends FunctionalTestCase
         self::assertSame([], $this->subject->findSmallestRenditions([999]));
     }
 
+    /**
+     * This pins intent, not behaviour: deleting the early return it exists
+     * for leaves it green. Doctrine renders an empty ArrayParameterType list
+     * as "IN (NULL)", which matches no row, so the query answers the same
+     * empty array the guard does. What the guard buys is the query never
+     * being sent, and no assertion from out here can see that.
+     */
     #[Test]
     public function findSmallestRenditionsReturnsEmptyArrayForAnEmptyList(): void
     {
