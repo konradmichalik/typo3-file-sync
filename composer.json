@@ -49,6 +49,11 @@
 			"KonradMichalik\\Typo3FileSync\\": "Classes/"
 		}
 	},
+	"autoload-dev": {
+		"psr-4": {
+			"KonradMichalik\\Typo3FileSync\\Tests\\": "Tests/"
+		}
+	},
 	"config": {
 		"allow-plugins": {
 			"eliashaeussler/version-bumper": true,

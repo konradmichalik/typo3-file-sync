@@ -41,8 +41,9 @@ final class StorageFieldTest extends FunctionalTestCase
     }
 
     #[Test]
-    public function featureToggleDefaultsToOff(): void
+    public function featureTogglesDefaultToOff(): void
     {
         self::assertFalse($GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING]);
+        self::assertFalse($GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES]);
     }
 }

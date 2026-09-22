@@ -13,43 +13,40 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Middleware;
 
-use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, SitePath, StorageService};
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PublicUrlResolver, SitePath, StorageService};
 use Psr\Http\Message\{ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
+use Throwable;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Configuration\Features;
-use TYPO3\CMS\Core\Resource\{ResourceStorage, StorageRepository};
 use TYPO3\CMS\Core\Utility\PathUtility;
 
+use function array_key_exists;
 use function array_map;
 use function array_unique;
 use function array_values;
+use function base64_encode;
 use function htmlspecialchars;
 use function intval;
 use function is_array;
 use function is_string;
-use function ltrim;
-use function parse_url;
 use function preg_match;
 use function preg_match_all;
 use function preg_replace;
 use function preg_replace_callback;
-use function rawurldecode;
 use function rtrim;
 use function str_contains;
 use function str_ends_with;
 use function str_starts_with;
 use function strlen;
-use function strpos;
 use function strripos;
 use function strtolower;
 use function substr;
-use function trim;
-use function usort;
+use function substr_replace;
 
 /**
  * DeferredImageMiddleware.
@@ -60,6 +57,14 @@ use function usort;
  * rendition and injects the module that asks the materialize endpoint to
  * replace them.
  *
+ * Only a tag that states its own width and height takes part in the preview
+ * stage. Where a preview of its rendition is already stored it is inlined as
+ * a data URI, which is what makes every encounter after the first one cost
+ * neither a preview request nor, for a tag the browser actually renders from
+ * its src, a request for the grey placeholder. A tag carrying srcset takes no
+ * part in the preview stage at all and still fetches the placeholder, because
+ * the browser picks its candidate from there and ignores src entirely.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
@@ -68,6 +73,15 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private const ATTRIBUTE = 'data-file-sync';
 
     private const ENDPOINT_ATTRIBUTE = 'data-file-sync-endpoint';
+
+    /**
+     * Carried only by an image that states its own size and whose preview is
+     * still missing, so the module asks the preview stage for those and for
+     * nothing else.
+     */
+    private const PREVIEW_ATTRIBUTE = 'data-file-sync-preview';
+
+    private const PREVIEW_URI_PREFIX = 'data:image/webp;base64,';
 
     private const CACHE_KEY = 'fileSyncProvisionalCount';
 
@@ -99,7 +113,8 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         private DeferredTokenService $deferredTokenService,
         private Features $features,
         private FileRepository $fileRepository,
-        private StorageRepository $storageRepository,
+        private PreviewStore $previewStore,
+        private PublicUrlResolver $publicUrlResolver,
         private StorageService $storageService,
         private StreamFactoryInterface $streamFactory,
     ) {}
@@ -152,20 +167,20 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
-        $identifierByUrl = $this->identifiersByUrl(array_values(array_unique($matches[2])), $storageUids);
+        $identifierByUrl = $this->publicUrlResolver->identifiersByUrl(array_values(array_unique($matches[2])), $storageUids);
         if ([] === $identifierByUrl) {
             return null;
         }
 
-        $uidByIdentifier = $this->fileRepository->findProvisionalProcessedFiles(
+        $renditionByIdentifier = $this->fileRepository->findProvisionalProcessedFiles(
             $storageUids,
             array_values(array_unique(array_values($identifierByUrl))),
         );
-        if ([] === $uidByIdentifier) {
+        if ([] === $renditionByIdentifier) {
             return null;
         }
 
-        $rewritten = $this->rewriteTags($body, $identifierByUrl, $uidByIdentifier);
+        $rewritten = $this->rewriteTags($body, $identifierByUrl, $renditionByIdentifier);
         if (null === $rewritten) {
             return null;
         }
@@ -177,32 +192,61 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * Matched offsets are needed to tell a tag the browser renders from one
      * sitting inside a script, a textarea or a comment.
      *
-     * @param array<string, string> $identifierByUrl
-     * @param array<string, int>    $uidByIdentifier
+     * @param array<string, string>                        $identifierByUrl
+     * @param array<string, array{uid: int, storage: int}> $renditionByIdentifier
      *
      * @return string|null the rewritten body, or null when nothing was marked
      */
-    private function rewriteTags(string $body, array $identifierByUrl, array $uidByIdentifier): ?string
+    private function rewriteTags(string $body, array $identifierByUrl, array $renditionByIdentifier): ?string
     {
         $skipSpans = self::skipSpans($body);
+        // Resolved once for the whole body rather than per tag, and only
+        // after a provisional rendition was actually found, so a response
+        // that ends up untouched never asks.
+        $previewsEnabled = $this->features->isFeatureEnabled(Configuration::FEATURE_PREVIEW_IMAGES);
+        // Ten copies of one image on a page are ten tags but one rendition, so
+        // they are one store read. markBody() already dedupes before the
+        // query; this is the same dedupe for the filesystem behind it.
+        /** @var array<string, string|null> $previewByIdentifier */
+        $previewByIdentifier = [];
         $marked = 0;
         $total = 0;
         $result = preg_replace_callback(
             self::IMAGE_PATTERN,
-            function (array $match) use ($identifierByUrl, $uidByIdentifier, $skipSpans, &$marked): string {
+            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $previewsEnabled, &$marked, &$previewByIdentifier): string {
                 [$tag, $offset] = $match[0];
                 if (self::isWithinSpan($offset, $skipSpans)) {
                     return $tag;
                 }
 
                 $identifier = $identifierByUrl[$match[2][0]] ?? null;
-                $uid = null === $identifier ? null : ($uidByIdentifier[$identifier] ?? null);
-                $rewritten = $this->withAttribute($tag, $match[1][0], $uid);
-                if ($rewritten !== $tag) {
-                    ++$marked;
+                $rendition = null === $identifier ? null : ($renditionByIdentifier[$identifier] ?? null);
+                $rewritten = $this->withAttribute($tag, $match[1][0], $rendition['uid'] ?? null);
+                if ($rewritten === $tag) {
+                    return $tag;
                 }
 
-                return $rewritten;
+                ++$marked;
+                // A tag that was marked had both of these, so the second half
+                // of this narrows the types rather than deciding anything.
+                if (!$previewsEnabled || null === $identifier || null === $rendition) {
+                    return $rewritten;
+                }
+
+                // array_key_exists rather than ??=, because "there is no
+                // preview" is the answer worth remembering: it is what a
+                // freshly synced installation answers for every tag.
+                if (!array_key_exists($identifier, $previewByIdentifier)) {
+                    $previewByIdentifier[$identifier] = $this->storedPreview($rendition['storage'], $identifier);
+                }
+
+                return self::withPreview(
+                    $rewritten,
+                    $match[1][0],
+                    $previewByIdentifier[$identifier],
+                    $match[2],
+                    $offset,
+                );
             },
             $body,
             -1,
@@ -238,7 +282,109 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return $tag;
         }
 
-        $attribute = ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote;
+        return self::appended($tag, ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote);
+    }
+
+    /**
+     * What an already marked tag gains from the preview store: the stored
+     * preview in place of the URL the browser would otherwise fetch the grey
+     * placeholder from, or the attribute that asks the module to go and get
+     * one, or nothing at all, because a tag that states no size of its own
+     * takes no part in the preview stage.
+     *
+     * Only the src value is replaced, between the quotes the tag already
+     * carries, at the offsets the match reported: the quoting survives because
+     * it is never touched, not because anything mirrors it. $quote is mirrored
+     * by the marking branch alone, which appends an attribute of its own.
+     *
+     * The replacement still has to survive between those quotes, and it does:
+     * a base64 payload behind a fixed prefix is alphanumerics, "+", "/", "=",
+     * ":", ";", "," and ".", so neither quote character occurs in it.
+     *
+     * @param array{string, int} $src the matched src value and its offset in the body
+     */
+    private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
+    {
+        if (!self::declaresItsOwnSize($tag) || self::picksFromSrcset($tag)) {
+            return $tag;
+        }
+
+        if (null === $preview) {
+            return self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote);
+        }
+
+        return substr_replace(
+            $tag,
+            self::PREVIEW_URI_PREFIX.base64_encode($preview),
+            $src[1] - $tagOffset,
+            strlen($src[0]),
+        );
+    }
+
+    /**
+     * Whether the tag takes part in the preview stage at all.
+     *
+     * A stored preview is 32 pixels on its longest edge, while the grey
+     * placeholder is generated at the rendition's own width and height. A tag
+     * that states no size of its own is laid out from whatever its src turns
+     * out to be, so a preview reaching it would collapse it to 32 pixels and
+     * grow it back when the original lands: two layout shifts where the
+     * placeholder alone costs none. That holds however the preview travels,
+     * since the module assigns the very same data URI to src, so such a tag
+     * is left with the placeholder and the original and nothing in between.
+     *
+     * The lookbehind is the one IMAGE_PATTERN uses on src=, for the same
+     * reason: a word boundary also sits between the hyphen and the "w" of
+     * data-width. An empty value states no size either.
+     */
+    private static function declaresItsOwnSize(string $tag): bool
+    {
+        return 1 === preg_match('/(?<![-\w])width=(["\'])[^"\']+\1/i', $tag)
+            && 1 === preg_match('/(?<![-\w])height=(["\'])[^"\']+\1/i', $tag);
+    }
+
+    /**
+     * Whether the browser takes this tag's image from a candidate list
+     * rather than from src, in which case it never reads src at all. The
+     * preview would then be a data URI nothing renders, and the tag would be
+     * marked for the stage on every response: a source rendition downloaded
+     * and a preview stored for a picture no visitor ever sees blurred.
+     *
+     * The same lookbehind as the size guard, for the same reason: a word
+     * boundary also sits between the hyphen and the "s" of data-srcset, which
+     * is a lazy-loading attribute the browser lays nothing out from. An
+     * empty value names no candidate either.
+     */
+    private static function picksFromSrcset(string $tag): bool
+    {
+        return 1 === preg_match('/(?<![-\w])srcset=(["\'])[^"\']+\1/i', $tag);
+    }
+
+    /**
+     * A store read is filesystem I/O, and this middleware sees every frontend
+     * response there is: a preview that cannot be read must cost nothing more
+     * than the request the browser would have made anyway, which is exactly
+     * what a null answer here buys.
+     */
+    private function storedPreview(int $storageUid, string $identifier): ?string
+    {
+        try {
+            return $this->previewStore->read($storageUid, $identifier);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Appends in front of the closing ">" and keeps a self-closing tag
+     * self-closing.
+     *
+     * It must only ever change bytes after the src value: withPreview()
+     * replaces that value at the offsets the match reported, and an
+     * insertion anywhere before it would silently shift them.
+     */
+    private static function appended(string $tag, string $attribute): string
+    {
         $head = rtrim(substr($tag, 0, -1));
         if (str_ends_with($head, '/')) {
             return rtrim(substr($head, 0, -1)).$attribute.' />';
@@ -292,109 +438,6 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         return 200 === $response->getStatusCode()
             && '' === $response->getHeaderLine('Content-Encoding')
             && str_starts_with(strtolower($response->getHeaderLine('Content-Type')), 'text/html');
-    }
-
-    /**
-     * @param list<string> $urls
-     * @param list<int>    $storageUids
-     *
-     * @return array<string, string>
-     */
-    private function identifiersByUrl(array $urls, array $storageUids): array
-    {
-        $prefixes = $this->publicPrefixes($storageUids);
-        $map = [];
-        foreach ($urls as $url) {
-            $identifier = self::toIdentifier($url, $prefixes);
-            if (null !== $identifier) {
-                $map[$url] = $identifier;
-            }
-        }
-
-        return $map;
-    }
-
-    /**
-     * A src is whatever the renderer produced: site-relative with or without
-     * a leading slash depending on absRefPrefix, or absolute when the site
-     * points its assets at another host. Anchoring on the storage prefix as
-     * a path segment covers all three, and a wrong guess costs nothing
-     * because the lookup is an exact match on the processed file identifier.
-     *
-     * @param list<string> $prefixes
-     */
-    private static function toIdentifier(string $url, array $prefixes): ?string
-    {
-        $path = parse_url($url, \PHP_URL_PATH);
-        if (!is_string($path) || '' === $path) {
-            return null;
-        }
-
-        $path = '/'.ltrim(rawurldecode($path), '/');
-        foreach ($prefixes as $prefix) {
-            $position = strpos($path, $prefix);
-            if (false !== $position) {
-                return '/'.substr($path, $position + strlen($prefix));
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param list<int> $storageUids
-     *
-     * @return list<string>
-     */
-    private function publicPrefixes(array $storageUids): array
-    {
-        $prefixes = [];
-        foreach ($storageUids as $storageUid) {
-            $prefix = $this->publicPrefixOfStorage($storageUid);
-            if (null !== $prefix) {
-                $prefixes[] = $prefix;
-            }
-        }
-
-        $prefixes = array_values(array_unique($prefixes));
-        // A nested storage must win over the one it sits inside, otherwise
-        // its files are resolved against the wrong root.
-        usort($prefixes, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
-
-        return $prefixes;
-    }
-
-    private function publicPrefixOfStorage(int $storageUid): ?string
-    {
-        // Storage 0 is the fallback storage and is never a deferred one.
-        if ($storageUid < 1) {
-            return null;
-        }
-
-        try {
-            return self::publicPrefix($this->storageRepository->getStorageObject($storageUid));
-        } catch (InvalidArgumentException) {
-            return null;
-        }
-    }
-
-    private static function publicPrefix(ResourceStorage $storage): ?string
-    {
-        // getRootLevelFolder(false) bypasses backend file mounts, which are
-        // irrelevant to a frontend URL and would yield a subfolder.
-        $publicUrl = $storage->getPublicUrl($storage->getRootLevelFolder(false));
-        if (null === $publicUrl) {
-            return null;
-        }
-
-        $path = parse_url($publicUrl, \PHP_URL_PATH);
-        if (!is_string($path)) {
-            return null;
-        }
-
-        $path = trim(rawurldecode($path), '/');
-
-        return '' === $path ? '/' : '/'.$path.'/';
     }
 
     private function injectSnippet(string $body): string

@@ -32,6 +32,13 @@ services:
     KonradMichalik\Typo3FileSync\Form\Element\ShowSyncStatus:
         public: true
 
+    KonradMichalik\Typo3FileSync\Resource\Preview\PreviewGenerator:
+        arguments:
+            # null asks GD itself. Named here rather than defaulted in the
+            # constructor, so that a test can hand it the answer a build
+            # without a WebP encoder would give.
+            $webpSupported: null
+
     KonradMichalik\Typo3FileSync\Repository\FileRepository:
         public: true
 
@@ -42,6 +49,9 @@ services:
         public: true
 
     KonradMichalik\Typo3FileSync\Service\MaterializationService:
+        public: true
+
+    KonradMichalik\Typo3FileSync\Service\PreviewService:
         public: true
 
     KonradMichalik\Typo3FileSync\Service\StorageService:

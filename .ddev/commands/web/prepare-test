@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -eu
+
+## Description: Put an instance into a clean first-visit state for one of the experimental features.
+## Usage: prepare-test <1|2> [version]
+## Example: "ddev prepare-test 1" or "ddev prepare-test 2 13"
+
+. /var/www/html/.ddev/.setup/scripts/utils.sh
+
+FEATURE=${1:-}
+VERSION=${2:-$(get_lowest_supported_typo3_versions)}
+INSTANCE="/var/www/html/.Build/${VERSION}"
+
+if [ "$FEATURE" != "1" ] && [ "$FEATURE" != "2" ]; then
+    message red "Say which feature: 1 for deferred loading, 2 for deferred loading plus previews."
+    exit 1
+fi
+
+[ -d "$INSTANCE" ] || { message red "TYPO3 instance not found for version ${VERSION}. Run 'ddev install ${VERSION}' first."; exit 1; }
+
+# 1. The feature toggles. Written here rather than from the host because the
+#    host copy has been seen losing a line to the mutagen sync.
+{
+    echo '<?php'
+    echo '$GLOBALS["TYPO3_CONF_VARS"]["SYS"]["features"]["fileSync.deferredLoading"] = true;'
+    [ "$FEATURE" = "2" ] && echo '$GLOBALS["TYPO3_CONF_VARS"]["SYS"]["features"]["fileSync.previewImages"] = true;'
+} > "${INSTANCE}/config/system/additional.php"
+
+# 2. Both flags on the storage. The toggle alone does nothing without them.
+mysql -h db -u root -proot "database_${VERSION}" -e "
+    UPDATE sys_file_storage SET tx_typo3_file_sync_enable = 1, tx_typo3_file_sync_deferred = 1 WHERE uid = 1;
+"
+
+cd "$INSTANCE"
+
+# 3. One render, so sys_file_processedfile knows the rendition identifiers. The
+#    preview stage fetches renditions from the remote by exactly those names,
+#    and they do not exist until a page has been built once.
+php vendor/bin/typo3 cache:flush >/dev/null 2>&1
+for PATH_ in "/" "/gallery"; do
+    curl -ks "https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}${PATH_}" >/dev/null || true
+done
+
+# 4. Publish originals and renditions to the fake remote, and throttle it, so
+#    the swap is slow enough to watch.
+/var/www/html/.ddev/commands/web/stage-remote "$VERSION" >/dev/null
+
+# 5. Back to a first visit: no synced files, no flags, no stored previews.
+php vendor/bin/typo3 file-sync:delete --all >/dev/null 2>&1 || true
+php vendor/bin/typo3 file-sync:reset >/dev/null 2>&1 || true
+rm -f "${INSTANCE}"/var/file-sync/previews/*/*.webp 2>/dev/null || true
+php vendor/bin/typo3 cache:flush >/dev/null 2>&1
+
+STATE=$(mysql -h db -u root -proot "database_${VERSION}" -N -e "
+    SELECT COUNT(*) FROM sys_file WHERE tx_typo3_file_sync_identifier <> ''
+")
+
+message green "Ready: https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}/gallery"
+echo
+if [ "$FEATURE" = "1" ]; then
+    echo "  Deferred loading only. Expect grey placeholders, one POST to"
+    echo "  /tx-file-sync/materialize after the load event, then the real images."
+else
+    echo "  Deferred loading plus previews. Expect grey placeholders, two POSTs"
+    echo "  leaving together, blurred images after roughly a second, then the"
+    echo "  real ones."
+fi
+echo
+echo "  ${STATE} file(s) still carry a sync identifier (0 is what you want)."
+echo
+message yellow "  Reload with the cache disabled. The rendition URL does not change"
+message yellow "  between a placeholder and the real file, so a warm browser cache"
+message yellow "  shows you the image you fetched last time and nothing appears to happen."

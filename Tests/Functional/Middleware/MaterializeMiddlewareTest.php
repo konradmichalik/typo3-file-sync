@@ -15,7 +15,9 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
-use KonradMichalik\Typo3FileSync\Service\MaterializationService;
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
+use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend;
@@ -26,16 +28,23 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function array_fill;
+use function base64_encode;
 use function json_decode;
 use function json_encode;
 
 /**
  * MaterializeMiddlewareTest.
  *
- * Every fixture token here is deliberately unresolvable. The middleware
- * only has to shape the HTTP surface correctly; what a resolvable token
- * does once inside MaterializationService is covered by that service's
+ * Almost every fixture token here is deliberately unresolvable. The
+ * middleware only has to shape the HTTP surface correctly; what a resolvable
+ * token does once inside MaterializationService is covered by that service's
  * own functional test.
+ *
+ * The exception is the preview stage. Both stages answer an unresolvable
+ * token with the same body, so only a resolvable one shows which service the
+ * stage reached: the preview stage answers with a "preview" key and the
+ * original stage with a "url" key or an error. That token is served from
+ * PreviewStore, so it needs no storage and no remote.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -43,7 +52,11 @@ use function json_encode;
 #[CoversClass(MaterializeMiddleware::class)]
 final class MaterializeMiddlewareTest extends FunctionalTestCase
 {
+    use StoredPreview;
+
     private const PATH = '/tx-file-sync/materialize';
+    private const ROUTED_IDENTIFIER = '/_processed_/csm_routing.jpg';
+    private const ROUTED_STORAGE = 1;
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
     /**
@@ -62,6 +75,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         parent::setUp();
 
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = false;
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = false;
 
         // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
         // TYPO3 read the site path as "vendor/bin/". Pinning it is what makes
@@ -73,6 +87,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
 
     protected function tearDown(): void
     {
+        (new PreviewStore())->remove(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER);
         $_SERVER = $this->serverBackup;
         GeneralUtility::flushInternalRuntimeCaches();
         parent::tearDown();
@@ -100,6 +115,120 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
 
         self::assertSame(405, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function safelistedContentTypeProvider(): array
+    {
+        return [
+            'none' => [''],
+            'text/plain' => ['text/plain'],
+            'form urlencoded' => ['application/x-www-form-urlencoded'],
+            'multipart' => ['multipart/form-data; boundary=x'],
+        ];
+    }
+
+    /**
+     * Every media type here is CORS-safelisted, so a cross-origin fetch()
+     * carrying one is delivered without a preflight and processed in full.
+     * The attacker cannot read the answer and does not need to: the outbound
+     * fetches are the point, and the tokens sit in the site's public HTML.
+     */
+    #[Test]
+    #[DataProvider('safelistedContentTypeProvider')]
+    public function rejectsAPostThatDoesNotDeclareJson(string $contentType): void
+    {
+        $this->enableFeature();
+        $headers = '' === $contentType ? [] : ['Content-Type' => $contentType];
+        $request = $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', $headers);
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(415, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'unsupported media type']), (string) $response->getBody());
+    }
+
+    /**
+     * The module sends a bare "application/json", but a proxy or a hand-written
+     * caller may append a charset. The parameter is not part of the media type.
+     */
+    #[Test]
+    public function acceptsAJsonContentTypeCarryingParameters(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'Application/JSON; charset=utf-8'],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function foreignFetchSiteProvider(): array
+    {
+        return [
+            'cross site' => ['cross-site'],
+            'same site' => ['same-site'],
+            'no origin' => ['none'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('foreignFetchSiteProvider')]
+    public function rejectsARequestThatStatesItCameFromElsewhere(string $fetchSite): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'application/json', 'Sec-Fetch-Site' => $fetchSite],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(403, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'forbidden']), (string) $response->getBody());
+    }
+
+    #[Test]
+    public function acceptsARequestThatStatesItCameFromTheSameOrigin(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'application/json', 'Sec-Fetch-Site' => 'same-origin'],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * The header is absent on older browsers and on every non-browser caller,
+     * so it can only harden the media type check, never replace it.
+     */
+    #[Test]
+    public function acceptsARequestWithoutASecFetchSiteHeader(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}');
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -274,20 +403,169 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         self::assertSame(405, $response->getStatusCode());
     }
 
+    /**
+     * The two refusals decided from the request envelope alone. Neither reads
+     * the body nor spends anything, so both are free to answer.
+     *
+     * @return array<string, array{string, array<string, string>, int}>
+     */
+    public static function envelopeRefusalProvider(): array
+    {
+        return [
+            'refused for its method' => ['GET', ['Content-Type' => 'application/json'], 405],
+            'refused for its media type' => ['POST', ['Content-Type' => 'text/plain'], 415],
+        ];
+    }
+
+    /**
+     * The caller's own budget is spent before the envelope is looked at, so
+     * that a flood cannot dodge the limit by using a verb or a media type
+     * that would be rejected cheaply. What it burns is nobody else's.
+     *
+     * @param array<string, string> $headers
+     */
     #[Test]
-    public function aCallerPastTheLimitIsThrottled(): void
+    #[DataProvider('envelopeRefusalProvider')]
+    public function aCallerPastTheLimitIsThrottled(string $method, array $headers, int $status): void
     {
         $this->enableFeature();
         $middleware = $this->get(MaterializeMiddleware::class);
 
         for ($i = 0; $i < 60; ++$i) {
-            self::assertSame(405, $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler())->getStatusCode());
+            self::assertSame($status, $middleware->process($this->buildRequest(self::PATH, $method, '', $headers), $this->stubHandler())->getStatusCode());
         }
 
-        $response = $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler());
+        $response = $middleware->process($this->buildRequest(self::PATH, $method, '', $headers), $this->stubHandler());
 
         self::assertSame(429, $response->getStatusCode());
         self::assertSame(json_encode(['error' => 'too many requests']), (string) $response->getBody());
+    }
+
+    /**
+     * A third-party page can make its own visitors emit cross-origin CORS
+     * preflights at this path. Every such OPTIONS is refused for its method,
+     * and the POST behind it can never be delivered, so the preflight buys
+     * the attacker nothing except whatever budget it spends. Were that the
+     * site-wide one, roughly six hundred preflights a minute, spread over any
+     * number of visitors, would deny deferred loading and previews to the
+     * whole site.
+     *
+     * Every request here claims a fresh address, so the per-address limiter
+     * never fires and only the site-wide budget can answer. Spending a whole
+     * site-wide window in refusals and then serving a well-shaped request is
+     * the only way to observe from outside that the refusals never reached it.
+     *
+     * @param array<string, string> $headers
+     */
+    #[Test]
+    #[DataProvider('envelopeRefusalProvider')]
+    public function aRefusedEnvelopeLeavesTheSiteWideBudgetUntouched(string $method, array $headers, int $status): void
+    {
+        $this->enableFeature();
+        $middleware = $this->get(MaterializeMiddleware::class);
+
+        for ($i = 0; $i < 600; ++$i) {
+            $request = $this->buildRequest(self::PATH, $method, '', $headers, '10.0.'.intdiv($i, 250).'.'.($i % 250));
+            self::assertSame($status, $middleware->process($request, $this->stubHandler())->getStatusCode());
+        }
+
+        $response = $middleware->process(
+            $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', ['Content-Type' => 'application/json'], '10.9.9.9'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * A limiter keyed on the client address bounds nothing when the client
+     * chooses the address, which it does behind a proxy that TYPO3 is
+     * configured to trust. Every request here claims a fresh one, so the
+     * per-address limiter never fires and only the site-wide budget can
+     * answer.
+     *
+     * The payload is unusable on purpose. A request that got past the
+     * envelope is one this endpoint would have served, so it is on the site's
+     * tab whatever its body turns out to hold, and a 400 is the cheapest
+     * shape that proves it.
+     */
+    #[Test]
+    public function theSiteIsThrottledHoweverManyAddressesOneCallerClaims(): void
+    {
+        $this->enableFeature();
+        $middleware = $this->get(MaterializeMiddleware::class);
+
+        for ($i = 0; $i < 600; ++$i) {
+            $request = $this->buildRequest(self::PATH, 'POST', '{}', ['Content-Type' => 'application/json'], '10.0.'.intdiv($i, 250).'.'.($i % 250));
+            self::assertSame(400, $middleware->process($request, $this->stubHandler())->getStatusCode());
+        }
+
+        $response = $middleware->process(
+            $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', ['Content-Type' => 'application/json'], '10.9.9.9'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(429, $response->getStatusCode());
+    }
+
+    /**
+     * The preview stage has a toggle of its own. An installation that runs
+     * deferred loading without previews must answer the stage it does not
+     * serve rather than fall back to fetching whole originals, which is the
+     * expensive half this stage exists to postpone.
+     */
+    #[Test]
+    public function previewStageReturnsNotFoundWhileThePreviewToggleIsOff(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => ['9999.deadbeef']]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(404, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'disabled']), (string) $response->getBody());
+    }
+
+    /**
+     * The one resolvable token in this class, and the only assertion that can
+     * tell the two services apart: a "preview" key is a shape
+     * MaterializationService cannot produce. The rendition has no sys_file row
+     * on purpose, so routing this to the original stage answers with an error
+     * rather than a URL.
+     */
+    #[Test]
+    public function previewStageIsAnsweredByThePreviewServiceWhileTheToggleIsOn(): void
+    {
+        $this->enableFeature();
+        $this->enablePreviewFeature();
+        $this->importCSVDataSet(__DIR__.'/Fixtures/preview_token.csv');
+        $stored = self::webp('routed-preview-bytes');
+        (new PreviewStore())->write(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER, $stored);
+        $token = $this->get(DeferredTokenService::class)->create(10);
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => [$token]]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(
+            json_encode([$token => ['preview' => 'data:image/webp;base64,'.base64_encode($stored)]]),
+            (string) $response->getBody(),
+        );
+    }
+
+    /**
+     * A browser running a cached copy of an older module must still be served
+     * the real file instead of the preview toggle's 404.
+     */
+    #[Test]
+    public function anUnknownStageValueFallsThroughToTheOriginalStage(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'nonsense', 'tokens' => ['9999.deadbeef']]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -308,13 +586,30 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
     }
 
-    private function buildRequest(string $path, string $method, string $body = ''): ServerRequest
+    private function enablePreviewFeature(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
+    }
+
+    /**
+     * The headers default to what the extension's own module sends, so that
+     * every case not about them exercises the happy path rather than a
+     * rejection.
+     *
+     * @param array<string, string> $headers
+     */
+    private function buildRequest(string $path, string $method, string $body = '', array $headers = ['Content-Type' => 'application/json'], string $remoteAddress = '127.0.0.1'): ServerRequest
     {
         $stream = new Stream('php://temp', 'r+');
         $stream->write($body);
 
-        return (new ServerRequest('https://example.com'.$path, $method, $stream))
+        $request = (new ServerRequest('https://example.com'.$path, $method, $stream, [], ['REMOTE_ADDR' => $remoteAddress, 'HTTP_HOST' => 'example.com']))
             ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
+        }
+
+        return $request;
     }
 
     /**
