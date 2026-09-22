@@ -419,6 +419,32 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     }
 
     /**
+     * A limiter keyed on the client address bounds nothing when the client
+     * chooses the address, which it does behind a proxy that TYPO3 is
+     * configured to trust. Every request here claims a fresh one, so the
+     * per-address limiter never fires and only the site-wide budget can
+     * answer.
+     */
+    #[Test]
+    public function theSiteIsThrottledHoweverManyAddressesOneCallerClaims(): void
+    {
+        $this->enableFeature();
+        $middleware = $this->get(MaterializeMiddleware::class);
+
+        for ($i = 0; $i < 600; ++$i) {
+            $request = $this->buildRequest(self::PATH, 'GET', '', [], '10.0.'.intdiv($i, 250).'.'.($i % 250));
+            self::assertSame(405, $middleware->process($request, $this->stubHandler())->getStatusCode());
+        }
+
+        $response = $middleware->process(
+            $this->buildRequest(self::PATH, 'GET', '', [], '10.9.9.9'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(429, $response->getStatusCode());
+    }
+
+    /**
      * The preview stage has a toggle of its own. An installation that runs
      * deferred loading without previews must answer the stage it does not
      * serve rather than fall back to fetching whole originals, which is the
@@ -509,12 +535,12 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
      *
      * @param array<string, string> $headers
      */
-    private function buildRequest(string $path, string $method, string $body = '', array $headers = ['Content-Type' => 'application/json']): ServerRequest
+    private function buildRequest(string $path, string $method, string $body = '', array $headers = ['Content-Type' => 'application/json'], string $remoteAddress = '127.0.0.1'): ServerRequest
     {
         $stream = new Stream('php://temp', 'r+');
         $stream->write($body);
 
-        $request = (new ServerRequest('https://example.com'.$path, $method, $stream))
+        $request = (new ServerRequest('https://example.com'.$path, $method, $stream, [], ['REMOTE_ADDR' => $remoteAddress, 'HTTP_HOST' => 'example.com']))
             ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
         foreach ($headers as $name => $value) {
             $request = $request->withHeader($name, $value);
