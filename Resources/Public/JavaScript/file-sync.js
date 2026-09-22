@@ -38,13 +38,16 @@ const request = async (tokens, stage) => {
     }
 };
 
-const apply = async (elements, result) => {
+// One function for both stages: key is 'preview' for the data URI and 'url'
+// for the real file, and final says whether what lands is the last thing this
+// element will be given.
+const apply = async (elements, result, key, final) => {
     // Every src is assigned before anything is awaited, so the browser starts
     // all the downloads at once. Awaiting decode() inside the loop instead
     // would delay the single commit by the sum of the load times, which for a
     // batch of fifty is most of what this feature exists to avoid.
     const pending = elements
-        .map((element) => [element, result[element.dataset.fileSync]?.url])
+        .map((element) => [element, result[element.dataset.fileSync]?.[key]])
         .filter(([, url]) => Boolean(url))
         .map(([element, url]) => {
             const next = new Image();
@@ -63,19 +66,55 @@ const apply = async (elements, result) => {
 
     // decode() already ran above, so the assignment below never shows a
     // blank frame, whether or not a transition wraps it.
+    //
+    // The staleness guard sits inside the commit rather than anywhere before
+    // it, because the race between the two stages is decided at the moment of
+    // assignment and not a frame earlier. An element that has lost
+    // data-file-sync already shows its original, and a preview arriving after
+    // it must not blur a sharp image.
     const commit = () => {
         for (const [element, url] of swaps) {
+            if (!element.hasAttribute('data-file-sync')) continue;
             element.src = url;
-            element.removeAttribute('data-file-sync');
+            element.removeAttribute('data-file-sync-preview');
+            if (final) element.removeAttribute('data-file-sync');
         }
     };
-    canAnimate() ? document.startViewTransition(commit) : commit();
+
+    // Starting a transition skips whichever one is still running, so a late
+    // preview whose swaps the guard will all skip would cut the original's
+    // crossfade short in order to animate nothing. The guard in the commit
+    // stays the one that decides; this only keeps a commit that can no longer
+    // change anything from reaching for a transition.
+    const stale = swaps.every(([element]) => !element.hasAttribute('data-file-sync'));
+    canAnimate() && !stale ? document.startViewTransition(commit) : commit();
 };
 
 const run = async () => {
     const elements = collect();
     if (elements.length === 0) return;
-    await apply(elements, await request(elements.map((element) => element.dataset.fileSync), 'original'));
+
+    // Only the images the middleware could not inline a stored preview for,
+    // so a settled installation asks the preview stage for nothing and the
+    // page costs exactly the one original request it always did.
+    const unpreviewed = elements.filter((element) => element.hasAttribute('data-file-sync-preview'));
+
+    // Both requests leave before either is awaited, so the two POSTs travel
+    // together rather than one after the other. The preview stage wins the
+    // race essentially always, moving kilobytes where the original moves
+    // megabytes, but nothing here relies on that: the staleness guard in
+    // apply() settles whichever order the answers come back in.
+    const previews =
+        unpreviewed.length > 0
+            ? request(unpreviewed.map((element) => element.dataset.fileSync), 'preview').then((result) =>
+                  apply(unpreviewed, result, 'preview', false),
+              )
+            : Promise.resolve();
+    const originals = request(elements.map((element) => element.dataset.fileSync), 'original').then((result) =>
+        apply(elements, result, 'url', true),
+    );
+
+    await Promise.allSettled([previews, originals]);
 };
 
 if (document.readyState === 'complete') {
