@@ -71,6 +71,8 @@ final class PreviewServiceTest extends FunctionalTestCase
         '/_processed_/csm_provisional_square.jpg',
         '/_processed_/csm_fallback.jpg',
         '/_processed_/csm_broken.png',
+        '/_processed_/csm_fallback_large.jpg',
+        '/_processed_/csm_onlyself.jpg',
     ];
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
@@ -281,6 +283,25 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame([], self::hits());
     }
 
+    /**
+     * A picture whose only recorded rendition is the one being waited for
+     * has no cheap proxy to blur. Taking that rendition as its own source
+     * downloads the very file the original stage is about to deliver, for a
+     * couple of hundred bytes of blur shown in the seconds in between. Where
+     * a sibling exists it was chosen as the narrowest there is, so that case
+     * remains worth its fetch.
+     */
+    #[Test]
+    public function aRenditionThatIsItsOwnOnlySourceIsNotPreviewed(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(50);
+
+        $result = $this->get(PreviewService::class)->preview([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertSame([], self::hits(), 'The rendition being waited for was downloaded in order to blur itself.');
+    }
+
     #[Test]
     public function aFileWithoutAnyRenditionYieldsUnavailable(): void
     {
@@ -351,7 +372,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         // by the pool and once again by the serial read behind it. Every
         // undamped retry is therefore worth two requests, not one.
         self::assertSame(
-            ['/fileadmin/_processed_/csm_broken.png', '/fileadmin/_processed_/csm_broken.png'],
+            ['/fileadmin/_processed_/csm_broken_small.png', '/fileadmin/_processed_/csm_broken_small.png'],
             $afterFirst,
         );
     }
@@ -376,15 +397,22 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertFalse((new PreviewStore())->has(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
     }
 
+    /**
+     * The rendition asked for is the larger of the two the fixture records,
+     * so its source is the sibling the remote answers with a login page
+     * rather than an image. Asking for the smaller one would now be declined
+     * before the request, since it is its own only source.
+     */
     #[Test]
     public function aRemotePayloadThatIsNotAnImageYieldsUnavailable(): void
     {
-        $token = $this->get(DeferredTokenService::class)->create(30);
+        $token = $this->get(DeferredTokenService::class)->create(52);
 
         $result = $this->get(PreviewService::class)->preview([$token]);
 
         self::assertSame(['error' => 'unavailable'], $result[$token]);
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, '/_processed_/csm_fallback.jpg'));
+        self::assertSame(['/fileadmin/_processed_/csm_fallback.jpg'], self::hits());
+        self::assertFalse((new PreviewStore())->has(self::STORAGE, '/_processed_/csm_fallback_large.jpg'));
     }
 
     #[Test]

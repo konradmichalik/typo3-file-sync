@@ -191,7 +191,7 @@ final class PreviewService implements LoggerAwareInterface
         }
 
         $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
-        if (null === $source) {
+        if (null === $source || self::isRequestedItself($source, $requested)) {
             return ['result' => ['error' => 'unavailable']];
         }
 
@@ -201,6 +201,23 @@ final class PreviewService implements LoggerAwareInterface
             'width' => (int) $row['width'],
             'height' => (int) $row['height'],
         ]];
+    }
+
+    /**
+     * Whether the only source on offer is the rendition the browser is
+     * already waiting for. Blurring that one downloads the very file the
+     * other stage is about to deliver, and buys nothing but a couple of
+     * hundred bytes of blur for the seconds in between. A sibling rendition
+     * was chosen as the narrowest there is, so it stays a cheap proxy and
+     * needs no threshold of its own.
+     *
+     * @param array{identifier: string, storage: int, width: int, height: int} $source
+     * @param PreviewLocation                                                  $requested
+     */
+    private static function isRequestedItself(array $source, array $requested): bool
+    {
+        return $source['storage'] === $requested['storage']
+            && $source['identifier'] === $requested['identifier'];
     }
 
     /**
