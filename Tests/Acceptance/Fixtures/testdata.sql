@@ -66,14 +66,26 @@ VALUES
 -- Page uid=1 (Home): 2 content elements
 INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1, 100),
-    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1, 100);
+    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1, 300),
+    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1, 300);
 
 -- Page uid=100 (Gallery): 2 content elements
 INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1, 100),
-    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1, 100);
+    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1, 300),
+    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1, 300);
+
+-- A second, much narrower element per image. Ruling 22 skips the preview when
+-- the only available source is the rendition the browser is already waiting
+-- for, so without a smaller sibling no picture would ever get a preview and
+-- the feature could not be seen at all.
+
+INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
+VALUES
+    (104, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 768, 'textmedia', 0, 'Thumbnail of the first image', '<p>The same file at a smaller size, so the larger element above has a cheap preview source.</p>', 1, 60),
+    (105, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1024, 'textmedia', 0, 'Thumbnail of the second image', '<p>The same file at a smaller size.</p>', 1, 60),
+    (106, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 768, 'textmedia', 0, 'Thumbnail of the PNG', '<p>The same file at a smaller size.</p>', 1, 60),
+    (107, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1024, 'textmedia', 0, 'Thumbnail of the large image', '<p>The same file at a smaller size.</p>', 1, 60);
 
 -- =====================================================
 -- sys_file_reference — connect images to content
@@ -84,4 +96,8 @@ VALUES
     (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 100, 100, 'tt_content', 'assets'),
     (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 101, 101, 'tt_content', 'assets'),
     (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 102, 102, 'tt_content', 'assets'),
-    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 103, 103, 'tt_content', 'assets');
+    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 103, 103, 'tt_content', 'assets'),
+    (104, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 100, 104, 'tt_content', 'assets'),
+    (105, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 101, 105, 'tt_content', 'assets'),
+    (106, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 102, 106, 'tt_content', 'assets'),
+    (107, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 1, 103, 107, 'tt_content', 'assets');
