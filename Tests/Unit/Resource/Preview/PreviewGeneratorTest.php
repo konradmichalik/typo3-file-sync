@@ -115,15 +115,43 @@ final class PreviewGeneratorTest extends TestCase
     }
 
     #[Test]
-    public function oversizedPayloadIsRejectedBeforeDecoding(): void
+    public function garbagePayloadOfAnySizeIsRejected(): void
     {
         self::assertNull($this->subject->generate(str_repeat('A', 2_097_153), 400, 300));
+    }
+
+    /**
+     * The garbage payload above is also rejected by the image-validity
+     * check, so it cannot prove the byte cap runs before decoding on its
+     * own. This payload is a structurally valid JPEG padded past the
+     * cap: getimagesizefromstring() parses its intact header and
+     * imagecreatefromstring() ignores the trailing padding, so both
+     * decode guards would accept it. Only the byte cap, checked before
+     * either call, can reject it.
+     */
+    #[Test]
+    public function oversizedPayloadIsRejectedBeforeDecoding(): void
+    {
+        self::assertNull($this->subject->generate($this->oversizedButValidJpeg(), 400, 300));
     }
 
     #[Test]
     public function zeroTargetDimensionsAreRejected(): void
     {
         self::assertNull($this->subject->generate($this->jpeg(400, 300), 0, 0));
+    }
+
+    /**
+     * A structurally valid JPEG padded past PreviewGenerator's byte cap
+     * with trailing zero bytes after the JPEG's own end-of-image marker.
+     * The header stays intact, so a decoder still accepts the file; only
+     * a guard that runs before decoding can catch it.
+     */
+    private function oversizedButValidJpeg(): string
+    {
+        $jpeg = $this->jpeg(400, 300);
+
+        return $jpeg.str_repeat('0', max(0, 2_097_153 - strlen($jpeg)));
     }
 
     /**
