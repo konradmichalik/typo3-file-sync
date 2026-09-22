@@ -1,0 +1,125 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
+ *
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace KonradMichalik\Typo3FileSync\Resource\Preview;
+
+use GdImage;
+
+use function strlen;
+
+/**
+ * PreviewGenerator.
+ *
+ * Decodes the bytes of a remote HTTP response and produces a tiny blurred
+ * WebP preview. The input is whatever a remote instance sent back, so every
+ * guard here defends against that payload rather than against a local
+ * record: a byte cap before decoding, getimagesizefromstring() to confirm
+ * it is an image at all, and a dimension cap before allocating a GD canvas.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
+ */
+final readonly class PreviewGenerator
+{
+    private const MAX_BYTES = 2_097_152;
+    private const MAX_SOURCE_DIMENSION = 4096;
+    private const EDGE = 32;
+    private const QUALITY = 60;
+    private const BLUR_PASSES = 2;
+
+    public function generate(string $bytes, int $targetWidth, int $targetHeight): ?string
+    {
+        if ('' === $bytes || strlen($bytes) > self::MAX_BYTES || $targetWidth < 1 || $targetHeight < 1) {
+            return null;
+        }
+
+        $info = $this->decodeQuietly(static fn (): array|false => getimagesizefromstring($bytes));
+        if (false === $info || $info[0] < 1 || $info[1] < 1
+            || $info[0] > self::MAX_SOURCE_DIMENSION || $info[1] > self::MAX_SOURCE_DIMENSION
+        ) {
+            return null;
+        }
+
+        $source = $this->decodeQuietly(static fn (): GdImage|false => imagecreatefromstring($bytes));
+        if (false === $source) {
+            return null;
+        }
+
+        [$width, $height] = $this->scaleToEdge($targetWidth, $targetHeight);
+        $target = imagecreatetruecolor($width, $height);
+        [$cropX, $cropY, $cropWidth, $cropHeight] = $this->crop($info[0], $info[1], $targetWidth / $targetHeight);
+        imagecopyresampled($target, $source, 0, 0, $cropX, $cropY, $width, $height, $cropWidth, $cropHeight);
+
+        for ($pass = 0; $pass < self::BLUR_PASSES; ++$pass) {
+            imagefilter($target, \IMG_FILTER_GAUSSIAN_BLUR);
+        }
+
+        ob_start();
+        imagewebp($target, null, self::QUALITY);
+
+        // imagedestroy() is a no-op since PHP 8.0 and deprecated since 8.5;
+        // GD images are garbage-collected like any other object.
+        return ob_get_clean() ?: null;
+    }
+
+    /**
+     * Runs a GD decode call with warnings suppressed. The "@" operator is
+     * disallowed project-wide, but a malformed payload from a remote server
+     * triggering a decode warning is expected input here, not a bug to log.
+     *
+     * @template T
+     *
+     * @param callable(): T $decode
+     *
+     * @return T
+     */
+    private function decodeQuietly(callable $decode): mixed
+    {
+        set_error_handler(static fn (): bool => true);
+        try {
+            return $decode();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @return array{int<1, max>, int<1, max>}
+     */
+    private function scaleToEdge(int $width, int $height): array
+    {
+        $scale = self::EDGE / max($width, $height);
+
+        return [max(1, (int) round($width * $scale)), max(1, (int) round($height * $scale))];
+    }
+
+    /**
+     * Crops the source to the target aspect ratio, so a square rendition slot
+     * does not stretch a landscape preview across its box.
+     *
+     * @return array{int, int, int, int}
+     */
+    private function crop(int $sourceWidth, int $sourceHeight, float $targetRatio): array
+    {
+        $sourceRatio = $sourceWidth / $sourceHeight;
+        if ($sourceRatio > $targetRatio) {
+            $cropWidth = (int) round($sourceHeight * $targetRatio);
+
+            return [(int) round(($sourceWidth - $cropWidth) / 2), 0, $cropWidth, $sourceHeight];
+        }
+
+        $cropHeight = (int) round($sourceWidth / $targetRatio);
+
+        return [0, (int) round(($sourceHeight - $cropHeight) / 2), $sourceWidth, $cropHeight];
+    }
+}

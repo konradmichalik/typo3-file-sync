@@ -1,0 +1,165 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
+ *
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Preview;
+
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewGenerator;
+use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use PHPUnit\Framework\TestCase;
+
+use function strlen;
+
+/**
+ * PreviewGeneratorTest.
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
+ */
+#[CoversClass(PreviewGenerator::class)]
+final class PreviewGeneratorTest extends TestCase
+{
+    private PreviewGenerator $subject;
+
+    protected function setUp(): void
+    {
+        $this->subject = new PreviewGenerator();
+    }
+
+    #[Test]
+    public function generatesAWebPWhoseLongestEdgeIsThirtyTwoPixels(): void
+    {
+        $result = $this->subject->generate($this->jpeg(400, 300), 400, 300);
+
+        self::assertNotNull($result);
+        $info = getimagesizefromstring($result);
+        self::assertIsArray($info);
+        [$width, $height] = $info;
+        self::assertSame(32, max($width, $height));
+    }
+
+    #[Test]
+    public function outputMatchesTheTargetAspectRatioRatherThanTheSourceOne(): void
+    {
+        $result = $this->subject->generate($this->jpeg(400, 100), 200, 200);
+
+        self::assertNotNull($result);
+        $info = getimagesizefromstring($result);
+        self::assertIsArray($info);
+        [$width, $height] = $info;
+        self::assertSame($width, $height);
+    }
+
+    /**
+     * The output canvas dimensions alone are always square here, because
+     * they are derived from the target ratio regardless of any cropping.
+     * This test instead inspects pixel content: a wide source is painted
+     * red except for a centered green stripe exactly as wide as the crop()
+     * method should select for a square target. If the crop were dropped
+     * and the whole source stretched into the square canvas instead, the
+     * red edges would bleed into the output; a correct crop keeps the
+     * result solidly green all the way to its own edges.
+     */
+    #[Test]
+    public function squareTargetCropsTheWideSourceInsteadOfStretchingIt(): void
+    {
+        $result = $this->subject->generate($this->sourceWithCenteredGreenStripe(400, 100), 200, 200);
+
+        self::assertNotNull($result);
+        $image = imagecreatefromstring($result);
+        self::assertNotFalse($image);
+
+        $height = imagesy($image);
+        $edgePixel = imagecolorat($image, 0, (int) ($height / 2));
+        $red = ($edgePixel >> 16) & 0xFF;
+        $green = ($edgePixel >> 8) & 0xFF;
+
+        self::assertGreaterThan($red, $green, 'Edge pixel should stay green: the red source edges must be cropped away, not stretched in.');
+    }
+
+    #[Test]
+    public function outputIsWebP(): void
+    {
+        $result = $this->subject->generate($this->jpeg(400, 300), 400, 300);
+
+        $info = getimagesizefromstring((string) $result);
+        self::assertIsArray($info);
+        self::assertSame(\IMAGETYPE_WEBP, $info[2]);
+    }
+
+    #[Test]
+    public function outputStaysWellUnderOneKilobyte(): void
+    {
+        self::assertLessThan(1024, strlen((string) $this->subject->generate($this->jpeg(1600, 1200), 1600, 1200)));
+    }
+
+    #[Test]
+    public function nonImagePayloadIsRejected(): void
+    {
+        self::assertNull($this->subject->generate('<html>not an image</html>', 400, 300));
+    }
+
+    #[Test]
+    public function emptyPayloadIsRejected(): void
+    {
+        self::assertNull($this->subject->generate('', 400, 300));
+    }
+
+    #[Test]
+    public function oversizedPayloadIsRejectedBeforeDecoding(): void
+    {
+        self::assertNull($this->subject->generate(str_repeat('A', 2_097_153), 400, 300));
+    }
+
+    #[Test]
+    public function zeroTargetDimensionsAreRejected(): void
+    {
+        self::assertNull($this->subject->generate($this->jpeg(400, 300), 0, 0));
+    }
+
+    /**
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    private function jpeg(int $width, int $height): string
+    {
+        $image = imagecreatetruecolor($width, $height);
+        $color = imagecolorallocate($image, 200, 120, 40) ?: 0;
+        imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $color);
+        ob_start();
+        imagejpeg($image, null, 80);
+
+        return (string) ob_get_clean();
+    }
+
+    /**
+     * Builds a source that is red everywhere except a centered green
+     * stripe as wide as the source height, which is exactly the region
+     * PreviewGenerator's crop() selects when squaring this 4:1 source.
+     *
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    private function sourceWithCenteredGreenStripe(int $width, int $height): string
+    {
+        $image = imagecreatetruecolor($width, $height);
+        $red = imagecolorallocate($image, 220, 20, 20) ?: 0;
+        $green = imagecolorallocate($image, 20, 200, 20) ?: 0;
+        imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $red);
+        $stripeX = (int) round(($width - $height) / 2);
+        imagefilledrectangle($image, $stripeX, 0, $stripeX + $height - 1, $height - 1, $green);
+        ob_start();
+        imagejpeg($image, null, 100);
+
+        return (string) ob_get_clean();
+    }
+}
