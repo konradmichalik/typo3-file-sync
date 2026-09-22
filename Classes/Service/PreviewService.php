@@ -316,6 +316,27 @@ final class PreviewService implements LoggerAwareInterface
         return null;
     }
 
+    /**
+     * The generator guards the payload itself and answers null for anything
+     * it cannot use, but it drives a GD build this code does not control.
+     * Wrapped like every other outside call on this path, because one image
+     * that makes an encoder fail must cost its own token, not the batch.
+     *
+     * @param PreviewPlan $plan
+     */
+    private function encode(string $bytes, array $plan): ?string
+    {
+        try {
+            return $this->previewGenerator->generate($bytes, $plan['width'], $plan['height']);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Generating the preview of %s failed: %s', $plan['requested']['identifier'], $exception->getMessage()),
+            );
+
+            return null;
+        }
+    }
+
     private static function readStream(mixed $stream): ?string
     {
         if (!is_resource($stream)) {
@@ -335,7 +356,7 @@ final class PreviewService implements LoggerAwareInterface
      */
     private function render(array $plan, ?string $bytes): array
     {
-        $webp = null === $bytes ? null : $this->previewGenerator->generate($bytes, $plan['width'], $plan['height']);
+        $webp = null === $bytes ? null : $this->encode($bytes, $plan);
         if (null === $webp) {
             return ['error' => 'unavailable'];
         }

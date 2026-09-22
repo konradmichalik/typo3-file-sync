@@ -160,6 +160,22 @@ final class PreviewGeneratorTest extends TestCase
         self::assertNull($this->subject->generate($this->oversizedButValidJpeg(), 400, 300));
     }
 
+    /**
+     * The WebP is encoded into an output buffer. An encoder that fails between
+     * ob_start() and ob_get_clean() would leave that buffer open for the rest
+     * of the request, swallowing whatever response follows it, so the buffer
+     * has to be closed on every exit rather than only the happy one.
+     */
+    #[Test]
+    public function theOutputBufferIsBalancedAcrossAGenerate(): void
+    {
+        $level = ob_get_level();
+
+        $this->subject->generate($this->jpeg(400, 300), 400, 300);
+
+        self::assertSame($level, ob_get_level());
+    }
+
     #[Test]
     public function zeroTargetDimensionsAreRejected(): void
     {

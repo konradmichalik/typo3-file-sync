@@ -15,6 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Resource\Preview;
 
 use GdImage;
 
+use function function_exists;
 use function strlen;
 
 /**
@@ -39,6 +40,14 @@ final readonly class PreviewGenerator
 
     public function generate(string $bytes, int $targetWidth, int $targetHeight): ?string
     {
+        // A GD build compiled without WebP support has no imagewebp() at all,
+        // and calling it would be an uncaught Error on a request whose whole
+        // contract is that it degrades to the grey placeholder. Checked before
+        // anything is allocated, so there is no buffer and no canvas to unwind.
+        if (!function_exists('imagewebp')) {
+            return null;
+        }
+
         if ('' === $bytes || strlen($bytes) > self::MAX_BYTES || $targetWidth < 1 || $targetHeight < 1) {
             return null;
         }
@@ -64,12 +73,22 @@ final readonly class PreviewGenerator
             imagefilter($target, \IMG_FILTER_GAUSSIAN_BLUR);
         }
 
+        // finally, not a plain pair: imagewebp() writing to the output buffer
+        // is the one call here that can still fail on an encoder this build
+        // does have, and an exception escaping between ob_start() and
+        // ob_get_clean() would leave the buffer open for the rest of the
+        // request, swallowing whatever the response was supposed to be.
         ob_start();
-        imagewebp($target, null, self::QUALITY);
+
+        try {
+            imagewebp($target, null, self::QUALITY);
+        } finally {
+            $webp = ob_get_clean();
+        }
 
         // imagedestroy() is a no-op since PHP 8.0 and deprecated since 8.5;
         // GD images are garbage-collected like any other object.
-        return ob_get_clean() ?: null;
+        return $webp ?: null;
     }
 
     /**
