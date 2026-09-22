@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Functional\Service;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
+use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewSourceReader, PreviewStore};
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PreviewService};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
@@ -49,6 +49,7 @@ use function time;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(PreviewService::class)]
+#[CoversClass(PreviewSourceReader::class)]
 final class PreviewServiceTest extends FunctionalTestCase
 {
     private const REQUESTED_IDENTIFIER = '/_processed_/csm_provisional.jpg';

@@ -97,13 +97,8 @@ final class PreviewSourceReader implements LoggerAwareInterface
     {
         $sources = [];
         foreach ($locations as $key => $location) {
-            // Through the driver, never through getPublicUrl() on the file:
-            // that dispatches GeneratePublicUrlForResourceEvent, so a project
-            // listener or a CDN base URL would yield a string the prefetch
-            // buffer was never filled under. The buffer would fill, nobody
-            // would read it, and the only trace would be a second request.
-            $path = $this->driver($location['storage'])?->getRemotePath($location['identifier']);
-            if (null === $path || '' === $path) {
+            $path = $this->remotePath($location);
+            if (null === $path) {
                 continue;
             }
 
@@ -115,6 +110,35 @@ final class PreviewSourceReader implements LoggerAwareInterface
         }
 
         return $sources;
+    }
+
+    /**
+     * Through the driver, never through getPublicUrl() on the file: that
+     * dispatches GeneratePublicUrlForResourceEvent, so a project listener or a
+     * CDN base URL would yield a string the prefetch buffer was never filled
+     * under. The buffer would fill, nobody would read it, and the only trace
+     * would be a second request.
+     *
+     * Wrapped like every other outside call here. It reaches
+     * LocalDriver::getPublicUrl() by way of a storage this code did not
+     * configure, and a storage whose configuration has gone bad has to cost
+     * its own rendition, not the batch.
+     *
+     * @param PreviewLocation $location
+     */
+    private function remotePath(array $location): ?string
+    {
+        try {
+            $path = $this->driver($location['storage'])?->getRemotePath($location['identifier']);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Resolving the remote path of %s failed: %s', $location['identifier'], $exception->getMessage()),
+            );
+
+            return null;
+        }
+
+        return null === $path || '' === $path ? null : $path;
     }
 
     /**
