@@ -383,4 +383,40 @@ final readonly class FileRepository
 
         return $result;
     }
+
+    /**
+     * @return array{identifier: string, storage: int, width: int, height: int}|null
+     */
+    public function findSmallestRendition(int $originalUid): ?array
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
+        $expressionBuilder = $queryBuilder->expr();
+        $queryBuilder->select('identifier', 'storage', 'width', 'height')
+            ->from('sys_file_processedfile')
+            ->where(
+                $expressionBuilder->eq('original', $queryBuilder->createNamedParameter($originalUid, ParameterType::INTEGER)),
+                $expressionBuilder->gt('width', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
+                $expressionBuilder->gt('height', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
+                $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('')),
+            )
+            // 'Image.Preview' sorts *after* 'Image.CropScaleMask' alphabetically
+            // ('P' > 'C'), so task_type has to be ordered DESC to prefer the
+            // backend thumbnail over a content rendition. A renamed core task
+            // type would silently change that preference.
+            ->addOrderBy('task_type', 'DESC')
+            ->addOrderBy('width', 'ASC')
+            ->setMaxResults(1);
+
+        $row = $queryBuilder->executeQuery()->fetchAssociative();
+        if (false === $row) {
+            return null;
+        }
+
+        return [
+            'identifier' => (string) $row['identifier'],
+            'storage' => (int) $row['storage'],
+            'width' => (int) $row['width'],
+            'height' => (int) $row['height'],
+        ];
+    }
 }

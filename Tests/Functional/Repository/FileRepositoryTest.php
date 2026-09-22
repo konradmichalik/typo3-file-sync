@@ -196,4 +196,45 @@ final class FileRepositoryTest extends FunctionalTestCase
 
         self::assertSame([], $this->subject->findProvisionalProcessedFiles([1], []));
     }
+
+    #[Test]
+    public function findSmallestRenditionPrefersTheBackendThumbnail(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findSmallestRendition(101);
+
+        self::assertSame('/_processed_/a/b/csm_provisional_thumb.jpg', $result['identifier']);
+        self::assertSame(1, $result['storage']);
+    }
+
+    #[Test]
+    public function findSmallestRenditionFallsBackToTheNarrowestRendition(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_real_bbb.jpg',
+            $this->subject->findSmallestRendition(102)['identifier'],
+        );
+    }
+
+    #[Test]
+    public function findSmallestRenditionIgnoresRowsWithoutDimensions(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_untouched_ccc.jpg',
+            $this->subject->findSmallestRendition(103)['identifier'],
+        );
+    }
+
+    #[Test]
+    public function findSmallestRenditionReturnsNullWhenNoneExists(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertNull($this->subject->findSmallestRendition(999));
+    }
 }
