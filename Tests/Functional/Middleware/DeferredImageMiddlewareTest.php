@@ -519,7 +519,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
 
-        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."'>"));
+        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."' width='300' height='200'>"));
 
         self::assertStringContainsString("data-file-sync-preview='1'", $result);
         self::assertStringNotContainsString('data-file-sync-preview="', $result);
@@ -564,15 +564,19 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
     /**
      * The stored preview is 32 pixels on its longest edge and the grey
-     * placeholder is the rendition's full size, so inlining into a tag that
-     * states no size of its own would shrink it until the module answers.
+     * placeholder is the rendition's full size, so a preview reaching a tag
+     * that states no size of its own would shrink it until the original
+     * lands. That is true of the data URI the module assigns just as much as
+     * of an inlined one, so such a tag is kept out of the stage entirely and
+     * carries no marker for the module to find.
+     *
      * A preview is stored here on purpose: what is pinned is the guard, not
      * an absent preview, so the case fails the moment the guard is dropped
      * and the data URI arrives after all.
      */
     #[Test]
     #[DataProvider('tagWithoutItsOwnSizeProvider')]
-    public function marksATagStatingNoSizeOfItsOwnForThePreviewStageInsteadOfInlining(string $tag): void
+    public function keepsATagStatingNoSizeOfItsOwnOutOfThePreviewStage(string $tag): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
@@ -581,7 +585,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $result = $this->processBody($this->page($tag));
 
         self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
-        self::assertStringContainsString('data-file-sync-preview="1"', $result);
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
     }

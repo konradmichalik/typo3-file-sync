@@ -57,13 +57,13 @@ use function substr_replace;
  * rendition and injects the module that asks the materialize endpoint to
  * replace them.
  *
- * Where a preview of such a rendition is already stored, and the tag states
- * its own width and height, it also inlines it as a data URI, which is what
- * makes every encounter after the first one cost neither a preview request
- * nor, for a tag the browser actually renders from its src, a request for
- * the grey placeholder. A tag carrying srcset still fetches the placeholder,
- * because the browser picks its candidate from there and ignores src
- * entirely.
+ * Only a tag that states its own width and height takes part in the preview
+ * stage. Where a preview of its rendition is already stored it is inlined as
+ * a data URI, which is what makes every encounter after the first one cost
+ * neither a preview request nor, for a tag the browser actually renders from
+ * its src, a request for the grey placeholder. A tag carrying srcset still
+ * fetches the placeholder, because the browser picks its candidate from
+ * there and ignores src entirely.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -75,8 +75,9 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private const ENDPOINT_ATTRIBUTE = 'data-file-sync-endpoint';
 
     /**
-     * Carried only by an image whose preview is still missing, so the module
-     * asks the preview stage for those and for nothing else.
+     * Carried only by an image that states its own size and whose preview is
+     * still missing, so the module asks the preview stage for those and for
+     * nothing else.
      */
     private const PREVIEW_ATTRIBUTE = 'data-file-sync-preview';
 
@@ -288,12 +289,13 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * What an already marked tag gains from the preview store: the stored
      * preview in place of the URL the browser would otherwise fetch the grey
      * placeholder from, or the attribute that asks the module to go and get
-     * one.
+     * one, or nothing at all, because a tag that states no size of its own
+     * takes no part in the preview stage.
      *
      * Only the src value is replaced, between the quotes the tag already
      * carries, at the offsets the match reported: the quoting survives because
      * it is never touched, not because anything mirrors it. $quote is mirrored
-     * by the other branch alone, which appends an attribute of its own.
+     * by the marking branch alone, which appends an attribute of its own.
      *
      * The replacement still has to survive between those quotes, and it does:
      * a base64 payload behind a fixed prefix is alphanumerics, "+", "/", "=",
@@ -303,7 +305,11 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      */
     private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
     {
-        if (null === $preview || !self::declaresItsOwnSize($tag)) {
+        if (!self::declaresItsOwnSize($tag)) {
+            return $tag;
+        }
+
+        if (null === $preview) {
             return self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote);
         }
 
@@ -316,13 +322,16 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     }
 
     /**
+     * Whether the tag takes part in the preview stage at all.
+     *
      * A stored preview is 32 pixels on its longest edge, while the grey
      * placeholder is generated at the rendition's own width and height. A tag
      * that states no size of its own is laid out from whatever its src turns
-     * out to be, so inlining there would collapse it to 32 pixels until the
-     * module answers, and this branch promises no layout shift. Such a tag
-     * keeps the placeholder and asks the preview stage over the wire instead,
-     * which is what every tag did before inlining existed.
+     * out to be, so a preview reaching it would collapse it to 32 pixels and
+     * grow it back when the original lands: two layout shifts where the
+     * placeholder alone costs none. That holds however the preview travels,
+     * since the module assigns the very same data URI to src, so such a tag
+     * is left with the placeholder and the original and nothing in between.
      *
      * The lookbehind is the one IMAGE_PATTERN uses on src=, for the same
      * reason: a word boundary also sits between the hyphen and the "w" of
