@@ -39,7 +39,7 @@ use function unpack;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final class PreviewStore
+final readonly class PreviewStore
 {
     /**
      * "RIFF", the payload length, "WEBP". Nothing shorter can be a WebP,
