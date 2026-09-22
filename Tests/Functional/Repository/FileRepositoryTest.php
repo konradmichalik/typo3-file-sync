@@ -199,7 +199,28 @@ final class FileRepositoryTest extends FunctionalTestCase
             '/_processed_/a/b/csm_untouched_ccc.jpg',
         ]);
 
-        self::assertSame(['/_processed_/a/b/csm_provisional_aaa.jpg' => 110], $result);
+        self::assertSame(['/_processed_/a/b/csm_provisional_aaa.jpg' => ['uid' => 110, 'storage' => 1]], $result);
+    }
+
+    /**
+     * The storage has to come off the rendition's own row rather than off the
+     * queried list, because that pair is the key a stored preview lives under
+     * and a caller passes every deferred storage at once.
+     */
+    #[Test]
+    public function findProvisionalProcessedFilesReportsTheStorageEachRenditionActuallyLivesIn(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProvisionalProcessedFiles([1, 2], [
+            '/_processed_/a/b/csm_provisional_aaa.jpg',
+            '/_processed_/c/d/csm_second_storage_ddd.jpg',
+        ]);
+
+        self::assertSame([
+            '/_processed_/a/b/csm_provisional_aaa.jpg' => ['uid' => 110, 'storage' => 1],
+            '/_processed_/c/d/csm_second_storage_ddd.jpg' => ['uid' => 118, 'storage' => 2],
+        ], $result);
     }
 
     #[Test]

@@ -342,10 +342,14 @@ final readonly class FileRepository
     }
 
     /**
+     * The storage comes off the rendition's own row rather than off the list
+     * that was queried: together with the identifier it is the key a stored
+     * preview lives under, and a caller passes every deferred storage at once.
+     *
      * @param list<int>    $storageUids
      * @param list<string> $identifiers
      *
-     * @return array<string, int>
+     * @return array<string, array{uid: int, storage: int}>
      */
     public function findProvisionalProcessedFiles(array $storageUids, array $identifiers): array
     {
@@ -356,7 +360,7 @@ final readonly class FileRepository
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
         $expressionBuilder = $queryBuilder->expr();
         $rows = $queryBuilder
-            ->select('p.uid', 'p.identifier')
+            ->select('p.uid', 'p.identifier', 'p.storage')
             ->from('sys_file_processedfile', 'p')
             ->innerJoin('p', 'sys_file', 'f', $expressionBuilder->eq('f.uid', 'p.original'))
             ->where(
@@ -382,7 +386,7 @@ final readonly class FileRepository
 
         $result = [];
         foreach ($rows as $row) {
-            $result[(string) $row['identifier']] = (int) $row['uid'];
+            $result[(string) $row['identifier']] = ['uid' => (int) $row['uid'], 'storage' => (int) $row['storage']];
         }
 
         return $result;

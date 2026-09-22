@@ -15,6 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
 use KonradMichalik\Typo3FileSync\Service\DeferredTokenService;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Message\ResponseInterface;
@@ -25,9 +26,12 @@ use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function base64_decode;
+use function base64_encode;
 use function preg_match;
 use function str_repeat;
 use function strlen;
+use function substr;
 use function substr_count;
 
 /**
@@ -45,7 +49,17 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 {
     private const PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" alt="provisional">';
 
+    private const PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg';
+
     private const REAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" alt="real">';
+
+    /**
+     * The rendition the fixture's provisional image resolves to, which is the
+     * pair a preview is stored under.
+     */
+    private const PREVIEW_IDENTIFIER = '/_processed_/a/b/csm_provisional_aaa.jpg';
+
+    private const PREVIEW_STORAGE = 9;
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
@@ -64,8 +78,18 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         parent::setUp();
 
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = false;
         $this->get(CacheManager::class)->getCache('runtime')->flush();
         $this->get(CacheManager::class)->getCache('hash')->flush();
+    }
+
+    protected function tearDown(): void
+    {
+        // The store lives on the filesystem, which no database rollback
+        // reaches, so a preview one case wrote would still be there for the
+        // next one.
+        (new PreviewStore())->remove(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER);
+        parent::tearDown();
     }
 
     #[Test]
@@ -382,6 +406,133 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
 
         self::assertStringEndsWith('</script></body></html>', $result);
+    }
+
+    #[Test]
+    public function inlinesAStoredPreviewAsADataUri(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode('preview-bytes').'"', $result);
+        // The point of inlining: the grey placeholder file is never requested.
+        self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    #[Test]
+    public function marksAnImageWithoutAStoredPreviewForThePreviewStage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('data-file-sync-preview="1"', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * The stored preview is written on purpose: without it this case would
+     * pass for a body that was never rewritten at all, which is why the token
+     * is asserted too.
+     */
+    #[Test]
+    public function inlinesNothingWhileThePreviewToggleIsOff(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * Stored bytes are arbitrary binary. Base64 is the only encoding applied
+     * to them, so what the browser decodes is byte for byte what the store
+     * holds and nothing in between can end the attribute early.
+     */
+    #[Test]
+    public function inlinesTheExactBytesTheStoreHoldsWithoutEscapingThem(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $bytes = "\x00\xff<>&\"'\x1a webp-ish";
+        $this->storePreview($bytes);
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertSame(1, preg_match('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
+        self::assertSame('data:image/webp;base64,'.base64_encode($bytes), $matches[1]);
+        self::assertSame($bytes, base64_decode(substr($matches[1], strlen('data:image/webp;base64,')), true));
+    }
+
+    /**
+     * The quote mirroring the base branch needed for the token is what keeps
+     * a data URI out of a double-quoted JavaScript string literal as well.
+     */
+    #[Test]
+    public function keepsASingleQuotedTagSingleQuotedWhenInlining(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."'>"));
+
+        self::assertStringContainsString("src='data:image/webp;base64,".base64_encode('preview-bytes')."'", $result);
+        self::assertStringNotContainsString('src="data:', $result);
+    }
+
+    #[Test]
+    public function mirrorsTheQuoteCharacterWhenMarkingForThePreviewStage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+
+        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."'>"));
+
+        self::assertStringContainsString("data-file-sync-preview='1'", $result);
+        self::assertStringNotContainsString('data-file-sync-preview="', $result);
+    }
+
+    /**
+     * Inlining must not become a second way past the spans the base branch
+     * refuses to touch: an injected data URI inside a script would end the
+     * JavaScript string literal the tag sits in just as an attribute would.
+     */
+    #[Test]
+    public function leavesAnImageInsideAnInlineScriptAloneEvenWithAStoredPreview(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+        $markup = '<script>var h = "'."<img src='".self::PROVISIONAL_URL."'>".'";</script>';
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString($markup, $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+    }
+
+    private function enablePreviews(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
+    }
+
+    private function storePreview(string $bytes): void
+    {
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER, $bytes);
     }
 
     private function page(string $markup): string

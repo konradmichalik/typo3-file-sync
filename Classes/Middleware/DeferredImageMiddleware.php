@@ -15,9 +15,11 @@ namespace KonradMichalik\Typo3FileSync\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PublicUrlResolver, SitePath, StorageService};
 use Psr\Http\Message\{ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
+use Throwable;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Configuration\Features;
@@ -26,6 +28,7 @@ use TYPO3\CMS\Core\Utility\PathUtility;
 use function array_map;
 use function array_unique;
 use function array_values;
+use function base64_encode;
 use function htmlspecialchars;
 use function intval;
 use function is_array;
@@ -42,6 +45,7 @@ use function strlen;
 use function strripos;
 use function strtolower;
 use function substr;
+use function substr_replace;
 
 /**
  * DeferredImageMiddleware.
@@ -52,6 +56,10 @@ use function substr;
  * rendition and injects the module that asks the materialize endpoint to
  * replace them.
  *
+ * Where a preview of such a rendition is already stored it also inlines it
+ * as a data URI, which is what makes every encounter after the first one
+ * cost neither a preview request nor a request for the grey placeholder.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
@@ -60,6 +68,14 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private const ATTRIBUTE = 'data-file-sync';
 
     private const ENDPOINT_ATTRIBUTE = 'data-file-sync-endpoint';
+
+    /**
+     * Carried only by an image whose preview is still missing, so the module
+     * asks the preview stage for those and for nothing else.
+     */
+    private const PREVIEW_ATTRIBUTE = 'data-file-sync-preview';
+
+    private const PREVIEW_URI_PREFIX = 'data:image/webp;base64,';
 
     private const CACHE_KEY = 'fileSyncProvisionalCount';
 
@@ -91,6 +107,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         private DeferredTokenService $deferredTokenService,
         private Features $features,
         private FileRepository $fileRepository,
+        private PreviewStore $previewStore,
         private PublicUrlResolver $publicUrlResolver,
         private StorageService $storageService,
         private StreamFactoryInterface $streamFactory,
@@ -149,15 +166,15 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
-        $uidByIdentifier = $this->fileRepository->findProvisionalProcessedFiles(
+        $renditionByIdentifier = $this->fileRepository->findProvisionalProcessedFiles(
             $storageUids,
             array_values(array_unique(array_values($identifierByUrl))),
         );
-        if ([] === $uidByIdentifier) {
+        if ([] === $renditionByIdentifier) {
             return null;
         }
 
-        $rewritten = $this->rewriteTags($body, $identifierByUrl, $uidByIdentifier);
+        $rewritten = $this->rewriteTags($body, $identifierByUrl, $renditionByIdentifier);
         if (null === $rewritten) {
             return null;
         }
@@ -169,32 +186,49 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * Matched offsets are needed to tell a tag the browser renders from one
      * sitting inside a script, a textarea or a comment.
      *
-     * @param array<string, string> $identifierByUrl
-     * @param array<string, int>    $uidByIdentifier
+     * @param array<string, string>                        $identifierByUrl
+     * @param array<string, array{uid: int, storage: int}> $renditionByIdentifier
      *
      * @return string|null the rewritten body, or null when nothing was marked
      */
-    private function rewriteTags(string $body, array $identifierByUrl, array $uidByIdentifier): ?string
+    private function rewriteTags(string $body, array $identifierByUrl, array $renditionByIdentifier): ?string
     {
         $skipSpans = self::skipSpans($body);
+        // Resolved once for the whole body rather than per tag, and only
+        // after a provisional rendition was actually found, so a response
+        // that ends up untouched never asks.
+        $previewsEnabled = $this->features->isFeatureEnabled(Configuration::FEATURE_PREVIEW_IMAGES);
         $marked = 0;
         $total = 0;
         $result = preg_replace_callback(
             self::IMAGE_PATTERN,
-            function (array $match) use ($identifierByUrl, $uidByIdentifier, $skipSpans, &$marked): string {
+            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $previewsEnabled, &$marked): string {
                 [$tag, $offset] = $match[0];
                 if (self::isWithinSpan($offset, $skipSpans)) {
                     return $tag;
                 }
 
                 $identifier = $identifierByUrl[$match[2][0]] ?? null;
-                $uid = null === $identifier ? null : ($uidByIdentifier[$identifier] ?? null);
-                $rewritten = $this->withAttribute($tag, $match[1][0], $uid);
-                if ($rewritten !== $tag) {
-                    ++$marked;
+                $rendition = null === $identifier ? null : ($renditionByIdentifier[$identifier] ?? null);
+                $rewritten = $this->withAttribute($tag, $match[1][0], $rendition['uid'] ?? null);
+                if ($rewritten === $tag) {
+                    return $tag;
                 }
 
-                return $rewritten;
+                ++$marked;
+                // A tag that was marked had both of these, so the second half
+                // of this narrows the types rather than deciding anything.
+                if (!$previewsEnabled || null === $identifier || null === $rendition) {
+                    return $rewritten;
+                }
+
+                return self::withPreview(
+                    $rewritten,
+                    $match[1][0],
+                    $this->storedPreview($rendition['storage'], $identifier),
+                    $match[2],
+                    $offset,
+                );
             },
             $body,
             -1,
@@ -230,7 +264,58 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return $tag;
         }
 
-        $attribute = ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote;
+        return self::appended($tag, ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote);
+    }
+
+    /**
+     * What an already marked tag gains from the preview store: the stored
+     * preview in place of the URL the browser would otherwise fetch the grey
+     * placeholder from, or the attribute that asks the module to go and get
+     * one.
+     *
+     * Only the src value is replaced, at the offsets the match reported, so
+     * nothing else about a tag this extension does not own is touched. The
+     * value is a base64 payload behind a fixed prefix, which is alphanumerics,
+     * "+", "/", "=", ":", ";", "," and ".", so neither quote character can
+     * occur in it and mirroring the tag's own quote stays sound.
+     *
+     * @param array{string, int} $src the matched src value and its offset in the body
+     */
+    private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
+    {
+        if (null === $preview) {
+            return self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote);
+        }
+
+        return substr_replace(
+            $tag,
+            self::PREVIEW_URI_PREFIX.base64_encode($preview),
+            $src[1] - $tagOffset,
+            strlen($src[0]),
+        );
+    }
+
+    /**
+     * A store read is filesystem I/O, and this middleware sees every frontend
+     * response there is: a preview that cannot be read must cost nothing more
+     * than the request the browser would have made anyway, which is exactly
+     * what a null answer here buys.
+     */
+    private function storedPreview(int $storageUid, string $identifier): ?string
+    {
+        try {
+            return $this->previewStore->read($storageUid, $identifier);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Appends in front of the closing ">" and keeps a self-closing tag
+     * self-closing.
+     */
+    private static function appended(string $tag, string $attribute): string
+    {
         $head = rtrim(substr($tag, 0, -1));
         if (str_ends_with($head, '/')) {
             return rtrim(substr($head, 0, -1)).$attribute.' />';
