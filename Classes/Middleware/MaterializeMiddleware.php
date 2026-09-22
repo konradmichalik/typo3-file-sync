@@ -77,22 +77,27 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
             return $this->json(['error' => 'disabled'], 404);
         }
 
-        // Counted before the method check, so a flood cannot dodge the limit
-        // by using a verb that would be rejected cheaply.
-        if (!$this->rateLimiter->isAccepted($request)) {
+        // The caller's own budget, spent before the envelope is looked at, so
+        // that a flood cannot dodge the limit by using a verb or a media type
+        // that would be rejected cheaply. What it burns is nobody else's.
+        if (!$this->rateLimiter->isAddressAccepted($request)) {
             return $this->json(['error' => 'too many requests'], 429);
         }
 
-        if ('POST' !== $request->getMethod()) {
-            return $this->json(['error' => 'method not allowed'], 405);
+        $refusal = $this->refuseByEnvelope($request);
+        if (null !== $refusal) {
+            return $refusal;
         }
 
-        if (!self::declaresJson($request)) {
-            return $this->json(['error' => 'unsupported media type'], 415);
-        }
-
-        if (self::isCrossSite($request)) {
-            return $this->json(['error' => 'forbidden'], 403);
+        // The site's budget, spent only on a request this endpoint would have
+        // served. The same deterrent cannot hold here, because the caller who
+        // pays is not the caller who floods: a third-party page can make its
+        // own visitors emit cross-origin preflights at this path, and each of
+        // those is an OPTIONS the refusal above already answered. Counting
+        // them here would let a request that can never succeed deny deferred
+        // loading and previews to the whole site.
+        if (!$this->rateLimiter->isSiteAccepted()) {
+            return $this->json(['error' => 'too many requests'], 429);
         }
 
         $payload = json_decode((string) $request->getBody(), true);
@@ -113,6 +118,32 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
         }
 
         return $this->json($this->materializationService->materialize($tokens));
+    }
+
+    /**
+     * Every refusal that the request envelope decides on its own: the method
+     * line and the headers settle all three, no body is read, no storage is
+     * touched, nothing is spent. They belong together because that is exactly
+     * the set the site-wide limiter has to sit behind. Traffic this endpoint
+     * would never serve must not be able to spend the budget of traffic it
+     * would, and the boundary between free to refuse and paid for by the site
+     * is what this method names.
+     */
+    private function refuseByEnvelope(ServerRequestInterface $request): ?ResponseInterface
+    {
+        if ('POST' !== $request->getMethod()) {
+            return $this->json(['error' => 'method not allowed'], 405);
+        }
+
+        if (!self::declaresJson($request)) {
+            return $this->json(['error' => 'unsupported media type'], 415);
+        }
+
+        if (self::isCrossSite($request)) {
+            return $this->json(['error' => 'forbidden'], 403);
+        }
+
+        return null;
     }
 
     /**

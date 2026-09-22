@@ -36,10 +36,16 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * second is what still holds when the address itself is attacker-supplied,
  * which it is under a proxy configured to trust X-Forwarded-For.
  *
+ * They are consumed separately rather than in one call, because they are not
+ * spent at the same point of a request. The caller's own budget is spent on
+ * anything that reaches this endpoint, the site's only on a request the
+ * endpoint would have served; MaterializeMiddleware is where that split
+ * lives.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final readonly class MaterializeRateLimiter
+final class MaterializeRateLimiter
 {
     /**
      * A page load costs two requests at most, one per stage, so this is
@@ -67,30 +73,37 @@ final readonly class MaterializeRateLimiter
 
     private const INTERVAL = '1 minute';
 
-    public function __construct(private CacheManager $cacheManager) {}
+    /**
+     * The one thing here that is not readonly. CachingFrameworkStorage
+     * collects garbage in its constructor, so both consumes of one request
+     * have to share an instance, while a request that never reaches this
+     * endpoint must not build one at all.
+     */
+    private ?StorageInterface $storage = null;
 
-    public function isAccepted(ServerRequestInterface $request): bool
+    public function __construct(private readonly CacheManager $cacheManager) {}
+
+    public function isAddressAccepted(ServerRequestInterface $request): bool
     {
-        // One storage for both, because CachingFrameworkStorage collects
-        // garbage in its constructor and once per request is enough.
-        $storage = GeneralUtility::makeInstance(CachingFrameworkStorage::class, $this->cacheManager);
+        return $this->limiter('typo3-file-sync-materialize', self::LIMIT, $this->remoteAddress($request))
+            ->consume()->isAccepted();
+    }
 
-        // Per address first, and the site's budget spent only once that one
-        // has admitted the request: a caller flooding from a single address
-        // has to exhaust its own window rather than everybody else's.
-        return $this->limiter($storage, 'typo3-file-sync-materialize', self::LIMIT, $this->remoteAddress($request))
-            ->consume()->isAccepted()
-            && $this->limiter($storage, 'typo3-file-sync-materialize-site', self::GLOBAL_LIMIT, 'site')
-                ->consume()->isAccepted();
+    public function isSiteAccepted(): bool
+    {
+        return $this->limiter('typo3-file-sync-materialize-site', self::GLOBAL_LIMIT, 'site')
+            ->consume()->isAccepted();
     }
 
     /**
-     * Built here rather than injected: the storage above is the expensive
-     * part, and every frontend request would pay for it even though almost
-     * none of them reach this endpoint.
+     * Built here rather than injected: the storage is the expensive part, and
+     * every frontend request would pay for it even though almost none of them
+     * reach this endpoint.
      */
-    private function limiter(StorageInterface $storage, string $id, int $limit, string $key): LimiterInterface
+    private function limiter(string $id, int $limit, string $key): LimiterInterface
     {
+        $this->storage ??= GeneralUtility::makeInstance(CachingFrameworkStorage::class, $this->cacheManager);
+
         $factory = new RateLimiterFactory(
             [
                 'id' => $id,
@@ -98,7 +111,7 @@ final readonly class MaterializeRateLimiter
                 'limit' => $limit,
                 'interval' => self::INTERVAL,
             ],
-            $storage,
+            $this->storage,
         );
 
         return $factory->create($key);

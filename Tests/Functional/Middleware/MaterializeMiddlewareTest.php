@@ -403,20 +403,78 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         self::assertSame(405, $response->getStatusCode());
     }
 
+    /**
+     * The two refusals decided from the request envelope alone. Neither reads
+     * the body nor spends anything, so both are free to answer.
+     *
+     * @return array<string, array{string, array<string, string>, int}>
+     */
+    public static function envelopeRefusalProvider(): array
+    {
+        return [
+            'refused for its method' => ['GET', ['Content-Type' => 'application/json'], 405],
+            'refused for its media type' => ['POST', ['Content-Type' => 'text/plain'], 415],
+        ];
+    }
+
+    /**
+     * The caller's own budget is spent before the envelope is looked at, so
+     * that a flood cannot dodge the limit by using a verb or a media type
+     * that would be rejected cheaply. What it burns is nobody else's.
+     *
+     * @param array<string, string> $headers
+     */
     #[Test]
-    public function aCallerPastTheLimitIsThrottled(): void
+    #[DataProvider('envelopeRefusalProvider')]
+    public function aCallerPastTheLimitIsThrottled(string $method, array $headers, int $status): void
     {
         $this->enableFeature();
         $middleware = $this->get(MaterializeMiddleware::class);
 
         for ($i = 0; $i < 60; ++$i) {
-            self::assertSame(405, $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler())->getStatusCode());
+            self::assertSame($status, $middleware->process($this->buildRequest(self::PATH, $method, '', $headers), $this->stubHandler())->getStatusCode());
         }
 
-        $response = $middleware->process($this->buildRequest(self::PATH, 'GET'), $this->stubHandler());
+        $response = $middleware->process($this->buildRequest(self::PATH, $method, '', $headers), $this->stubHandler());
 
         self::assertSame(429, $response->getStatusCode());
         self::assertSame(json_encode(['error' => 'too many requests']), (string) $response->getBody());
+    }
+
+    /**
+     * A third-party page can make its own visitors emit cross-origin CORS
+     * preflights at this path. Every such OPTIONS is refused for its method,
+     * and the POST behind it can never be delivered, so the preflight buys
+     * the attacker nothing except whatever budget it spends. Were that the
+     * site-wide one, roughly six hundred preflights a minute, spread over any
+     * number of visitors, would deny deferred loading and previews to the
+     * whole site.
+     *
+     * Every request here claims a fresh address, so the per-address limiter
+     * never fires and only the site-wide budget can answer. Spending a whole
+     * site-wide window in refusals and then serving a well-shaped request is
+     * the only way to observe from outside that the refusals never reached it.
+     *
+     * @param array<string, string> $headers
+     */
+    #[Test]
+    #[DataProvider('envelopeRefusalProvider')]
+    public function aRefusedEnvelopeLeavesTheSiteWideBudgetUntouched(string $method, array $headers, int $status): void
+    {
+        $this->enableFeature();
+        $middleware = $this->get(MaterializeMiddleware::class);
+
+        for ($i = 0; $i < 600; ++$i) {
+            $request = $this->buildRequest(self::PATH, $method, '', $headers, '10.0.'.intdiv($i, 250).'.'.($i % 250));
+            self::assertSame($status, $middleware->process($request, $this->stubHandler())->getStatusCode());
+        }
+
+        $response = $middleware->process(
+            $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', ['Content-Type' => 'application/json'], '10.9.9.9'),
+            $this->stubHandler(),
+        );
+
+        self::assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -425,6 +483,11 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
      * configured to trust. Every request here claims a fresh one, so the
      * per-address limiter never fires and only the site-wide budget can
      * answer.
+     *
+     * The payload is unusable on purpose. A request that got past the
+     * envelope is one this endpoint would have served, so it is on the site's
+     * tab whatever its body turns out to hold, and a 400 is the cheapest
+     * shape that proves it.
      */
     #[Test]
     public function theSiteIsThrottledHoweverManyAddressesOneCallerClaims(): void
@@ -433,12 +496,12 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $middleware = $this->get(MaterializeMiddleware::class);
 
         for ($i = 0; $i < 600; ++$i) {
-            $request = $this->buildRequest(self::PATH, 'GET', '', [], '10.0.'.intdiv($i, 250).'.'.($i % 250));
-            self::assertSame(405, $middleware->process($request, $this->stubHandler())->getStatusCode());
+            $request = $this->buildRequest(self::PATH, 'POST', '{}', ['Content-Type' => 'application/json'], '10.0.'.intdiv($i, 250).'.'.($i % 250));
+            self::assertSame(400, $middleware->process($request, $this->stubHandler())->getStatusCode());
         }
 
         $response = $middleware->process(
-            $this->buildRequest(self::PATH, 'GET', '', [], '10.9.9.9'),
+            $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', ['Content-Type' => 'application/json'], '10.9.9.9'),
             $this->stubHandler(),
         );
 
