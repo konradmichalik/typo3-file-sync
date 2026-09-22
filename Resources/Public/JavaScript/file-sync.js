@@ -97,10 +97,10 @@ const run = async () => {
     // Only the images the middleware marked for this stage, which are the
     // ones that state their own size and have no preview stored yet. A
     // settled installation therefore asks for nothing here and costs the one
-    // original request it always did. The exception is a rendition with no
-    // smaller sibling upstream: nothing is ever stored for it, so it is
-    // marked again on every response and this POST goes out on every page
-    // view for as long as that stays true.
+    // original request it always did. Where it does not settle is a rendition
+    // whose original offers no usable source rendition at all: nothing is
+    // ever stored for it, so it is marked again on every response and this
+    // POST goes out on every page view.
     const unpreviewed = elements.filter((element) => element.hasAttribute('data-file-sync-preview'));
 
     // Both requests leave before either is awaited, so the two POSTs travel
