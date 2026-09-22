@@ -31,6 +31,7 @@ use function is_resource;
 use function is_string;
 use function sprintf;
 use function stream_get_contents;
+use function time;
 
 /**
  * PreviewService.
@@ -62,6 +63,21 @@ use function stream_get_contents;
 final class PreviewService implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
+
+    /**
+     * How long a rendition the remote could not deliver stays unasked.
+     *
+     * Deliberately the same 300 seconds MaterializationService damps an
+     * original for, although a preview source is kilobytes where an original
+     * is megabytes. The cheaper fetch is not the quantity that matters here:
+     * the rate limiter admits 60 requests a minute of 50 tokens each, so a
+     * page whose renditions no longer exist upstream drives thousands of
+     * fetches a minute per visitor, which is the more failing requests, not
+     * the fewer. Cheaper each, fifty times as many, so the same window. And
+     * one number for both stages of one endpoint is one number to reason
+     * about rather than two to explain.
+     */
+    private const DAMPING_SECONDS = 300;
 
     public function __construct(
         private readonly DeferredTokenService $deferredTokenService,
@@ -138,6 +154,14 @@ final class PreviewService implements LoggerAwareInterface
                 continue;
             }
 
+            // A rendition that failed recently is answered without asking
+            // again. A failure is never stored as a preview, so without this
+            // every visitor of the same page retries the same dead fetch.
+            if ($this->isDamped($requested)) {
+                $results[$token] = ['error' => 'unavailable'];
+                continue;
+            }
+
             $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
             if (null === $source) {
                 $results[$token] = ['error' => 'unavailable'];
@@ -173,6 +197,48 @@ final class PreviewService implements LoggerAwareInterface
         $identifier = (string) $row['identifier'];
 
         return '' === $identifier ? null : ['storage' => (int) $row['storage'], 'identifier' => $identifier];
+    }
+
+    /**
+     * Whether this rendition failed inside the damping window. The marker
+     * holds nothing but the second it was written in, so a stale one expires
+     * by being read rather than by being swept.
+     *
+     * @param PreviewLocation $requested
+     */
+    private function isDamped(array $requested): bool
+    {
+        $marked = $this->stored(self::damped($requested));
+
+        return null !== $marked && time() - (int) $marked < self::DAMPING_SECONDS;
+    }
+
+    /**
+     * Arms the damping window, so no caller can answer 'unavailable' after a
+     * failed fetch without also blocking the retry.
+     *
+     * @param PreviewLocation $requested
+     *
+     * @return array{error: string}
+     */
+    private function damp(array $requested): array
+    {
+        $this->store(self::damped($requested), (string) time());
+
+        return ['error' => 'unavailable'];
+    }
+
+    /**
+     * The key a failure is remembered under. It cannot collide with a
+     * preview's own key, because a FAL identifier always starts with a slash.
+     *
+     * @param PreviewLocation $requested
+     *
+     * @return PreviewLocation
+     */
+    private static function damped(array $requested): array
+    {
+        return ['storage' => $requested['storage'], 'identifier' => 'failed:'.$requested['identifier']];
     }
 
     /**
@@ -358,24 +424,20 @@ final class PreviewService implements LoggerAwareInterface
     {
         $webp = null === $bytes ? null : $this->encode($bytes, $plan);
         if (null === $webp) {
-            return ['error' => 'unavailable'];
+            return $this->damp($plan['requested']);
         }
 
-        try {
-            // Keyed by the rendition the browser is waiting for, not by the
-            // original: the crop follows that rendition's aspect ratio, so one
-            // preview per picture would stretch a landscape blur into the next
-            // rendition's square slot. The extra cost is files, not fetches,
-            // since every rendition of one picture resolves to the same source
-            // and that source is downloaded once per batch.
-            $this->previewStore->write($plan['requested']['storage'], $plan['requested']['identifier'], $webp);
-        } catch (Throwable $exception) {
-            // An unwritable var/ costs the next visitor the same fetch. It
-            // must not cost this one the preview that is already built.
-            $this->logger?->warning(
-                sprintf('Storing the preview of %s failed: %s', $plan['requested']['identifier'], $exception->getMessage()),
-            );
-        }
+        // Keyed by the rendition the browser is waiting for, not by the
+        // original: the crop follows that rendition's aspect ratio, so one
+        // preview per picture would stretch a landscape blur into the next
+        // rendition's square slot. The extra cost is files, not fetches,
+        // since every rendition of one picture resolves to the same source
+        // and that source is downloaded once per batch.
+        $this->store($plan['requested'], $webp);
+
+        // This rendition works again, so its failure marker would only make
+        // the store grow without ever being read.
+        $this->forget(self::damped($plan['requested']));
 
         return self::dataUri($webp);
     }
@@ -394,6 +456,36 @@ final class PreviewService implements LoggerAwareInterface
         }
 
         return $driver instanceof FileSyncDriver ? $driver : null;
+    }
+
+    /**
+     * @param PreviewLocation $location
+     */
+    private function store(array $location, string $contents): void
+    {
+        try {
+            $this->previewStore->write($location['storage'], $location['identifier'], $contents);
+        } catch (Throwable $exception) {
+            // An unwritable var/ costs the next visitor the same fetch. It
+            // must not cost this one the preview that is already built.
+            $this->logger?->warning(
+                sprintf('Storing %s failed: %s', $location['identifier'], $exception->getMessage()),
+            );
+        }
+    }
+
+    /**
+     * @param PreviewLocation $location
+     */
+    private function forget(array $location): void
+    {
+        try {
+            $this->previewStore->remove($location['storage'], $location['identifier']);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Dropping %s failed: %s', $location['identifier'], $exception->getMessage()),
+            );
+        }
     }
 
     /**

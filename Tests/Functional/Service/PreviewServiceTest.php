@@ -30,6 +30,7 @@ use function explode;
 use function file_get_contents;
 use function is_resource;
 use function sprintf;
+use function time;
 
 /**
  * PreviewServiceTest.
@@ -145,8 +146,10 @@ final class PreviewServiceTest extends FunctionalTestCase
 
     protected function tearDown(): void
     {
+        $store = new PreviewStore();
         foreach (self::WRITTEN_IDENTIFIERS as $identifier) {
-            (new PreviewStore())->remove(self::STORAGE, $identifier);
+            $store->remove(self::STORAGE, $identifier);
+            $store->remove(self::STORAGE, 'failed:'.$identifier);
         }
         unset($GLOBALS['TYPO3_REQUEST']);
         $_SERVER = $this->serverBackup;
@@ -292,6 +295,56 @@ final class PreviewServiceTest extends FunctionalTestCase
         $result = $this->get(PreviewService::class)->preview([$token]);
 
         self::assertSame(['error' => 'unavailable'], $result[$token]);
+    }
+
+    /**
+     * A rendition that no longer exists upstream is never stored, so without a
+     * negative marker it is re-fetched by every visitor of the page. The rate
+     * limiter admits 60 requests a minute of 50 tokens each, which is why a
+     * permanently dead rendition is the cheap fetch that adds up.
+     */
+    #[Test]
+    public function aRenditionThatFailedIsNotAskedForAgain(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(20);
+        $service = $this->get(PreviewService::class);
+
+        $first = $service->preview([$token]);
+        $afterFirst = self::hits();
+        $second = $service->preview([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $first[$token]);
+        self::assertSame(['error' => 'unavailable'], $second[$token]);
+        self::assertSame($afterFirst, self::hits(), 'The second attempt must not reach the remote at all.');
+
+        // And what the first attempt cost, because it is not one request: the
+        // prefetch buffers a 200 only, so a path that 404s is asked for once
+        // by the pool and once again by the serial read behind it. Every
+        // undamped retry is therefore worth two requests, not one.
+        self::assertSame(
+            ['/fileadmin/_processed_/csm_broken.png', '/fileadmin/_processed_/csm_broken.png'],
+            $afterFirst,
+        );
+    }
+
+    /**
+     * The marker holds the second it was written in, so it expires by being
+     * read. A marker older than the window must not keep a rendition that has
+     * since been restored upstream from ever being tried again.
+     */
+    #[Test]
+    public function aRenditionWhoseFailureHasExpiredIsAskedForAgain(): void
+    {
+        (new PreviewStore())->write(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER, (string) (time() - 301));
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->get(PreviewService::class)->preview([$token]);
+
+        self::assertArrayHasKey('preview', $result[$token]);
+        self::assertSame([self::SOURCE_PATH], self::hits());
+        // The rendition works again, so its marker is gone rather than left to
+        // be re-read for the rest of the store's life.
+        self::assertFalse((new PreviewStore())->has(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
     }
 
     #[Test]
