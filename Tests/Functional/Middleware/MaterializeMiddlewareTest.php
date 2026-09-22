@@ -490,8 +490,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     }
 
     /**
-     * A browser running a cached copy of an older module, or a newer one
-     * asking for a stage this version does not know, must still be served
+     * A browser running a cached copy of an older module must still be served
      * the real file instead of the preview toggle's 404.
      */
     #[Test]

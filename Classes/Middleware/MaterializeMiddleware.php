@@ -152,9 +152,9 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
     }
 
     /**
-     * An unknown stage is the original one, so a browser still running the
-     * previous version of the module, or one that asks for a stage a later
-     * version adds, gets the real file rather than an error.
+     * An unknown stage is the original one, so a browser still running a
+     * cached copy of the previous version of the module gets the real file
+     * rather than an error.
      */
     private static function readStage(mixed $payload): string
     {
