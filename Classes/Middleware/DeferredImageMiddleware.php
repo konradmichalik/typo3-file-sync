@@ -61,9 +61,9 @@ use function substr_replace;
  * stage. Where a preview of its rendition is already stored it is inlined as
  * a data URI, which is what makes every encounter after the first one cost
  * neither a preview request nor, for a tag the browser actually renders from
- * its src, a request for the grey placeholder. A tag carrying srcset still
- * fetches the placeholder, because the browser picks its candidate from
- * there and ignores src entirely.
+ * its src, a request for the grey placeholder. A tag carrying srcset takes no
+ * part in the preview stage at all and still fetches the placeholder, because
+ * the browser picks its candidate from there and ignores src entirely.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -305,7 +305,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      */
     private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
     {
-        if (!self::declaresItsOwnSize($tag)) {
+        if (!self::declaresItsOwnSize($tag) || self::picksFromSrcset($tag)) {
             return $tag;
         }
 
@@ -341,6 +341,23 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     {
         return 1 === preg_match('/(?<![-\w])width=(["\'])[^"\']+\1/i', $tag)
             && 1 === preg_match('/(?<![-\w])height=(["\'])[^"\']+\1/i', $tag);
+    }
+
+    /**
+     * Whether the browser takes this tag's image from a candidate list
+     * rather than from src, in which case it never reads src at all. The
+     * preview would then be a data URI nothing renders, and the tag would be
+     * marked for the stage on every response: a source rendition downloaded
+     * and a preview stored for a picture no visitor ever sees blurred.
+     *
+     * The same lookbehind as the size guard, for the same reason: a word
+     * boundary also sits between the hyphen and the "s" of data-srcset, which
+     * is a lazy-loading attribute the browser lays nothing out from. An
+     * empty value names no candidate either.
+     */
+    private static function picksFromSrcset(string $tag): bool
+    {
+        return 1 === preg_match('/(?<![-\w])srcset=(["\'])[^"\']+\1/i', $tag);
     }
 
     /**

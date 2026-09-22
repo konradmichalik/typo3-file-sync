@@ -59,6 +59,12 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
      */
     private const SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" width="300" height="200" alt="provisional">';
 
+    /**
+     * Responsive markup, which states its size and is still laid out from
+     * srcset rather than from src.
+     */
+    private const SRCSET_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" srcset="/fileadmin/narrow.jpg 300w, /fileadmin/wide.jpg 600w" width="300" height="200" alt="responsive">';
+
     private const SECOND_PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_ccc.jpg';
 
     private const SECOND_SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_ccc.jpg" width="150" height="100" alt="second">';
@@ -588,6 +594,53 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertStringNotContainsString('data-file-sync-preview', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * A responsive tag states its size and would pass the size gate, but the
+     * browser picks its image from srcset and never reads src. Marking it
+     * buys a source rendition downloaded and a preview stored for something
+     * no visitor ever sees, and inlining writes a data URI into the HTML
+     * that nothing renders.
+     *
+     * The preview is stored on purpose, so the case fails the moment the
+     * guard is dropped rather than for want of a preview.
+     */
+    #[Test]
+    public function keepsATagPickingItsImageFromSrcsetOutOfThePreviewStage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page(self::SRCSET_PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+        // The original stage is untouched: the real file still replaces the
+        // placeholder, which is all a responsive tag ever got.
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * data-srcset is a lazy-loading attribute the browser lays nothing out
+     * from, so a tag carrying only that still renders from its src and still
+     * deserves its preview. Without the lookbehind the guard would read the
+     * "srcset" inside it and decline the whole category.
+     */
+    #[Test]
+    public function stillPreviewsATagWhoseSrcsetIsOnlyADataAttribute(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $stored = $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page(
+            '<img src="'.self::PROVISIONAL_URL.'" data-srcset="/fileadmin/wide.jpg 600w" width="300" height="200">',
+        ));
+
+        self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode($stored).'"', $result);
     }
 
     /**

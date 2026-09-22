@@ -198,7 +198,7 @@ Where a preview is already stored and the tag states its own size, it is inlined
 
 ### Known Limitations
 
-- Only the `src` of an `<img>` is rewritten. `srcset` and `<source>` are left alone, so the swap does nothing for `<picture>` and responsive image markup.
+- Only the `src` of an `<img>` is rewritten. `srcset` and `<source>` are left alone, so the swap does nothing for `<picture>` and responsive image markup. A tag carrying `srcset` also takes no part in the preview stage: the browser picks its candidate from there and never reads `src`, so it keeps the grey placeholder until the original arrives, and nothing is fetched or stored for it.
 - At most 50 images are materialized per page view, in document order with the visible ones first. There is no second pass on scroll, so anything past that limit stays a placeholder until the page is reloaded.
 - A storage with deferred loading enabled needs a non-deferrable fallback handler, such as the placeholder image generator, configured alongside the remote one. Without it the render has nothing left to answer with and produces no file at all rather than a placeholder.
 - The materialize endpoint is public and unauthenticated, so it is rate limited to 60 requests per minute per client address and answers `429` beyond that. A page view costs at most two requests, one per stage.
