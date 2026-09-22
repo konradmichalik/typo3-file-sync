@@ -188,7 +188,8 @@ final class PreviewService implements LoggerAwareInterface
 
         // Ahead of the rendition lookup, let alone any request: a stored
         // preview is what makes every visitor after the first one free.
-        $stored = $this->stored($requested);
+        // Unguarded for the same reason as isDamped() below.
+        $stored = $this->previewStore->read($requested['storage'], $requested['identifier']);
         if (null !== $stored) {
             return ['result' => self::dataUri($stored)];
         }
@@ -259,28 +260,15 @@ final class PreviewService implements LoggerAwareInterface
      */
     private function isDamped(array $requested): bool
     {
-        $marked = $this->marker(self::damped($requested));
+        // readMarker() rather than read(), which would apply the store's WebP
+        // check to something that holds a timestamp. Unguarded because the
+        // store only reads here: is_file() plus file_get_contents(), whose
+        // failure is an E_WARNING, and TYPO3's default exceptionalErrors
+        // excludes E_WARNING, so there is no Throwable to catch.
+        $marker = self::damped($requested);
+        $marked = $this->previewStore->readMarker($marker['storage'], $marker['identifier']);
 
         return null !== $marked && time() - (int) $marked < self::DAMPING_SECONDS;
-    }
-
-    /**
-     * Read past the store's WebP check, which a marker would never pass: it
-     * holds a timestamp rather than a picture.
-     *
-     * @param PreviewLocation $location
-     */
-    private function marker(array $location): ?string
-    {
-        try {
-            return $this->previewStore->readMarker($location['storage'], $location['identifier']);
-        } catch (Throwable $exception) {
-            $this->logger?->warning(
-                sprintf('Reading the failure marker of %s failed: %s', $location['identifier'], $exception->getMessage()),
-            );
-
-            return null;
-        }
     }
 
     /**
@@ -293,7 +281,7 @@ final class PreviewService implements LoggerAwareInterface
      */
     private function damp(array $requested): array
     {
-        $this->store(self::damped($requested), (string) time());
+        $this->amend(self::damped($requested), (string) time());
 
         return ['error' => 'unavailable'];
     }
@@ -309,22 +297,6 @@ final class PreviewService implements LoggerAwareInterface
     private static function damped(array $requested): array
     {
         return ['storage' => $requested['storage'], 'identifier' => 'failed:'.$requested['identifier']];
-    }
-
-    /**
-     * @param PreviewLocation $requested
-     */
-    private function stored(array $requested): ?string
-    {
-        try {
-            return $this->previewStore->read($requested['storage'], $requested['identifier']);
-        } catch (Throwable $exception) {
-            $this->logger?->warning(
-                sprintf('Reading the stored preview of %s failed: %s', $requested['identifier'], $exception->getMessage()),
-            );
-
-            return null;
-        }
     }
 
     /**
@@ -390,42 +362,41 @@ final class PreviewService implements LoggerAwareInterface
         // rendition's square slot. The extra cost is files, not fetches,
         // since every rendition of one picture resolves to the same source
         // and that source is downloaded once per batch.
-        $this->store($plan['requested'], $webp);
+        $this->amend($plan['requested'], $webp);
 
         // This rendition works again, so its failure marker would only make
         // the store grow without ever being read.
-        $this->forget(self::damped($plan['requested']));
+        $this->amend(self::damped($plan['requested']), null);
 
         return self::dataUri($webp);
     }
 
     /**
+     * Every write this class makes to the store, guarded once. Writing a
+     * preview, writing a damping marker and dropping a marker are the three,
+     * and the store reports all three by throwing. A null payload means the
+     * key is to go rather than to be written.
+     *
+     * Survivable in every case: an unwritable var/ costs the next visitor the
+     * same fetch, and must not cost this one the preview already in hand.
+     *
      * @param PreviewLocation $location
      */
-    private function store(array $location, string $contents): void
+    private function amend(array $location, ?string $contents): void
     {
         try {
-            $this->previewStore->write($location['storage'], $location['identifier'], $contents);
+            if (null === $contents) {
+                $this->previewStore->remove($location['storage'], $location['identifier']);
+            } else {
+                $this->previewStore->write($location['storage'], $location['identifier'], $contents);
+            }
         } catch (Throwable $exception) {
-            // An unwritable var/ costs the next visitor the same fetch. It
-            // must not cost this one the preview that is already built.
-            $this->logger?->warning(
-                sprintf('Storing %s failed: %s', $location['identifier'], $exception->getMessage()),
-            );
-        }
-    }
-
-    /**
-     * @param PreviewLocation $location
-     */
-    private function forget(array $location): void
-    {
-        try {
-            $this->previewStore->remove($location['storage'], $location['identifier']);
-        } catch (Throwable $exception) {
-            $this->logger?->warning(
-                sprintf('Dropping %s failed: %s', $location['identifier'], $exception->getMessage()),
-            );
+            $this->logger?->warning(sprintf(
+                '%s %s failed: %s',
+                null === $contents ? 'Dropping' : 'Storing',
+                $location['identifier'],
+                $exception->getMessage(),
+            ));
         }
     }
 
