@@ -36,8 +36,8 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 final readonly class MaterializeRateLimiter
 {
     /**
-     * A page load costs one request, so this is generous for a visitor and
-     * still cheap to exceed on purpose.
+     * A page load costs two requests at most, one per stage, so this is
+     * generous for a visitor and still cheap to exceed on purpose.
      */
     private const LIMIT = 60;
 
