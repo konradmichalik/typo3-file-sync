@@ -19,6 +19,85 @@ FIXTURES="/var/www/html/Tests/Acceptance/Fixtures/remote-files"
 mkdir -p "$REMOTE_ROOT"
 cp -r "$FIXTURES"/. "$REMOTE_ROOT"/
 
+# Blow the originals up on the remote only. The committed fixtures are a few
+# kilobytes each, which over loopback arrives faster than the crossfade can be
+# seen, so the swap is invisible and the feature looks like it did nothing.
+# Done here rather than in the repository because multi-megabyte binaries do
+# not belong in a small extension's history.
+php -r '
+$dir = $argv[1] . "/fileadmin/user_upload";
+$files = array_merge(glob($dir . "/*.jpg"), glob($dir . "/*.png"));
+foreach ($files as $file) {
+    $src = imagecreatefromstring(file_get_contents($file));
+    if (false === $src) { continue; }
+    [$w, $h] = [imagesx($src), imagesy($src)];
+    $scale = 3000 / max($w, $h);
+    $tw = (int) round($w * $scale);
+    $th = (int) round($h * $scale);
+    $big = imagecreatetruecolor($tw, $th);
+    imagecopyresampled($big, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+    // Fine grain across the whole frame, so the encoder cannot collapse a
+    // smooth upscale back down to a few kilobytes. mt_rand, not random_int:
+    // this is texture, not a secret, and random_int here costs seconds.
+    for ($y = 0; $y < $th; $y += 2) {
+        for ($x = 0; $x < $tw; $x += 2) {
+            $c = imagecolorat($big, $x, $y);
+            $d = mt_rand(-20, 20);
+            imagesetpixel($big, $x, $y, imagecolorallocate($big,
+                max(0, min(255, (($c >> 16) & 0xFF) + $d)),
+                max(0, min(255, (($c >> 8) & 0xFF) + $d)),
+                max(0, min(255, ($c & 0xFF) + $d))));
+        }
+    }
+    if (str_ends_with($file, ".png")) { imagepng($big, $file, 1); } else { imagejpeg($big, $file, 95); }
+    printf("  %s %d x %d, %.1f MB\n", basename($file), $tw, $th, filesize($file) / 1048576);
+}
+' "$REMOTE_ROOT"
+
+# A bandwidth cap on the fake remote. Loopback has no latency, so without this
+# a multi-megabyte original arrives faster than the crossfade can be seen and
+# the whole feature looks like it did nothing. A real remote instance sits
+# across the internet, so throttling is the more honest model anyway, and it is
+# what makes the point of the preview stage visible: a few kilobytes of blur
+# arrive at once, the original takes as long as its size deserves.
+cat > "${REMOTE_ROOT}/fileadmin/.htaccess" <<'HTACCESS'
+RewriteEngine On
+RewriteCond %{REQUEST_URI} !/throttle\.php$
+RewriteRule ^(.+)$ throttle.php?f=$1 [QSA,L]
+HTACCESS
+
+cat > "${REMOTE_ROOT}/fileadmin/throttle.php" <<'THROTTLE'
+<?php
+// Streams the requested file at a fixed number of bytes per second, so the
+// deferred swap is slow enough to watch. Loopback has no latency; a real
+// remote instance sits across the internet, so this is the more honest model
+// and it is what makes the preview stage's point visible: a small rendition
+// arrives at once, a multi-megabyte original takes as long as its size
+// deserves.
+const BYTES_PER_SECOND = 1_500_000;
+const CHUNK = 32_768;
+
+$relative = (string) ($_GET['f'] ?? '');
+$path = __DIR__ . '/' . $relative;
+
+if (str_contains($relative, '..') || !is_file($path)) {
+    http_response_code(404);
+    exit;
+}
+
+$types = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+header('Content-Type: ' . ($types[strtolower(pathinfo($path, PATHINFO_EXTENSION))] ?? 'application/octet-stream'));
+header('Content-Length: ' . filesize($path));
+
+$handle = fopen($path, 'rb');
+while (!feof($handle)) {
+    echo fread($handle, CHUNK);
+    flush();
+    usleep((int) (CHUNK / BYTES_PER_SECOND * 1_000_000));
+}
+fclose($handle);
+THROTTLE
+
 # The renditions the preview stage reads. A production instance already has
 # these; here they only exist once a page has been rendered, so the identifiers
 # come out of the database rather than off the disk. The real picture is copied

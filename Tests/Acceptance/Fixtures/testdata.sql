@@ -50,30 +50,32 @@ VALUES
 
 INSERT INTO `sys_file_metadata` (`uid`, `pid`, `tstamp`, `crdate`, `file`, `width`, `height`)
 VALUES
-    (100, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 100, 300, 200),
-    (101, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 101, 400, 300),
-    (102, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 102, 200, 200),
-    (103, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 103, 600, 400);
+    (100, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 100, 3000, 2000),
+    (101, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 101, 3000, 2250),
+    (102, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 102, 3000, 3000),
+    (103, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 103, 3000, 2000);
 
 -- =====================================================
 -- tt_content, textmedia content elements
 -- =====================================================
--- imagewidth is set on purpose: rendered at their native size the test
--- images pass through unprocessed, and both the deferred loading and the
--- preview feature work on renditions rather than on originals. Scaling
--- them is what makes TYPO3 write sys_file_processedfile rows at all.
+-- imagewidth is set on purpose, twice over. Rendered at their native size the
+-- test images pass through unprocessed, and both features work on renditions
+-- rather than on originals, so without scaling there is no
+-- sys_file_processedfile row to mark. And the browser downloads the rendition,
+-- never the original, so the wide value is what makes the swap slow enough to
+-- watch once `ddev stage-remote` has enlarged the remote copies.
 
 -- Page uid=1 (Home): 2 content elements
 INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1, 300),
-    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1, 300);
+    (100, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'Welcome to File Sync Demo', '<p>This page demonstrates the file sync functionality. The images below are fetched from a remote server on first access.</p>', 1, 1600),
+    (101, 1, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Another Image Example', '<p>This content element contains a different image that is also synced from the remote instance.</p>', 1, 1600);
 
 -- Page uid=100 (Gallery): 2 content elements
 INSERT INTO `tt_content` (`uid`, `pid`, `tstamp`, `crdate`, `sorting`, `CType`, `colPos`, `header`, `bodytext`, `assets`, `imagewidth`)
 VALUES
-    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1, 300),
-    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1, 300);
+    (102, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 256, 'textmedia', 0, 'PNG Image Test', '<p>Testing file sync with a PNG image format.</p>', 1, 1600),
+    (103, 100, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 512, 'textmedia', 0, 'Large Image Test', '<p>Testing file sync with a larger image (600x400).</p>', 1, 1600);
 
 -- A second, much narrower element per image. Ruling 22 skips the preview when
 -- the only available source is the rendition the browser is already waiting
