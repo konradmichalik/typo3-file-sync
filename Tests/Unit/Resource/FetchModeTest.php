@@ -31,7 +31,6 @@ final class FetchModeTest extends TestCase
     protected function tearDown(): void
     {
         unset($GLOBALS['TYPO3_REQUEST']);
-        parent::tearDown();
     }
 
     #[Test]
