@@ -276,6 +276,23 @@ final class FileRepositoryTest extends FunctionalTestCase
         );
     }
 
+    /**
+     * Ordering by width alone leaves a tie to the database, so the same
+     * installation would take one rendition as its preview source on
+     * MariaDB and another on SQLite, and the two previews are different
+     * pictures rather than different bytes of one.
+     */
+    #[Test]
+    public function findSmallestRenditionBreaksAWidthTieByUid(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_tie_low.jpg',
+            $this->subject->findSmallestRendition(105)['identifier'],
+        );
+    }
+
     #[Test]
     public function findSmallestRenditionReturnsNullWhenNoneExists(): void
     {

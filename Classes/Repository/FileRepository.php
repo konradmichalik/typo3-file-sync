@@ -429,7 +429,12 @@ final readonly class FileRepository
             // it would let a wide Image.Preview thumbnail sort outside the
             // window and silently defeat the preference below, the exact
             // failure mode this method exists to avoid.
-            ->addOrderBy('width', 'ASC');
+            ->addOrderBy('width', 'ASC')
+            // Two renditions of one picture can record the same width, and
+            // without a tiebreaker the winner is whatever the plan yields
+            // first, which differs between MariaDB and SQLite. The preview
+            // source would then be a different picture per database.
+            ->addOrderBy('uid', 'ASC');
 
         $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
         if ([] === $rows) {
