@@ -177,6 +177,33 @@ final class PreviewGeneratorTest extends TestCase
     }
 
     /**
+     * The byte cap and the per-edge cap do not compose. A solid-colour PNG
+     * of these dimensions is a few kilobytes, so the byte cap lets it past,
+     * and both edges are well inside MAX_SOURCE_DIMENSION. Only a bound on
+     * the pixel count stops imagecreatefromstring() allocating the raw
+     * buffer for it, which libgd takes outside PHP's allocator where
+     * memory_limit cannot see it.
+     */
+    #[Test]
+    public function aSourcePastTheMegapixelCapIsRejectedThoughItPassesTheOtherTwo(): void
+    {
+        $png = $this->png(2048, 2049);
+
+        self::assertLessThan(2_097_152, strlen($png), 'The fixture has to pass the byte cap for this test to mean anything.');
+        self::assertNull($this->subject->generate($png, 400, 300));
+    }
+
+    /**
+     * The cap is four megapixels, and 2048x2048 is exactly that, so the
+     * rejection above is the cap rather than an off-by-one around it.
+     */
+    #[Test]
+    public function aSourceExactlyAtTheMegapixelCapIsStillGenerated(): void
+    {
+        self::assertNotNull($this->subject->generate($this->png(2048, 2048), 400, 300));
+    }
+
+    /**
      * The WebP is encoded into an output buffer. An encoder that fails between
      * ob_start() and ob_get_clean() would leave that buffer open for the rest
      * of the request, swallowing whatever response follows it, so the buffer
@@ -209,6 +236,25 @@ final class PreviewGeneratorTest extends TestCase
         $jpeg = $this->jpeg(400, 300);
 
         return $jpeg.str_repeat('0', max(0, 2_097_153 - strlen($jpeg)));
+    }
+
+    /**
+     * PNG rather than JPEG, because a solid colour compresses to a few
+     * kilobytes here where a JPEG of the same dimensions would not, and the
+     * point of these fixtures is to be large in pixels and small in bytes.
+     *
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    private function png(int $width, int $height): string
+    {
+        $image = imagecreatetruecolor($width, $height);
+        $color = imagecolorallocate($image, 200, 120, 40) ?: 0;
+        imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $color);
+        ob_start();
+        imagepng($image, null, 9);
+
+        return (string) ob_get_clean();
     }
 
     /**

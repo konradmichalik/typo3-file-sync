@@ -25,7 +25,8 @@ use function strlen;
  * WebP preview. The input is whatever a remote instance sent back, so every
  * guard here defends against that payload rather than against a local
  * record: a byte cap before decoding, getimagesizefromstring() to confirm
- * it is an image at all, and a dimension cap before allocating a GD canvas.
+ * it is an image at all, and caps on both the edges and the pixel count
+ * before allocating a GD canvas.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -42,6 +43,20 @@ final readonly class PreviewGenerator
      */
     public const MAX_BYTES = 2_097_152;
     private const MAX_SOURCE_DIMENSION = 4096;
+
+    /**
+     * Four megapixels, which is the square 2048x2048.
+     *
+     * The byte cap and the per-edge cap do not compose without it: a
+     * solid-colour 4096x4096 PNG is a few tens of kilobytes, so it passes
+     * the first, and its edges sit exactly on the second. libgd then
+     * allocates that image's raw pixel buffer, 64 MiB of it, outside PHP's
+     * own allocator, where memory_limit cannot see it. The pixel count is
+     * the quantity that actually bounds the allocation, and four megapixels
+     * is already two orders of magnitude past what a 32 pixel preview can
+     * use.
+     */
+    private const MAX_SOURCE_PIXELS = 4_194_304;
     private const EDGE = 32;
     private const QUALITY = 60;
     private const BLUR_PASSES = 2;
@@ -83,22 +98,21 @@ final readonly class PreviewGenerator
             return null;
         }
 
-        $info = $this->decodeQuietly(static fn (): array|false => getimagesizefromstring($bytes));
-        if (false === $info || $info[0] < 1 || $info[1] < 1
-            || $info[0] > self::MAX_SOURCE_DIMENSION || $info[1] > self::MAX_SOURCE_DIMENSION
-        ) {
+        $source = $this->acceptableSource($bytes);
+        if (null === $source) {
             return null;
         }
 
-        $source = $this->decodeQuietly(static fn (): GdImage|false => imagecreatefromstring($bytes));
-        if (false === $source) {
+        [$sourceWidth, $sourceHeight] = $source;
+        $canvas = $this->decodeQuietly(static fn (): GdImage|false => imagecreatefromstring($bytes));
+        if (false === $canvas) {
             return null;
         }
 
         [$width, $height] = $this->scaleToEdge($targetWidth, $targetHeight);
         $target = imagecreatetruecolor($width, $height);
-        [$cropX, $cropY, $cropWidth, $cropHeight] = $this->crop($info[0], $info[1], $targetWidth / $targetHeight);
-        imagecopyresampled($target, $source, 0, 0, $cropX, $cropY, $width, $height, $cropWidth, $cropHeight);
+        [$cropX, $cropY, $cropWidth, $cropHeight] = $this->crop($sourceWidth, $sourceHeight, $targetWidth / $targetHeight);
+        imagecopyresampled($target, $canvas, 0, 0, $cropX, $cropY, $width, $height, $cropWidth, $cropHeight);
 
         for ($pass = 0; $pass < self::BLUR_PASSES; ++$pass) {
             imagefilter($target, \IMG_FILTER_GAUSSIAN_BLUR);
@@ -120,6 +134,28 @@ final readonly class PreviewGenerator
         // imagedestroy() is a no-op since PHP 8.0 and deprecated since 8.5;
         // GD images are garbage-collected like any other object.
         return $webp ?: null;
+    }
+
+    /**
+     * The source's own dimensions, or null when the payload is not an image
+     * this class is willing to decode.
+     *
+     * @return array{int<1, max>, int<1, max>}|null
+     */
+    private function acceptableSource(string $bytes): ?array
+    {
+        $info = $this->decodeQuietly(static fn (): array|false => getimagesizefromstring($bytes));
+        if (false === $info || $info[0] < 1 || $info[1] < 1) {
+            return null;
+        }
+
+        if ($info[0] > self::MAX_SOURCE_DIMENSION || $info[1] > self::MAX_SOURCE_DIMENSION
+            || $info[0] * $info[1] > self::MAX_SOURCE_PIXELS
+        ) {
+            return null;
+        }
+
+        return [$info[0], $info[1]];
     }
 
     /**
