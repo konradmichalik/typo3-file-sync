@@ -378,6 +378,10 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     /**
      * Appends in front of the closing ">" and keeps a self-closing tag
      * self-closing.
+     *
+     * It must only ever change bytes after the src value: withPreview()
+     * replaces that value at the offsets the match reported, and an
+     * insertion anywhere before it would silently shift them.
      */
     private static function appended(string $tag, string $attribute): string
     {
