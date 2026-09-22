@@ -63,6 +63,18 @@ final class StorageServiceTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function getDeferredStorageUidsIncludesStorageConfiguredViaExtconfEvenWithoutFlag(): void
+    {
+        // Storage 2 defers but is not switched on by its record. The storage
+        // initialisation listener would still install the driver and honour
+        // the deferred field, so a render there skips the remote handler. A
+        // lookup that missed it would leave those images placeholders forever.
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [2 => []];
+
+        self::assertSame([1, 2], $this->get(StorageService::class)->getDeferredStorageUids());
+    }
+
+    #[Test]
     public function getDeferredStorageUidsReturnsEmptyArrayWhenNoStorageDefersLoading(): void
     {
         $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_storage')->truncate('sys_file_storage');

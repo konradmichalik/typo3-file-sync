@@ -71,14 +71,26 @@ final readonly class StorageService
      */
     public function getDeferredStorageUids(): array
     {
+        // A storage can be switched on by its record or by EXTCONF, and the
+        // storage initialisation listener honours the deferred field either
+        // way. Filtering on the record flag alone would leave an EXTCONF
+        // storage deferring its render while nothing ever marks its images.
+        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? []);
+
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
         $expressionBuilder = $queryBuilder->expr();
         $rows = $queryBuilder->select('uid')
             ->from('sys_file_storage')
             ->where(
-                $expressionBuilder->eq(
-                    Configuration::FIELD_ENABLE,
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                $expressionBuilder->or(
+                    $expressionBuilder->eq(
+                        Configuration::FIELD_ENABLE,
+                        $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                    ),
+                    $expressionBuilder->in(
+                        'uid',
+                        $queryBuilder->createNamedParameter($configuredStorages, ArrayParameterType::INTEGER),
+                    ),
                 ),
                 $expressionBuilder->eq(
                     Configuration::FIELD_DEFERRED,
