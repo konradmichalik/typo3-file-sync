@@ -17,6 +17,7 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
 use KonradMichalik\Typo3FileSync\Service\DeferredTokenService;
+use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -28,7 +29,6 @@ use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function base64_decode;
 use function base64_encode;
-use function pack;
 use function preg_match;
 use function preg_match_all;
 use function str_repeat;
@@ -49,6 +49,8 @@ use function substr_count;
 #[CoversClass(DeferredImageMiddleware::class)]
 final class DeferredImageMiddlewareTest extends FunctionalTestCase
 {
+    use StoredPreview;
+
     private const PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" alt="provisional">';
 
     private const PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg';
@@ -713,16 +715,6 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         (new PreviewStore())->write(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER, $webp);
 
         return $webp;
-    }
-
-    /**
-     * A RIFF container around the payload, with the length field a real
-     * encoder would write. The store hands back nothing else, since it reads
-     * a short-written file as absent.
-     */
-    private static function webp(string $payload): string
-    {
-        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     private function page(string $markup): string

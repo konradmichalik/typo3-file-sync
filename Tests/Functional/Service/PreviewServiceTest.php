@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader, PreviewStore};
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PreviewService};
 use KonradMichalik\Typo3FileSync\Tests\Functional\RemoteInstanceHarness;
+use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Log\LoggerInterface;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
@@ -28,9 +29,7 @@ use function base64_decode;
 use function base64_encode;
 use function explode;
 use function file_get_contents;
-use function pack;
 use function sprintf;
-use function strlen;
 use function time;
 
 /**
@@ -54,6 +53,8 @@ use function time;
 final class PreviewServiceTest extends FunctionalTestCase
 {
     use RemoteInstanceHarness;
+
+    use StoredPreview;
 
     private const REQUESTED_IDENTIFIER = '/_processed_/csm_provisional.jpg';
     private const SOURCE_PATH = '/fileadmin/_processed_/csm_provisional_small.jpg';
@@ -465,15 +466,6 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$bad]);
         self::assertSame(['error' => 'invalid'], $result['9999.deadbeef']);
         self::assertArrayHasKey('preview', $result[$good]);
-    }
-
-    /**
-     * A RIFF container around a payload no encoder would produce, which the
-     * store accepts and nothing else here can have generated.
-     */
-    private static function webp(string $payload): string
-    {
-        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     /**

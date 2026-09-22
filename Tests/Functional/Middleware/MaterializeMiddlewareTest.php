@@ -17,6 +17,7 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
+use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend;
@@ -30,8 +31,6 @@ use function array_fill;
 use function base64_encode;
 use function json_decode;
 use function json_encode;
-use function pack;
-use function strlen;
 
 /**
  * MaterializeMiddlewareTest.
@@ -53,6 +52,8 @@ use function strlen;
 #[CoversClass(MaterializeMiddleware::class)]
 final class MaterializeMiddlewareTest extends FunctionalTestCase
 {
+    use StoredPreview;
+
     private const PATH = '/tx-file-sync/materialize';
     private const ROUTED_IDENTIFIER = '/_processed_/csm_routing.jpg';
     private const ROUTED_STORAGE = 1;
@@ -546,15 +547,6 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         }
 
         return $request;
-    }
-
-    /**
-     * A RIFF container around the payload, since the store reads anything
-     * that is not a complete WebP as absent.
-     */
-    private static function webp(string $payload): string
-    {
-        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     /**

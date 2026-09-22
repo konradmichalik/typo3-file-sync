@@ -15,13 +15,13 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Preview;
 
 use KonradMichalik\Ttt\Attribute\{WithEnvironment, WithTypo3ConfVars};
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
+use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use TYPO3\CMS\Core\Core\Environment;
 
 use function dirname;
-use function pack;
 use function restore_error_handler;
 use function set_error_handler;
 use function strlen;
@@ -46,6 +46,8 @@ use function substr;
 #[WithTypo3ConfVars(['SYS' => ['folderCreateMask' => '2775']])]
 final class PreviewStoreTest extends TestCase
 {
+    use StoredPreview;
+
     #[Test]
     public function readReturnsNullForAnUnknownFile(): void
     {
@@ -214,16 +216,6 @@ final class PreviewStoreTest extends TestCase
         } finally {
             chmod($directory, 0o775);
         }
-    }
-
-    /**
-     * A RIFF container with the length field a real encoder would write,
-     * which is the only thing the store inspects. Built rather than encoded
-     * with GD, so the payload stays readable in a failure message.
-     */
-    private static function webp(string $payload): string
-    {
-        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     /**
