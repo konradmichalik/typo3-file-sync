@@ -9,3 +9,4 @@
 ,"uid","storage","original","identifier","name","configuration","configurationsha1","task_type","width","height"
 ,110,9,1,"/_processed_/a/b/csm_provisional_aaa.jpg","csm_provisional_aaa.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
 ,111,9,2,"/_processed_/a/b/csm_real_bbb.jpg","csm_real_bbb.jpg","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200
+,112,9,1,"/_processed_/a/b/csm_provisional_ccc.jpg","csm_provisional_ccc.jpg","a:2:{s:5:""width"";i:150;s:6:""height"";i:100;}","6bcf4b3ce884cacbb71271b88389cd42775c9c56","Image.CropScaleMask",150,100

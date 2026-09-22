@@ -29,6 +29,7 @@ use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 use function base64_decode;
 use function base64_encode;
 use function preg_match;
+use function preg_match_all;
 use function str_repeat;
 use function strlen;
 use function substr;
@@ -57,6 +58,10 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
      */
     private const SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" width="300" height="200" alt="provisional">';
 
+    private const SECOND_PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_ccc.jpg';
+
+    private const SECOND_SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_ccc.jpg" width="150" height="100" alt="second">';
+
     private const REAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" alt="real">';
 
     /**
@@ -64,6 +69,8 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
      * pair a preview is stored under.
      */
     private const PREVIEW_IDENTIFIER = '/_processed_/a/b/csm_provisional_aaa.jpg';
+
+    private const SECOND_PREVIEW_IDENTIFIER = '/_processed_/a/b/csm_provisional_ccc.jpg';
 
     private const PREVIEW_STORAGE = 9;
 
@@ -94,7 +101,9 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         // The store lives on the filesystem, which no database rollback
         // reaches, so a preview one case wrote would still be there for the
         // next one.
-        (new PreviewStore())->remove(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER);
+        $store = new PreviewStore();
+        $store->remove(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER);
+        $store->remove(self::PREVIEW_STORAGE, self::SECOND_PREVIEW_IDENTIFIER);
         parent::tearDown();
     }
 
@@ -572,6 +581,38 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertStringContainsString('data-file-sync-preview="1"', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * The offsets preg_replace_callback reports are offsets into the whole
+     * body, and the second image is rewritten after the first replacement has
+     * already changed that body's length. Every other preview case holds a
+     * single image, so nothing else would notice the day that subtraction
+     * starts drifting. The two previews hold different bytes of different
+     * lengths, so asserting one payload twice cannot pass.
+     */
+    #[Test]
+    public function inlinesEachOfTwoImagesInOneBodyWithItsOwnStoredPreview(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('first-image-preview-bytes');
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SECOND_PREVIEW_IDENTIFIER, 'second');
+
+        $result = $this->processBody(
+            $this->page(self::SIZED_PROVISIONAL_TAG.self::SECOND_SIZED_PROVISIONAL_TAG),
+        );
+
+        self::assertSame(2, preg_match_all('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
+        self::assertSame(
+            [
+                'data:image/webp;base64,'.base64_encode('first-image-preview-bytes'),
+                'data:image/webp;base64,'.base64_encode('second'),
+            ],
+            $matches[1],
+        );
+        self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
+        self::assertStringNotContainsString(self::SECOND_PROVISIONAL_URL, $result);
     }
 
     private function enablePreviews(): void
