@@ -11,9 +11,3 @@ parameters:
 			identifier: argument.templateType
 			count: 1
 			path: ../../Classes/Resource/RemoteResourceCollectionFactory.php
-
-		-
-			message: '#^Constructor in KonradMichalik\\Typo3FileSync\\Resource\\Preview\\PreviewStore has parameter \$basePath with default value\.$#'
-			identifier: ergebnis.noConstructorParameterWithDefaultValue
-			count: 1
-			path: ../../Classes/Resource/Preview/PreviewStore.php

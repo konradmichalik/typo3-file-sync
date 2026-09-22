@@ -17,7 +17,7 @@ use KonradMichalik\Ttt\Attribute\{WithEnvironment, WithTypo3ConfVars};
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Core\Core\Environment;
 
 /**
  * PreviewStoreTest.
@@ -25,6 +25,10 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * GeneralUtility::mkdir_deep() fixes permissions on every directory it
  * creates, which needs both an initialized Environment and a configured
  * folderCreateMask, neither of which a plain unit test provides on its own.
+ * #[WithEnvironment] gives each test method its own fresh, temporary var
+ * path (applied after setUp(), so the subject under test is constructed
+ * inside each test method rather than in setUp()), and is torn down
+ * automatically once the test finishes, so no manual cleanup is needed here.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -34,68 +38,61 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 #[WithTypo3ConfVars(['SYS' => ['folderCreateMask' => '2775']])]
 final class PreviewStoreTest extends TestCase
 {
-    private string $basePath;
-    private PreviewStore $subject;
-
-    protected function setUp(): void
-    {
-        $this->basePath = sys_get_temp_dir().'/file-sync-preview-'.bin2hex(random_bytes(8));
-        $this->subject = new PreviewStore($this->basePath);
-    }
-
-    protected function tearDown(): void
-    {
-        GeneralUtility::rmdir($this->basePath, true);
-    }
-
     #[Test]
     public function readReturnsNullForAnUnknownFile(): void
     {
-        self::assertNull($this->subject->read(1, '/user_upload/unknown.jpg'));
-        self::assertFalse($this->subject->has(1, '/user_upload/unknown.jpg'));
+        $subject = new PreviewStore();
+
+        self::assertNull($subject->read(1, '/user_upload/unknown.jpg'));
+        self::assertFalse($subject->has(1, '/user_upload/unknown.jpg'));
     }
 
     #[Test]
     public function writtenPreviewIsReadBackUnchanged(): void
     {
-        $this->subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
 
-        self::assertTrue($this->subject->has(1, '/user_upload/hero.jpg'));
-        self::assertSame('webp-bytes', $this->subject->read(1, '/user_upload/hero.jpg'));
+        self::assertTrue($subject->has(1, '/user_upload/hero.jpg'));
+        self::assertSame('webp-bytes', $subject->read(1, '/user_upload/hero.jpg'));
     }
 
     #[Test]
     public function theSameIdentifierInDifferentStoragesDoesNotCollide(): void
     {
-        $this->subject->write(1, '/user_upload/hero.jpg', 'storage-one');
-        $this->subject->write(2, '/user_upload/hero.jpg', 'storage-two');
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', 'storage-one');
+        $subject->write(2, '/user_upload/hero.jpg', 'storage-two');
 
-        self::assertSame('storage-one', $this->subject->read(1, '/user_upload/hero.jpg'));
-        self::assertSame('storage-two', $this->subject->read(2, '/user_upload/hero.jpg'));
+        self::assertSame('storage-one', $subject->read(1, '/user_upload/hero.jpg'));
+        self::assertSame('storage-two', $subject->read(2, '/user_upload/hero.jpg'));
     }
 
     #[Test]
     public function previewsAreSpreadOverSubdirectories(): void
     {
-        $this->subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
 
-        self::assertCount(1, glob($this->basePath.'/*/*.webp') ?: []);
+        self::assertCount(1, glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: []);
     }
 
     #[Test]
     public function removeDeletesThePreview(): void
     {
-        $this->subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
-        $this->subject->remove(1, '/user_upload/hero.jpg');
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject->remove(1, '/user_upload/hero.jpg');
 
-        self::assertFalse($this->subject->has(1, '/user_upload/hero.jpg'));
+        self::assertFalse($subject->has(1, '/user_upload/hero.jpg'));
     }
 
     #[Test]
     public function removingAnUnknownPreviewIsNotAnError(): void
     {
-        $this->subject->remove(1, '/user_upload/unknown.jpg');
+        $subject = new PreviewStore();
+        $subject->remove(1, '/user_upload/unknown.jpg');
 
-        self::assertFalse($this->subject->has(1, '/user_upload/unknown.jpg'));
+        self::assertFalse($subject->has(1, '/user_upload/unknown.jpg'));
     }
 }

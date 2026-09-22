@@ -30,15 +30,8 @@ use function is_file;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final readonly class PreviewStore
+final class PreviewStore
 {
-    private string $basePath;
-
-    public function __construct(?string $basePath = null)
-    {
-        $this->basePath = rtrim($basePath ?? Environment::getVarPath().'/file-sync/previews', '/');
-    }
-
     public function has(int $storageUid, string $fileIdentifier): bool
     {
         return is_file($this->path($storageUid, $fileIdentifier));
@@ -72,6 +65,6 @@ final readonly class PreviewStore
 
         // Two-character subdirectory keeps a large installation from collecting
         // ten thousand entries in one directory.
-        return $this->basePath.'/'.substr($hash, 0, 2).'/'.$hash.'.webp';
+        return Environment::getVarPath().'/file-sync/previews/'.substr($hash, 0, 2).'/'.$hash.'.webp';
     }
 }
