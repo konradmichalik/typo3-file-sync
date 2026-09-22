@@ -178,6 +178,8 @@ A per-storage checkbox, **Defer remote fetching in the frontend (experimental)**
 
 The swap is injected as an external `<script type="module">` tag that carries no nonce, so it only runs where `script-src` is unset and `default-src` covers it. TYPO3's own default frontend content security policy sets `script-src` to a nonce proxy, so on any site with that policy enabled the injected tag is blocked and this feature does nothing there. That policy only applies once the core feature toggle `security.frontend.enforceContentSecurityPolicy` is switched on, and it ships off, so the block is the exception rather than the default.
 
+While an image is pending, the module pulses its brightness gently, so a visitor can tell something is still on its way without any layout changing. Motion is gated the same way the crossfade is: only under `prefers-reduced-motion: no-preference`. If the last stage does not deliver a file, the pulse stops and the tag gains `data-file-sync-failed`, a hook a site can style; nothing in this extension reads it back.
+
 ### Preview Images
 
 The middle stage is a second toggle, set in the same file:
@@ -200,7 +202,7 @@ Nothing has to be installed or configured on the remote instance. The renditions
 
 Where a preview is already stored and the tag states its own size, it is inlined into the `src` of the rendered tag as a `data:` URI instead of being requested at all. TYPO3's default frontend content security policy permits `data:` in `img-src`, so that works under it; only a hand-written policy dropping `data:` would block it. This is a different question from the `script-src` one above, which is about the injected module not running in the first place.
 
-An image that stays blurred is a failure rather than a slow success: the preview arrived and the original never did. The module writes a warning to the browser console when the materialize endpoint answers with an error status, so that case is visible. The commoner one is not: a `200` carrying `unavailable` for a single image is indistinguishable from a working response and is logged nowhere, so a report about one blurred image among many has to start with `var/log/typo3_file_sync.log`.
+An image that stays blurred is a failure rather than a slow success: the preview arrived and the original never did. The module writes a warning to the browser console when the materialize endpoint answers with an error status, so that case is visible. The commoner one is not: a `200` carrying `unavailable` for a single image is indistinguishable from a working response and is logged nowhere, so a report about one blurred image among many has to start with `var/log/typo3_file_sync.log`. Either way the tag stops shimmering and gains `data-file-sync-failed` once the last stage has run, so a visitor sees a static image rather than one that keeps animating toward a result that already failed.
 
 ### Known Limitations
 
