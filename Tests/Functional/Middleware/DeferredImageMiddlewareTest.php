@@ -618,6 +618,28 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertStringNotContainsString(self::SECOND_PROVISIONAL_URL, $result);
     }
 
+    /**
+     * The store is read once per rendition and the answer reused for every
+     * further tag pointing at it, which is a branch no other case reaches:
+     * every existing body carries each rendition at most once.
+     */
+    #[Test]
+    public function inlinesTheSameRenditionIntoEveryTagThatRepeatsIt(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('repeated-preview-bytes');
+
+        $result = $this->processBody(
+            $this->page(self::SIZED_PROVISIONAL_TAG.self::SIZED_PROVISIONAL_TAG),
+        );
+
+        $expected = 'data:image/webp;base64,'.base64_encode('repeated-preview-bytes');
+        self::assertSame(2, preg_match_all('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
+        self::assertSame([$expected, $expected], $matches[1]);
+        self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
+    }
+
     private function enablePreviews(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
