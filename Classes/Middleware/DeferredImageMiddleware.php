@@ -59,7 +59,10 @@ use function substr_replace;
  *
  * Where a preview of such a rendition is already stored it also inlines it
  * as a data URI, which is what makes every encounter after the first one
- * cost neither a preview request nor a request for the grey placeholder.
+ * cost neither a preview request nor, for a tag the browser actually renders
+ * from its src, a request for the grey placeholder. A tag carrying srcset
+ * still fetches the placeholder, because the browser picks its candidate
+ * from there and ignores src entirely.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -286,11 +289,14 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * placeholder from, or the attribute that asks the module to go and get
      * one.
      *
-     * Only the src value is replaced, at the offsets the match reported, so
-     * nothing else about a tag this extension does not own is touched. The
-     * value is a base64 payload behind a fixed prefix, which is alphanumerics,
-     * "+", "/", "=", ":", ";", "," and ".", so neither quote character can
-     * occur in it and mirroring the tag's own quote stays sound.
+     * Only the src value is replaced, between the quotes the tag already
+     * carries, at the offsets the match reported: the quoting survives because
+     * it is never touched, not because anything mirrors it. $quote is mirrored
+     * by the other branch alone, which appends an attribute of its own.
+     *
+     * The replacement still has to survive between those quotes, and it does:
+     * a base64 payload behind a fixed prefix is alphanumerics, "+", "/", "=",
+     * ":", ";", "," and ".", so neither quote character occurs in it.
      *
      * @param array{string, int} $src the matched src value and its offset in the body
      */

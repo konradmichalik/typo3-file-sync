@@ -494,8 +494,11 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     /**
-     * The quote mirroring the base branch needed for the token is what keeps
-     * a data URI out of a double-quoted JavaScript string literal as well.
+     * Inlining writes no quote of its own: it replaces the src value between
+     * the two the tag already carries, so a single-quoted tag stays
+     * single-quoted structurally rather than by mirroring. What this pins is
+     * the other half of that, namely that the data URI itself contains no
+     * quote character that would close the attribute early.
      */
     #[Test]
     public function keepsASingleQuotedTagSingleQuotedWhenInlining(): void
