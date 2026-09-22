@@ -25,6 +25,7 @@ use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Configuration\Features;
 use TYPO3\CMS\Core\Utility\PathUtility;
 
+use function array_key_exists;
 use function array_map;
 use function array_unique;
 use function array_values;
@@ -198,11 +199,16 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         // after a provisional rendition was actually found, so a response
         // that ends up untouched never asks.
         $previewsEnabled = $this->features->isFeatureEnabled(Configuration::FEATURE_PREVIEW_IMAGES);
+        // Ten copies of one image on a page are ten tags but one rendition, so
+        // they are one store read. markBody() already dedupes before the
+        // query; this is the same dedupe for the filesystem behind it.
+        /** @var array<string, string|null> $previewByIdentifier */
+        $previewByIdentifier = [];
         $marked = 0;
         $total = 0;
         $result = preg_replace_callback(
             self::IMAGE_PATTERN,
-            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $previewsEnabled, &$marked): string {
+            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $previewsEnabled, &$marked, &$previewByIdentifier): string {
                 [$tag, $offset] = $match[0];
                 if (self::isWithinSpan($offset, $skipSpans)) {
                     return $tag;
@@ -222,10 +228,17 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
                     return $rewritten;
                 }
 
+                // array_key_exists rather than ??=, because "there is no
+                // preview" is the answer worth remembering: it is what a
+                // freshly synced installation answers for every tag.
+                if (!array_key_exists($identifier, $previewByIdentifier)) {
+                    $previewByIdentifier[$identifier] = $this->storedPreview($rendition['storage'], $identifier);
+                }
+
                 return self::withPreview(
                     $rewritten,
                     $match[1][0],
-                    $this->storedPreview($rendition['storage'], $identifier),
+                    $previewByIdentifier[$identifier],
                     $match[2],
                     $offset,
                 );
