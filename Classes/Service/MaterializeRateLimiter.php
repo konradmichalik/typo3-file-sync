@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Service;
 
 use Psr\Http\Message\ServerRequestInterface;
-use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\{LimiterInterface, RateLimiterFactory};
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Http\NormalizedParams;
 use TYPO3\CMS\Core\RateLimiter\Storage\CachingFrameworkStorage;
@@ -55,7 +55,7 @@ final readonly class MaterializeRateLimiter
      * garbage in its constructor, which every frontend request would pay for
      * even though almost none of them reach this endpoint.
      */
-    private function limiterFor(string $remoteAddress): \Symfony\Component\RateLimiter\LimiterInterface
+    private function limiterFor(string $remoteAddress): LimiterInterface
     {
         $factory = new RateLimiterFactory(
             [
