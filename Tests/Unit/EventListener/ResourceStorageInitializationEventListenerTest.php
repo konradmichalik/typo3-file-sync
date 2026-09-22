@@ -18,7 +18,7 @@ use KonradMichalik\Ttt\Attribute\WithEnvironment;
 use KonradMichalik\Typo3FileSync\EventListener\ResourceStorageInitializationEventListener;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollectionFactory;
+use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollectionFactory};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -26,6 +26,7 @@ use ReflectionClass;
 use TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\VariableFrontend;
+use TYPO3\CMS\Core\Configuration\Features;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Log\LogManager;
@@ -67,7 +68,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
         $event = new AfterResourceStorageInitializationEvent($storage);
 
-        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
         $listener($event);
     }
@@ -90,7 +91,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
         $event = new AfterResourceStorageInitializationEvent($storage);
 
-        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
         $listener($event);
     }
@@ -116,7 +117,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
         $event = new AfterResourceStorageInitializationEvent($storage);
 
-        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
         $listener($event);
     }
@@ -148,7 +149,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
         $event = new AfterResourceStorageInitializationEvent($storage);
 
-        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
 
         // ResourceStorage::$driver is a typed, uninitialized property on this
@@ -210,7 +211,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
             $event = new AfterResourceStorageInitializationEvent($storage);
 
-            $listener = new ResourceStorageInitializationEventListener($factory);
+            $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
             $listener->setLogger(new NullLogger());
             $listener($event);
         } finally {
@@ -260,7 +261,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
         $event = new AfterResourceStorageInitializationEvent($storage);
 
-        $listener = new ResourceStorageInitializationEventListener($factory);
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
 
         try {
@@ -278,6 +279,7 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
             (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor(),
             $this->createMock(ConnectionPool::class),
             (new ReflectionClass(LogManager::class))->newInstanceWithoutConstructor(),
+            new FetchMode(),
         );
     }
 }

@@ -17,6 +17,8 @@ use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function array_map;
+
 /**
  * FileRepositoryTest.
  *
@@ -113,5 +115,234 @@ final class FileRepositoryTest extends FunctionalTestCase
         $count = $this->subject->deleteByIdentifier('/synced/baz.jpg', 1);
 
         self::assertSame(1, $count);
+    }
+
+    /**
+     * The failure stamp rather than the sync timestamp, which are different
+     * moments: uid 2 was delivered at 1700000000 and failed a fetch before
+     * that, so a query reading the wrong column answers the wrong second.
+     */
+    #[Test]
+    public function findSyncDataByUidsReturnsIdentifierAndFailureStampKeyedByUid(): void
+    {
+        $result = $this->subject->findSyncDataByUids([1, 2]);
+
+        self::assertSame([
+            1 => ['identifier' => '', 'failed' => 0],
+            2 => ['identifier' => '/synced/baz.jpg', 'failed' => 1699999000],
+        ], $result);
+    }
+
+    #[Test]
+    public function findSyncDataByUidsReturnsEmptyArrayForAnEmptyUidList(): void
+    {
+        self::assertSame([], $this->subject->findSyncDataByUids([]));
+    }
+
+    #[Test]
+    public function findProcessedFilesByUidsKeysRowsByUid(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProcessedFilesByUids([110, 112]);
+
+        self::assertSame([110, 112], array_keys($result));
+        self::assertSame(101, (int) $result[110]['original']);
+        self::assertSame('Image.CropScaleMask', $result[110]['task_type']);
+    }
+
+    #[Test]
+    public function findProcessedFilesByUidsReturnsEmptyArrayForAnEmptyUidList(): void
+    {
+        self::assertSame([], $this->subject->findProcessedFilesByUids([]));
+    }
+
+    #[Test]
+    public function findProcessedFilesByUidsCarriesTheRenditionLocationAndDimensions(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProcessedFilesByUids([110]);
+
+        self::assertSame(1, (int) $result[110]['storage']);
+        self::assertSame('/_processed_/a/b/csm_provisional_aaa.jpg', $result[110]['identifier']);
+        self::assertSame(300, (int) $result[110]['width']);
+        self::assertSame(200, (int) $result[110]['height']);
+    }
+
+    /**
+     * The sync timestamp is what the backend shows as the moment a handler
+     * delivered this file, so a failed fetch must leave it alone. Writing
+     * the failure there is what made a placeholder render damp the very
+     * request it was rendered for.
+     */
+    #[Test]
+    public function markFetchFailureStampsItsOwnFieldAndLeavesTheSyncDataAlone(): void
+    {
+        $this->subject->markFetchFailure(2);
+
+        $result = $this->subject->findSyncData(2);
+
+        self::assertSame('/synced/baz.jpg', $result['identifier']);
+        self::assertSame(1700000000, $result['tstamp']);
+        self::assertGreaterThan(1700000000, $this->subject->findSyncDataByUids([2])[2]['failed']);
+    }
+
+    #[Test]
+    public function countProvisionalCountsOnlyFilesDeliveredByAFallbackHandler(): void
+    {
+        // setUp() already imports Fixtures/sys_file.csv, whose uid 2 also carries a
+        // non-empty, non-remote-instance identifier and therefore counts as
+        // provisional too. Assert the delta so this test does not depend on that
+        // unrelated fixture's contents.
+        $baselineCount = $this->subject->countProvisional([1]);
+
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame($baselineCount + 1, $this->subject->countProvisional([1]));
+    }
+
+    #[Test]
+    public function findProvisionalProcessedFilesMapsIdentifiersToUids(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProvisionalProcessedFiles([1], [
+            '/_processed_/a/b/csm_provisional_aaa.jpg',
+            '/_processed_/a/b/csm_real_bbb.jpg',
+            '/_processed_/a/b/csm_untouched_ccc.jpg',
+        ]);
+
+        self::assertSame(['/_processed_/a/b/csm_provisional_aaa.jpg' => ['uid' => 110, 'storage' => 1]], $result);
+    }
+
+    /**
+     * The storage has to come off the rendition's own row rather than off the
+     * queried list, because that pair is the key a stored preview lives under
+     * and a caller passes every deferred storage at once.
+     */
+    #[Test]
+    public function findProvisionalProcessedFilesReportsTheStorageEachRenditionActuallyLivesIn(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findProvisionalProcessedFiles([1, 2], [
+            '/_processed_/a/b/csm_provisional_aaa.jpg',
+            '/_processed_/c/d/csm_second_storage_ddd.jpg',
+        ]);
+
+        self::assertSame([
+            '/_processed_/a/b/csm_provisional_aaa.jpg' => ['uid' => 110, 'storage' => 1],
+            '/_processed_/c/d/csm_second_storage_ddd.jpg' => ['uid' => 118, 'storage' => 2],
+        ], $result);
+    }
+
+    #[Test]
+    public function findProvisionalProcessedFilesReturnsEmptyArrayForAnEmptyIdentifierList(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame([], $this->subject->findProvisionalProcessedFiles([1], []));
+    }
+
+    #[Test]
+    public function findSmallestRenditionsPrefersTheBackendThumbnail(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findSmallestRenditions([101]);
+
+        self::assertSame('/_processed_/a/b/csm_provisional_thumb.jpg', $result[101]['identifier']);
+        self::assertSame(1, $result[101]['storage']);
+    }
+
+    #[Test]
+    public function findSmallestRenditionsFallsBackToTheNarrowestRendition(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_real_bbb.jpg',
+            $this->subject->findSmallestRenditions([102])[102]['identifier'],
+        );
+    }
+
+    #[Test]
+    public function findSmallestRenditionsIgnoresRowsWithoutDimensions(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_untouched_ccc.jpg',
+            $this->subject->findSmallestRenditions([103])[103]['identifier'],
+        );
+    }
+
+    /**
+     * Ordering by width alone leaves a tie to the database, so the same
+     * installation would take one rendition as its preview source on
+     * MariaDB and another on SQLite, and the two previews are different
+     * pictures rather than different bytes of one.
+     *
+     * This pins the direction, not the presence: reversing the tiebreaker
+     * fails here, removing it altogether does not, because SQLite makes uid
+     * the rowid and returns these rows in uid order anyway. Only MariaDB can
+     * show the removal, and the suite does not run against it locally.
+     */
+    #[Test]
+    public function findSmallestRenditionsBreaksAWidthTieByUid(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame(
+            '/_processed_/a/b/csm_tie_low.jpg',
+            $this->subject->findSmallestRenditions([105])[105]['identifier'],
+        );
+    }
+
+    #[Test]
+    public function findSmallestRenditionsOmitsAnOriginalWithoutAUsableRendition(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame([], $this->subject->findSmallestRenditions([999]));
+    }
+
+    /**
+     * This pins intent, not behaviour: deleting the early return it exists
+     * for leaves it green. Doctrine renders an empty ArrayParameterType list
+     * as "IN (NULL)", which matches no row, so the query answers the same
+     * empty array the guard does. What the guard buys is the query never
+     * being sent, and no assertion from out here can see that.
+     */
+    #[Test]
+    public function findSmallestRenditionsReturnsEmptyArrayForAnEmptyList(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        self::assertSame([], $this->subject->findSmallestRenditions([]));
+    }
+
+    /**
+     * The whole point of the batch: every original of one request is resolved
+     * together, and the width ordering that spans them all must not leak one
+     * original's rows into another's winner. 102's own narrowest is wider
+     * than 101's thumbnail and narrower than 103's only usable rendition, so
+     * an implementation that took the first row overall, or the last, would
+     * show it here.
+     */
+    #[Test]
+    public function findSmallestRenditionsResolvesEveryOriginalOfABatch(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
+
+        $result = $this->subject->findSmallestRenditions([101, 102, 103, 105, 999]);
+
+        self::assertSame([
+            101 => '/_processed_/a/b/csm_provisional_thumb.jpg',
+            102 => '/_processed_/a/b/csm_real_bbb.jpg',
+            103 => '/_processed_/a/b/csm_untouched_ccc.jpg',
+            105 => '/_processed_/a/b/csm_tie_low.jpg',
+        ], array_map(static fn (array $row): string => $row['identifier'], $result));
     }
 }

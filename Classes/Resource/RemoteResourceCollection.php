@@ -60,6 +60,8 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         protected readonly ResourceFactory $resourceFactory,
         protected readonly FileRepository $fileRepository,
         protected readonly ConnectionPool $connectionPool,
+        protected readonly int $storageUid,
+        protected readonly FetchMode $fetchMode,
     ) {}
 
     /**
@@ -82,6 +84,12 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         );
 
         foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof DeferrableResourceInterface
+                && $this->fetchMode->isDeferred($this->storageUid)
+            ) {
+                continue;
+            }
+
             $file = $this->fileIdentifierCache[$filePath];
             $fileContent = $resource['handler']->getFile($fileIdentifier, $filePath, $file);
             if (false === $fileContent) {
@@ -115,6 +123,57 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         $this->failedIdentifiers[$fileIdentifier] = true;
 
         return null;
+    }
+
+    /**
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof BatchRemoteResourceInterface) {
+                $resource['handler']->prefetch($filePaths);
+            }
+        }
+    }
+
+    /**
+     * The handlers that can be prefetched, for a caller that wants the bytes
+     * of a remote file without FAL writing them to disk. It is deliberately
+     * not the whole chain: a fallback handler such as the placeholder
+     * generator answers every path, and a preview built from its output is a
+     * blurred grey box, which is precisely the thing a preview replaces.
+     *
+     * @return list<BatchRemoteResourceInterface&RemoteResourceInterface>
+     */
+    public function getBatchHandlers(): array
+    {
+        $handlers = [];
+        foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof BatchRemoteResourceInterface) {
+                $handlers[] = $resource['handler'];
+            }
+        }
+
+        return $handlers;
+    }
+
+    /**
+     * The identifiers of the handlers a deferred render skips. Only a file
+     * one of them delivered has actually been materialized.
+     *
+     * @return list<string>
+     */
+    public function getDeferrableIdentifiers(): array
+    {
+        $identifiers = [];
+        foreach ($this->resources as $resource) {
+            if ($resource['handler'] instanceof DeferrableResourceInterface) {
+                $identifiers[] = $resource['identifier'];
+            }
+        }
+
+        return $identifiers;
     }
 
     private function resolveFileObject(string $fileIdentifier, string $filePath): void

@@ -37,4 +37,17 @@ final class ConfigurationTest extends TestCase
     {
         self::assertSame('Typo3FileSync', Configuration::EXT_NAME);
     }
+
+    #[Test]
+    public function featureToggleNamesAreNamespaced(): void
+    {
+        self::assertSame('fileSync.deferredLoading', Configuration::FEATURE_DEFERRED_LOADING);
+        self::assertSame('fileSync.previewImages', Configuration::FEATURE_PREVIEW_IMAGES);
+    }
+
+    #[Test]
+    public function deferredFieldFollowsTheExtensionFieldPrefix(): void
+    {
+        self::assertSame('tx_typo3_file_sync_deferred', Configuration::FIELD_DEFERRED);
+    }
 }

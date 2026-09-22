@@ -61,4 +61,46 @@ final readonly class StorageService
 
         return $result;
     }
+
+    /**
+     * Read from the storage records rather than from FetchMode, because a
+     * page answered out of the page cache never initialises a storage and
+     * that is exactly the request where deferred images matter.
+     *
+     * @return list<int>
+     */
+    public function getDeferredStorageUids(): array
+    {
+        // A storage can be switched on by its record or by EXTCONF, and the
+        // storage initialisation listener honours the deferred field either
+        // way. Filtering on the record flag alone would leave an EXTCONF
+        // storage deferring its render while nothing ever marks its images.
+        $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? []);
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
+        $expressionBuilder = $queryBuilder->expr();
+        $rows = $queryBuilder->select('uid')
+            ->from('sys_file_storage')
+            ->where(
+                $expressionBuilder->or(
+                    $expressionBuilder->eq(
+                        Configuration::FIELD_ENABLE,
+                        $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                    ),
+                    $expressionBuilder->in(
+                        'uid',
+                        $queryBuilder->createNamedParameter($configuredStorages, ArrayParameterType::INTEGER),
+                    ),
+                ),
+                $expressionBuilder->eq(
+                    Configuration::FIELD_DEFERRED,
+                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                ),
+            )
+            ->orderBy('uid')
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        return array_map(intval(...), array_column($rows, 'uid'));
+    }
 }

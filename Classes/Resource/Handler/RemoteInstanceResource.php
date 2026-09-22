@@ -13,16 +13,26 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
-use GuzzleHttp\{ClientInterface, RequestOptions};
+use Generator;
+use GuzzleHttp\{ClientInterface, Pool, RequestOptions};
 use GuzzleHttp\Exception\TransferException;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
+use GuzzleHttp\Psr7\Request;
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, RemoteResourceInterface};
+use Psr\Http\Message\ResponseInterface;
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
+use Throwable;
 use TYPO3\CMS\Core\Http\Client\GuzzleClientFactory;
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function array_filter;
+use function array_map;
+use function array_unique;
+use function array_values;
+use function get_debug_type;
 use function is_array;
 use function is_resource;
+use function ltrim;
 use function sprintf;
 
 /**
@@ -31,7 +41,7 @@ use function sprintf;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResourceInterface
+final class RemoteInstanceResource implements BatchRemoteResourceInterface, DeferrableResourceInterface, LoggerAwareInterface, RemoteResourceInterface
 {
     use LoggerAwareTrait;
 
@@ -42,11 +52,17 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
      */
     private const DEFAULT_CONNECT_TIMEOUT = 5;
     private const DEFAULT_TIMEOUT = 15;
+    private const DEFAULT_CONCURRENCY = 8;
 
     private readonly ClientInterface $httpClient;
     private readonly string $url;
     /** @var array<string, mixed> */
     private array $requestOptions;
+
+    /**
+     * @var array<string, resource>
+     */
+    private array $prefetched = [];
 
     /**
      * @param array<string, mixed>|string|null $configuration
@@ -74,12 +90,101 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
         }
     }
 
+    public function __destruct()
+    {
+        // Deferred loading means some prefetched files are never emitted via
+        // getFile(): a leftover entry here is the expected steady state, not
+        // an error case, and nothing else owns these detached resources.
+        foreach ($this->prefetched as $stream) {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+        $this->prefetched = [];
+    }
+
+    /**
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        // Normalized once, here: the buffer is keyed and later looked up
+        // (in getFile()) by the same leading-slash-stripped value, so a
+        // caller mixing '/fileadmin/x.jpg' and 'fileadmin/x.jpg' must not
+        // end up with two requests for one file and an unreachable buffer
+        // entry.
+        $filePaths = array_values(array_unique(array_filter(
+            array_map(static fn (string $path): string => ltrim($path, '/'), $filePaths),
+            static fn (string $path): bool => '' !== $path,
+        )));
+        if ([] === $filePaths) {
+            return;
+        }
+
+        $requests = function () use ($filePaths): Generator {
+            foreach ($filePaths as $filePath) {
+                yield $filePath => new Request('GET', $this->url.$filePath);
+            }
+        };
+
+        try {
+            $pool = new Pool($this->httpClient, $requests(), [
+                'concurrency' => self::DEFAULT_CONCURRENCY,
+                'options' => $this->requestOptions,
+                'fulfilled' => function (ResponseInterface $response, string $filePath): void {
+                    if (200 !== $response->getStatusCode()) {
+                        return;
+                    }
+
+                    // Same detach()-not-SINK reasoning as getFile(): keep the
+                    // resource alive past Guzzle's own objects being collected.
+                    $stream = $response->getBody()->detach();
+                    if (is_resource($stream)) {
+                        rewind($stream);
+                        $this->prefetched[$filePath] = $stream;
+                    }
+                },
+                'rejected' => function (mixed $reason, string $filePath): void {
+                    // A failed prefetch is what turns this feature from fast
+                    // into silently slow, so the line has to say why: getFile()
+                    // reports the same detail for the serial path.
+                    $this->logger?->warning(
+                        sprintf('Prefetch of %s failed: %s', $filePath, self::describeReason($reason)),
+                    );
+                },
+            ]);
+
+            $pool->promise()->wait();
+        } catch (Throwable $e) {
+            // A single unparseable path (e.g. a MalformedUriException from a
+            // Request that can never be built) must not fail the whole
+            // batch: this feature exists to keep image loading from
+            // breaking a page render, not to add a new way to break it.
+            // Entries already buffered by earlier fulfilled requests stay
+            // valid.
+            $this->logger?->warning(
+                sprintf('Prefetch batch failed: %s', $e->getMessage()),
+            );
+        }
+    }
+
     /**
      * @return resource|false
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
-        $url = $this->url.ltrim($filePath, '/');
+        $normalizedPath = ltrim($filePath, '/');
+        $buffered = $this->prefetched[$normalizedPath] ?? null;
+        // Removed unconditionally, not just when a resource is found: a
+        // caller may already have read or closed this handle, and rewind()
+        // on a closed resource is fatal, so it is never rewound and reused.
+        // A second request for the same path goes over the wire again.
+        unset($this->prefetched[$normalizedPath]);
+        if (is_resource($buffered)) {
+            return $buffered;
+        }
+
+        $url = $this->url.$normalizedPath;
 
         try {
             // Guzzle spools the response body into its own php://temp stream
@@ -124,6 +229,16 @@ final class RemoteInstanceResource implements LoggerAwareInterface, RemoteResour
 
             return false;
         }
+    }
+
+    /**
+     * A Guzzle pool rejects with whatever the promise carried. That is a
+     * TransferException for every failure the library produces itself, but
+     * the contract is "mixed", so anything else is named rather than dropped.
+     */
+    private static function describeReason(mixed $reason): string
+    {
+        return $reason instanceof Throwable ? $reason->getMessage() : get_debug_type($reason);
     }
 
     private static function resolveEnvPlaceholders(string $value): string

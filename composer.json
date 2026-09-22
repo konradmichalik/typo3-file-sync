@@ -17,9 +17,14 @@
 		"ext-gd": "*",
 		"doctrine/dbal": "^4.4.4",
 		"guzzlehttp/guzzle": "^7.15.5",
+		"guzzlehttp/psr7": "^2.13",
+		"psr/http-factory": "^1.1",
 		"psr/http-message": "^1.0 || ^2.0",
+		"psr/http-server-handler": "^1.0",
+		"psr/http-server-middleware": "^1.0",
 		"psr/log": "^3.0.2",
 		"symfony/console": "^7.4.14 || ^8.1.1",
+		"symfony/rate-limiter": "^7.4 || ^8.0",
 		"typo3/cms-backend": "^13.4 || ^14.0",
 		"typo3/cms-core": "^13.4 || ^14.0"
 	},
@@ -42,6 +47,11 @@
 	"autoload": {
 		"psr-4": {
 			"KonradMichalik\\Typo3FileSync\\": "Classes/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"KonradMichalik\\Typo3FileSync\\Tests\\": "Tests/"
 		}
 	},
 	"config": {

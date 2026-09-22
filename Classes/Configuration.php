@@ -29,11 +29,24 @@ final class Configuration
 
     public const EXTCONF_STORAGES = 'storages';
 
+    public const FEATURE_DEFERRED_LOADING = 'fileSync.deferredLoading';
+
+    public const FEATURE_PREVIEW_IMAGES = 'fileSync.previewImages';
+
     public const FIELD_ENABLE = 'tx_typo3_file_sync_enable';
+
+    public const FIELD_DEFERRED = 'tx_typo3_file_sync_deferred';
 
     public const FIELD_RESOURCES = 'tx_typo3_file_sync_resources';
 
     public const FIELD_IDENTIFIER = 'tx_typo3_file_sync_identifier';
 
     public const FIELD_TSTAMP = 'tx_typo3_file_sync_tstamp';
+
+    /**
+     * When an on-demand fetch last failed for a file. Kept apart from
+     * FIELD_TSTAMP because that one records when a handler delivered, which
+     * is what the backend shows next to the sync badge.
+     */
+    public const FIELD_FAILED = 'tx_typo3_file_sync_failed';
 }

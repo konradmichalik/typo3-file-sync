@@ -11,6 +11,12 @@ parameters:
 
 	scanDirectories:
 		- ../../vendor
+	scanFiles:
+		# Test support Tests/Unit uses without being analysed itself. Named
+		# one by one rather than by directory, so that neither the fixture
+		# extensions nor Tests/CGL/vendor is pulled into every run.
+		- ../../Tests/StoredPreview.php
+
 	paths:
 		- ../../Classes
 		- ../../Configuration

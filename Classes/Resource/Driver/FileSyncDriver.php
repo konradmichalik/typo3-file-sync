@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Driver;
 
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection;
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, RemoteResourceCollection, RemoteResourceInterface};
 use TYPO3\CMS\Core\Resource\Driver\{DriverInterface, LocalDriver};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -125,6 +125,44 @@ final class FileSyncDriver extends LocalDriver
         return true;
     }
 
+    /**
+     * Downloads several files ahead of the serial, one-at-a-time calls FAL
+     * makes. Only the handlers that support batching act on it.
+     *
+     * @param list<string> $filePaths
+     */
+    public function prefetch(array $filePaths): void
+    {
+        $this->remoteResourceCollection->prefetch($filePaths);
+    }
+
+    /**
+     * @return list<BatchRemoteResourceInterface&RemoteResourceInterface>
+     */
+    public function getBatchHandlers(): array
+    {
+        return $this->remoteResourceCollection->getBatchHandlers();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function getDeferrableIdentifiers(): array
+    {
+        return $this->remoteResourceCollection->getDeferrableIdentifiers();
+    }
+
+    /**
+     * The key the remote handlers see for a file. Derived from the original
+     * driver rather than from the storage, so that no listener on
+     * GeneratePublicUrlForResourceEvent can make a prefetched buffer
+     * unreachable, and so that asking for the key does not itself fetch.
+     */
+    public function getRemotePath(string $fileIdentifier): ?string
+    {
+        return '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
+    }
+
     protected function getAbsolutePath(string $fileIdentifier, bool $callOriginalDriver = true): string
     {
         if ('' === $fileIdentifier) {
@@ -157,9 +195,7 @@ final class FileSyncDriver extends LocalDriver
             return;
         }
 
-        $filePath = '' !== $fileIdentifier ? $this->originalDriverObject->getPublicUrl($fileIdentifier) : null;
-
-        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $filePath ?? '');
+        $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $this->getRemotePath($fileIdentifier) ?? '');
         if (null !== $fileContent) {
             $absoluteFilePath = $this->getAbsolutePath($fileIdentifier);
             GeneralUtility::mkdir_deep(dirname($absoluteFilePath));
