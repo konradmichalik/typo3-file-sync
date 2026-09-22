@@ -32,14 +32,6 @@ use function unlink;
  */
 final readonly class FileRepository
 {
-    /**
-     * Upper bound on how many candidate renditions of a single original are
-     * fetched before picking one in PHP. A file realistically carries a
-     * handful of processed renditions (one per registered task type times a
-     * few configurations), so this is a safety cap, not an expected count.
-     */
-    private const MAX_RENDITION_CANDIDATES = 50;
-
     public function __construct(
         private ConnectionPool $connectionPool,
         private ProcessedFileRepository $processedFileRepository,
@@ -407,8 +399,13 @@ final readonly class FileRepository
                 $expressionBuilder->gt('height', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
                 $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('')),
             )
-            ->addOrderBy('width', 'ASC')
-            ->setMaxResults(self::MAX_RENDITION_CANDIDATES);
+            // No LIMIT here: the WHERE above already scopes this to the
+            // renditions of a single original, a set bounded only by the
+            // task types and configurations the site actually uses. Capping
+            // it would let a wide Image.Preview thumbnail sort outside the
+            // window and silently defeat the preference below, the exact
+            // failure mode this method exists to avoid.
+            ->addOrderBy('width', 'ASC');
 
         $rows = $queryBuilder->executeQuery()->fetchAllAssociative();
         if ([] === $rows) {
