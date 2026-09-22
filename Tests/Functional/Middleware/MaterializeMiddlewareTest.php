@@ -15,7 +15,8 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\MaterializeMiddleware;
-use KonradMichalik\Typo3FileSync\Service\MaterializationService;
+use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend;
@@ -26,16 +27,23 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function array_fill;
+use function base64_encode;
 use function json_decode;
 use function json_encode;
 
 /**
  * MaterializeMiddlewareTest.
  *
- * Every fixture token here is deliberately unresolvable. The middleware
- * only has to shape the HTTP surface correctly; what a resolvable token
- * does once inside MaterializationService is covered by that service's
+ * Almost every fixture token here is deliberately unresolvable. The
+ * middleware only has to shape the HTTP surface correctly; what a resolvable
+ * token does once inside MaterializationService is covered by that service's
  * own functional test.
+ *
+ * The exception is the preview stage. Both stages answer an unresolvable
+ * token with the same body, so only a resolvable one shows which service the
+ * stage reached: the preview stage answers with a "preview" key and the
+ * original stage with a "url" key or an error. That token is served from
+ * PreviewStore, so it needs no storage and no remote.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -44,6 +52,8 @@ use function json_encode;
 final class MaterializeMiddlewareTest extends FunctionalTestCase
 {
     private const PATH = '/tx-file-sync/materialize';
+    private const ROUTED_IDENTIFIER = '/_processed_/csm_routing.jpg';
+    private const ROUTED_STORAGE = 1;
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
     /**
@@ -74,6 +84,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
 
     protected function tearDown(): void
     {
+        (new PreviewStore())->remove(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER);
         $_SERVER = $this->serverBackup;
         GeneralUtility::flushInternalRuntimeCaches();
         parent::tearDown();
@@ -310,24 +321,29 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     }
 
     /**
-     * The token is unresolvable like every other one in this class, so the
-     * map carries an error rather than a data URI. What is pinned here is
-     * that the stage is answered per token at all: paired with the 404 above
-     * and the fall-through below, that is the whole routing decision. Which
-     * bytes a resolvable token produces is PreviewServiceTest's subject.
+     * The one resolvable token in this class, and the only assertion that can
+     * tell the two services apart: a "preview" key is a shape
+     * MaterializationService cannot produce. The rendition has no sys_file row
+     * on purpose, so routing this to the original stage answers with an error
+     * rather than a URL.
      */
     #[Test]
-    public function previewStageIsAnsweredPerTokenWhileTheToggleIsOn(): void
+    public function previewStageIsAnsweredByThePreviewServiceWhileTheToggleIsOn(): void
     {
         $this->enableFeature();
         $this->enablePreviewFeature();
-        $token = '9999.deadbeef';
+        $this->importCSVDataSet(__DIR__.'/Fixtures/preview_token.csv');
+        (new PreviewStore())->write(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER, 'routed-preview-bytes');
+        $token = $this->get(DeferredTokenService::class)->create(10);
         $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => [$token]]));
 
         $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
 
         self::assertSame(200, $response->getStatusCode());
-        self::assertSame(json_encode([$token => ['error' => 'invalid']]), (string) $response->getBody());
+        self::assertSame(
+            json_encode([$token => ['preview' => 'data:image/webp;base64,'.base64_encode('routed-preview-bytes')]]),
+            (string) $response->getBody(),
+        );
     }
 
     /**

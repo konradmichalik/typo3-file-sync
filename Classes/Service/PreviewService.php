@@ -22,7 +22,6 @@ use Throwable;
 use TYPO3\CMS\Core\Resource\StorageRepository;
 
 use function array_key_exists;
-use function array_map;
 use function array_unique;
 use function array_values;
 use function base64_encode;
@@ -43,16 +42,18 @@ use function stream_get_contents;
  *
  * Two things make that affordable on demand. It downloads the smallest
  * rendition production already has, which is kilobytes where the original is
- * megabytes, and it stores what it built, so a picture is paid for once per
- * installation rather than once per visitor.
+ * megabytes, and it stores what it built, so a picture is downloaded once per
+ * installation rather than once per visitor. Every rendition of that picture
+ * resolves to the same download and is stored under its own key, because the
+ * crop follows the shape of the rendition the browser is waiting for.
  *
  * Nothing here throws. A preview that cannot be produced leaves the visitor
  * with the grey placeholder that is already on screen, and one unusable
  * token must not cost the rest of the batch its previews.
  *
  * @phpstan-type PreviewLocation array{storage: int, identifier: string}
- * @phpstan-type PreviewPlan array{original: PreviewLocation, rendition: array{identifier: string, storage: int, width: int, height: int}, width: int, height: int}
- * @phpstan-type PreviewTarget array{storage: int, identifier: string, path: string}
+ * @phpstan-type PreviewPlan array{requested: PreviewLocation, source: array{identifier: string, storage: int, width: int, height: int}, width: int, height: int}
+ * @phpstan-type PreviewFetch array{storage: int, identifier: string, path: string}
  * @phpstan-type PreviewResult array{preview: string}|array{error: string}
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
@@ -102,9 +103,9 @@ final class PreviewService implements LoggerAwareInterface
 
     /**
      * Everything that can be decided without touching the network: which
-     * tokens name a rendition that exists, which originals already have a
-     * stored preview, and which of the rest have a rendition to build one
-     * from.
+     * tokens name a rendition that exists, which of those already have a
+     * stored preview, and which of the rest have a smaller rendition to build
+     * one from.
      *
      * @param array<string, int> $uidsByToken
      *
@@ -113,38 +114,39 @@ final class PreviewService implements LoggerAwareInterface
     private function plan(array $uidsByToken): array
     {
         $processedRows = $this->fileRepository->findProcessedFilesByUids(array_values($uidsByToken));
-        $originals = $this->fileRepository->findLocationsByUids(array_values(array_unique(array_map(
-            static fn (array $row): int => (int) $row['original'],
-            $processedRows,
-        ))));
 
         $plans = [];
         $results = [];
         foreach ($uidsByToken as $token => $uid) {
             $row = $processedRows[$uid] ?? null;
-            $original = null === $row ? null : ($originals[(int) $row['original']] ?? null);
-            if (null === $row || null === $original) {
+            if (null === $row) {
                 $results[$token] = ['error' => 'invalid'];
+                continue;
+            }
+
+            $requested = self::locate($row);
+            if (null === $requested) {
+                $results[$token] = ['error' => 'unavailable'];
                 continue;
             }
 
             // Ahead of the rendition lookup, let alone any request: a stored
             // preview is what makes every visitor after the first one free.
-            $stored = $this->stored($original);
+            $stored = $this->stored($requested);
             if (null !== $stored) {
                 $results[$token] = self::dataUri($stored);
                 continue;
             }
 
-            $rendition = $this->fileRepository->findSmallestRendition((int) $row['original']);
-            if (null === $rendition) {
+            $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
+            if (null === $source) {
                 $results[$token] = ['error' => 'unavailable'];
                 continue;
             }
 
             $plans[$token] = [
-                'original' => $original,
-                'rendition' => $rendition,
+                'requested' => $requested,
+                'source' => $source,
                 'width' => (int) $row['width'],
                 'height' => (int) $row['height'],
             ];
@@ -154,15 +156,35 @@ final class PreviewService implements LoggerAwareInterface
     }
 
     /**
-     * @param PreviewLocation $original
+     * The rendition a token names, which is both the shape a preview is
+     * cropped to and the key it is stored under.
+     *
+     * A processed row carries an empty identifier until its file has actually
+     * been written. There is nothing to key a preview by then, and storing one
+     * under the empty string would hand every such rendition of the storage
+     * the first one's picture.
+     *
+     * @param array<string, mixed> $row
+     *
+     * @return PreviewLocation|null
      */
-    private function stored(array $original): ?string
+    private static function locate(array $row): ?array
+    {
+        $identifier = (string) $row['identifier'];
+
+        return '' === $identifier ? null : ['storage' => (int) $row['storage'], 'identifier' => $identifier];
+    }
+
+    /**
+     * @param PreviewLocation $requested
+     */
+    private function stored(array $requested): ?string
     {
         try {
-            return $this->previewStore->read($original['storage'], $original['identifier']);
+            return $this->previewStore->read($requested['storage'], $requested['identifier']);
         } catch (Throwable $exception) {
             $this->logger?->warning(
-                sprintf('Reading the stored preview of %s failed: %s', $original['identifier'], $exception->getMessage()),
+                sprintf('Reading the stored preview of %s failed: %s', $requested['identifier'], $exception->getMessage()),
             );
 
             return null;
@@ -180,14 +202,14 @@ final class PreviewService implements LoggerAwareInterface
             return [];
         }
 
-        $targets = $this->resolveTargets($plans);
-        $this->prefetch($targets);
+        $sources = $this->resolveSources($plans);
+        $this->prefetch($sources);
 
         $bytes = [];
         $results = [];
         foreach ($plans as $token => $plan) {
-            $target = $targets[$token] ?? null;
-            if (null === $target) {
+            $source = $sources[$token] ?? null;
+            if (null === $source) {
                 $results[$token] = ['error' => 'unavailable'];
                 continue;
             }
@@ -196,11 +218,11 @@ final class PreviewService implements LoggerAwareInterface
             // renditions of one picture on a page, and they all resolve to
             // the same smallest rendition. The prefetch buffer hands a path
             // out exactly once, so a second read would go over the wire.
-            if (!array_key_exists($target['path'], $bytes)) {
-                $bytes[$target['path']] = $this->fetch($target);
+            if (!array_key_exists($source['path'], $bytes)) {
+                $bytes[$source['path']] = $this->fetch($source);
             }
 
-            $results[$token] = $this->render($plan, $bytes[$target['path']]);
+            $results[$token] = $this->render($plan, $bytes[$source['path']]);
         }
 
         return $results;
@@ -209,41 +231,41 @@ final class PreviewService implements LoggerAwareInterface
     /**
      * @param array<string, PreviewPlan> $plans
      *
-     * @return array<string, PreviewTarget>
+     * @return array<string, PreviewFetch>
      */
-    private function resolveTargets(array $plans): array
+    private function resolveSources(array $plans): array
     {
-        $targets = [];
+        $sources = [];
         foreach ($plans as $token => $plan) {
-            $rendition = $plan['rendition'];
+            $source = $plan['source'];
             // Through the driver, never through getPublicUrl() on the file:
             // that dispatches GeneratePublicUrlForResourceEvent, so a project
             // listener or a CDN base URL would yield a string the prefetch
             // buffer was never filled under. The buffer would fill, nobody
             // would read it, and the only trace would be a second request.
-            $path = $this->driver($rendition['storage'])?->getRemotePath($rendition['identifier']);
+            $path = $this->driver($source['storage'])?->getRemotePath($source['identifier']);
             if (null === $path || '' === $path) {
                 continue;
             }
 
-            $targets[$token] = [
-                'storage' => $rendition['storage'],
-                'identifier' => $rendition['identifier'],
+            $sources[$token] = [
+                'storage' => $source['storage'],
+                'identifier' => $source['identifier'],
                 'path' => $path,
             ];
         }
 
-        return $targets;
+        return $sources;
     }
 
     /**
-     * @param array<string, PreviewTarget> $targets
+     * @param array<string, PreviewFetch> $sources
      */
-    private function prefetch(array $targets): void
+    private function prefetch(array $sources): void
     {
         $pathsByStorage = [];
-        foreach ($targets as $target) {
-            $pathsByStorage[$target['storage']][] = $target['path'];
+        foreach ($sources as $source) {
+            $pathsByStorage[$source['storage']][] = $source['path'];
         }
 
         foreach ($pathsByStorage as $storageUid => $paths) {
@@ -251,7 +273,7 @@ final class PreviewService implements LoggerAwareInterface
                 $this->driver($storageUid)?->prefetch(array_values(array_unique($paths)));
             } catch (Throwable $exception) {
                 // A storage whose prefetch fails costs the batch its
-                // concurrency, never its previews: every target still runs,
+                // concurrency, never its previews: every source still runs,
                 // one serial fetch at a time.
                 $this->logger?->warning(
                     sprintf('Preview prefetch for storage %d failed: %s', $storageUid, $exception->getMessage()),
@@ -267,21 +289,21 @@ final class PreviewService implements LoggerAwareInterface
      * would let a fallback handler answer with a generated placeholder,
      * which is the grey box a preview exists to replace.
      *
-     * @param PreviewTarget $target
+     * @param PreviewFetch $source
      */
-    private function fetch(array $target): ?string
+    private function fetch(array $source): ?string
     {
-        $driver = $this->driver($target['storage']);
+        $driver = $this->driver($source['storage']);
         if (null === $driver) {
             return null;
         }
 
         foreach ($driver->getBatchHandlers() as $handler) {
             try {
-                $bytes = self::readStream($handler->getFile($target['identifier'], $target['path']));
+                $bytes = self::readStream($handler->getFile($source['identifier'], $source['path']));
             } catch (Throwable $exception) {
                 $this->logger?->warning(
-                    sprintf('Fetching preview source %s failed: %s', $target['path'], $exception->getMessage()),
+                    sprintf('Fetching preview source %s failed: %s', $source['path'], $exception->getMessage()),
                 );
                 continue;
             }
@@ -319,15 +341,18 @@ final class PreviewService implements LoggerAwareInterface
         }
 
         try {
-            // Keyed by the original rather than by the rendition it was built
-            // from: one picture is paid for once, however many renditions of
-            // it a page carries.
-            $this->previewStore->write($plan['original']['storage'], $plan['original']['identifier'], $webp);
+            // Keyed by the rendition the browser is waiting for, not by the
+            // original: the crop follows that rendition's aspect ratio, so one
+            // preview per picture would stretch a landscape blur into the next
+            // rendition's square slot. The extra cost is files, not fetches,
+            // since every rendition of one picture resolves to the same source
+            // and that source is downloaded once per batch.
+            $this->previewStore->write($plan['requested']['storage'], $plan['requested']['identifier'], $webp);
         } catch (Throwable $exception) {
             // An unwritable var/ costs the next visitor the same fetch. It
             // must not cost this one the preview that is already built.
             $this->logger?->warning(
-                sprintf('Storing the preview of %s failed: %s', $plan['original']['identifier'], $exception->getMessage()),
+                sprintf('Storing the preview of %s failed: %s', $plan['requested']['identifier'], $exception->getMessage()),
             );
         }
 

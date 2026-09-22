@@ -151,34 +151,16 @@ final class FileRepositoryTest extends FunctionalTestCase
     }
 
     #[Test]
-    public function findProcessedFilesByUidsCarriesTheRenditionDimensions(): void
+    public function findProcessedFilesByUidsCarriesTheRenditionLocationAndDimensions(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/sys_file_processedfile.csv');
 
         $result = $this->subject->findProcessedFilesByUids([110]);
 
+        self::assertSame(1, (int) $result[110]['storage']);
+        self::assertSame('/_processed_/a/b/csm_provisional_aaa.jpg', $result[110]['identifier']);
         self::assertSame(300, (int) $result[110]['width']);
         self::assertSame(200, (int) $result[110]['height']);
-    }
-
-    #[Test]
-    public function findLocationsByUidsKeysStorageAndIdentifierByUid(): void
-    {
-        $result = $this->subject->findLocationsByUids([1, 3]);
-
-        self::assertSame(
-            [
-                1 => ['storage' => 1, 'identifier' => '/foo/bar.jpg'],
-                3 => ['storage' => 2, 'identifier' => '/other/file.jpg'],
-            ],
-            $result,
-        );
-    }
-
-    #[Test]
-    public function findLocationsByUidsReturnsEmptyArrayForAnEmptyUidList(): void
-    {
-        self::assertSame([], $this->subject->findLocationsByUids([]));
     }
 
     #[Test]

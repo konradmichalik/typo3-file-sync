@@ -50,9 +50,23 @@ use function sprintf;
 #[CoversClass(PreviewService::class)]
 final class PreviewServiceTest extends FunctionalTestCase
 {
-    private const ORIGINAL_IDENTIFIER = '/user_upload/provisional.jpg';
-    private const RENDITION_PATH = '/fileadmin/_processed_/csm_provisional_small.jpg';
+    private const REQUESTED_IDENTIFIER = '/_processed_/csm_provisional.jpg';
+    private const SOURCE_PATH = '/fileadmin/_processed_/csm_provisional_small.jpg';
     private const STORAGE = 9;
+
+    /**
+     * Every rendition a test in this class asks for. A stored preview outlives
+     * the test instance's database, so each one has to go.
+     *
+     * @var list<string>
+     */
+    private const WRITTEN_IDENTIFIERS = [
+        '/_processed_/csm_provisional.jpg',
+        '/_processed_/csm_provisional_large.jpg',
+        '/_processed_/csm_provisional_square.jpg',
+        '/_processed_/csm_fallback.jpg',
+        '/_processed_/csm_broken.png',
+    ];
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
@@ -131,7 +145,9 @@ final class PreviewServiceTest extends FunctionalTestCase
 
     protected function tearDown(): void
     {
-        (new PreviewStore())->remove(self::STORAGE, self::ORIGINAL_IDENTIFIER);
+        foreach (self::WRITTEN_IDENTIFIERS as $identifier) {
+            (new PreviewStore())->remove(self::STORAGE, $identifier);
+        }
         unset($GLOBALS['TYPO3_REQUEST']);
         $_SERVER = $this->serverBackup;
         GeneralUtility::flushInternalRuntimeCaches();
@@ -151,7 +167,7 @@ final class PreviewServiceTest extends FunctionalTestCase
     #[Test]
     public function aStoredPreviewIsReturnedWithoutAnyOutboundRequest(): void
     {
-        (new PreviewStore())->write(self::STORAGE, self::ORIGINAL_IDENTIFIER, 'stored-preview-bytes');
+        (new PreviewStore())->write(self::STORAGE, self::REQUESTED_IDENTIFIER, 'stored-preview-bytes');
         $token = $this->get(DeferredTokenService::class)->create(10);
 
         $result = $this->get(PreviewService::class)->preview([$token]);
@@ -173,16 +189,14 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertArrayHasKey('preview', $result[$token]);
         self::assertStringStartsWith('data:image/webp;base64,', $result[$token]['preview']);
 
-        $webp = base64_decode(explode(',', $result[$token]['preview'], 2)[1], true);
-        self::assertIsString($webp);
-        $info = getimagesizefromstring($webp);
-        self::assertIsArray($info);
-        self::assertSame(\IMAGETYPE_WEBP, $info[2]);
         // Derived from the requested rendition (300x200), not from the
         // 150x100 payload that was actually downloaded.
-        self::assertSame([32, 21], [$info[0], $info[1]]);
+        self::assertSame([32, 21], self::dimensionsOf($result[$token]['preview']));
 
-        self::assertTrue((new PreviewStore())->has(self::STORAGE, self::ORIGINAL_IDENTIFIER));
+        // Keyed by the rendition the token names, not by the original it was
+        // built from, so the next rendition of the same picture gets a preview
+        // cropped to its own shape rather than this one's.
+        self::assertTrue((new PreviewStore())->has(self::STORAGE, self::REQUESTED_IDENTIFIER));
     }
 
     /**
@@ -201,7 +215,62 @@ final class PreviewServiceTest extends FunctionalTestCase
 
         self::assertArrayHasKey('preview', $result[$tokens[0]]);
         self::assertArrayHasKey('preview', $result[$tokens[1]]);
-        self::assertSame([self::RENDITION_PATH], self::hits());
+        self::assertSame([self::SOURCE_PATH], self::hits());
+    }
+
+    /**
+     * Two renditions of one picture in different shapes. They share a single
+     * download, and each gets a preview cropped to its own aspect ratio: one
+     * 3:2 and one square. A store keyed by the original instead would hand the
+     * square slot the first one's 3:2 blur, which is a visible stretch in
+     * exactly the seconds this feature exists to improve.
+     */
+    #[Test]
+    public function eachRenditionGetsAPreviewInItsOwnShape(): void
+    {
+        $tokenService = $this->get(DeferredTokenService::class);
+        $landscape = $tokenService->create(10);
+        $square = $tokenService->create(13);
+
+        // The square one first, so that a shared key would be overwritten by
+        // the landscape crop and the re-request below would read that back.
+        $result = $this->get(PreviewService::class)->preview([$square, $landscape]);
+
+        self::assertSame([32, 21], self::dimensionsOf($result[$landscape]['preview']));
+        self::assertSame([32, 32], self::dimensionsOf($result[$square]['preview']));
+        self::assertSame([self::SOURCE_PATH], self::hits(), 'Both shapes share one download.');
+
+        // Within one batch every rendition is generated from the same bytes,
+        // so a shared key still produces the right crops. The stretch shows on
+        // the next request, when the second rendition reads back a preview
+        // that was stored for the first one's shape. That is the assertion to
+        // read first when this test goes red.
+        $again = $this->get(PreviewService::class)->preview([$square]);
+
+        self::assertSame([32, 32], self::dimensionsOf($again[$square]['preview']));
+        self::assertSame([self::SOURCE_PATH], self::hits(), 'The second request is a store hit.');
+
+        $store = new PreviewStore();
+        self::assertTrue($store->has(self::STORAGE, self::REQUESTED_IDENTIFIER));
+        self::assertTrue($store->has(self::STORAGE, '/_processed_/csm_provisional_square.jpg'));
+    }
+
+    /**
+     * A processed row carries an empty identifier until its file is actually
+     * written. Keying a preview by the empty string would hand every such
+     * rendition of the storage whichever picture got there first, so the
+     * request is answered rather than stored under a colliding key.
+     */
+    #[Test]
+    public function aRenditionWithoutAnIdentifierYieldsUnavailable(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(41);
+
+        $result = $this->get(PreviewService::class)->preview([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertFalse((new PreviewStore())->has(self::STORAGE, ''));
+        self::assertSame([], self::hits());
     }
 
     #[Test]
@@ -233,7 +302,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         $result = $this->get(PreviewService::class)->preview([$token]);
 
         self::assertSame(['error' => 'unavailable'], $result[$token]);
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, '/user_upload/fallback.jpg'));
+        self::assertFalse((new PreviewStore())->has(self::STORAGE, '/_processed_/csm_fallback.jpg'));
     }
 
     #[Test]
@@ -276,6 +345,20 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$bad]);
         self::assertSame(['error' => 'invalid'], $result['9999.deadbeef']);
         self::assertArrayHasKey('preview', $result[$good]);
+    }
+
+    /**
+     * @return array{int, int}
+     */
+    private static function dimensionsOf(string $dataUri): array
+    {
+        $webp = base64_decode(explode(',', $dataUri, 2)[1], true);
+        self::assertIsString($webp);
+        $info = getimagesizefromstring($webp);
+        self::assertIsArray($info);
+        self::assertSame(\IMAGETYPE_WEBP, $info[2]);
+
+        return [$info[0], $info[1]];
     }
 
     /**
