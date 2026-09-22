@@ -281,6 +281,11 @@ final class FileRepositoryTest extends FunctionalTestCase
      * installation would take one rendition as its preview source on
      * MariaDB and another on SQLite, and the two previews are different
      * pictures rather than different bytes of one.
+     *
+     * This pins the direction, not the presence: reversing the tiebreaker
+     * fails here, removing it altogether does not, because SQLite makes uid
+     * the rowid and returns these rows in uid order anyway. Only MariaDB can
+     * show the removal, and the suite does not run against it locally.
      */
     #[Test]
     public function findSmallestRenditionBreaksAWidthTieByUid(): void

@@ -196,7 +196,7 @@ Nothing has to be installed or configured on the remote instance. The renditions
 
 Where a preview is already stored and the tag states its own size, it is inlined into the `src` of the rendered tag as a `data:` URI instead of being requested at all. TYPO3's default frontend content security policy permits `data:` in `img-src`, so that works under it; only a hand-written policy dropping `data:` would block it. This is a different question from the `script-src` one above, which is about the injected module not running in the first place.
 
-An image that stays blurred is a failure rather than a slow success: the preview arrived and the original never did. The module writes the status the materialize endpoint answered with to the browser console, which is where a report about it should start.
+An image that stays blurred is a failure rather than a slow success: the preview arrived and the original never did. The module writes a warning to the browser console when the materialize endpoint answers with an error status, so that case is visible. The commoner one is not: a `200` carrying `unavailable` for a single image is indistinguishable from a working response and is logged nowhere, so a report about one blurred image among many has to start with `var/log/typo3_file_sync.log`.
 
 ### Known Limitations
 

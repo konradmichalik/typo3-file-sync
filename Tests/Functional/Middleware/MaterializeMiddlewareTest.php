@@ -398,10 +398,6 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     }
 
     /**
-     * A handler that would answer 418 if it were ever reached, so a test
-     * that forgot to assert on it would still fail loudly.
-     */
-    /**
      * A RIFF container around the payload, since the store reads anything
      * that is not a complete WebP as absent.
      */
@@ -410,6 +406,10 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
+    /**
+     * A handler that would answer 418 if it were ever reached, so a test
+     * that forgot to assert on it would still fail loudly.
+     */
     private function stubHandler(): RequestHandlerInterface
     {
         $handler = $this->createMock(RequestHandlerInterface::class);
