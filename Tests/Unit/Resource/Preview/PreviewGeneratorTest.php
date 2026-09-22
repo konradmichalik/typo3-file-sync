@@ -86,6 +86,31 @@ final class PreviewGeneratorTest extends TestCase
         self::assertGreaterThan($red, $green, 'Edge pixel should stay green: the red source edges must be cropped away, not stretched in.');
     }
 
+    /**
+     * A 1x1 source combined with a 0.3 target ratio drives crop() into
+     * cropWidth = round(1 * 0.3) = 0: a degenerate, zero-width source
+     * rectangle. imagecopyresampled() accepts a zero width silently and
+     * leaves the destination at its initialised black, so a missing floor
+     * here would produce a structurally valid but content-free preview
+     * instead of a rejection or a real thumbnail. Asserting non-null is
+     * not enough, since the unfixed method already returns non-null; the
+     * pixel itself has to reflect the source colour, not stay black.
+     */
+    #[Test]
+    public function degenerateCropFromATinySourceStillReflectsTheSourceColour(): void
+    {
+        $result = $this->subject->generate($this->jpeg(1, 1), 3, 10);
+
+        self::assertNotNull($result);
+        $image = imagecreatefromstring($result);
+        self::assertNotFalse($image);
+
+        $pixel = imagecolorat($image, 0, 0);
+        $red = ($pixel >> 16) & 0xFF;
+
+        self::assertGreaterThan(100, $red, 'Pixel should reflect the source colour (red channel 200): a black pixel means the crop rectangle collapsed to zero width instead of being floored.');
+    }
+
     #[Test]
     public function outputIsWebP(): void
     {

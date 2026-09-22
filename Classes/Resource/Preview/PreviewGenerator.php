@@ -107,18 +107,28 @@ final readonly class PreviewGenerator
      * Crops the source to the target aspect ratio, so a square rendition slot
      * does not stretch a landscape preview across its box.
      *
-     * @return array{int, int, int, int}
+     * A tiny source combined with an extreme target ratio can round the
+     * computed edge down to 0, which imagecopyresampled() accepts silently
+     * and turns into a black preview instead of a rejection. The floor at 1
+     * mirrors scaleToEdge()'s own floor and keeps the crop inside the
+     * source, since sourceWidth/sourceHeight are both already known to be
+     * at least 1 by the time this runs.
+     *
+     * @param int<1, max> $sourceWidth
+     * @param int<1, max> $sourceHeight
+     *
+     * @return array{int, int, int<1, max>, int<1, max>}
      */
     private function crop(int $sourceWidth, int $sourceHeight, float $targetRatio): array
     {
         $sourceRatio = $sourceWidth / $sourceHeight;
         if ($sourceRatio > $targetRatio) {
-            $cropWidth = (int) round($sourceHeight * $targetRatio);
+            $cropWidth = max(1, (int) round($sourceHeight * $targetRatio));
 
             return [(int) round(($sourceWidth - $cropWidth) / 2), 0, $cropWidth, $sourceHeight];
         }
 
-        $cropHeight = (int) round($sourceWidth / $targetRatio);
+        $cropHeight = max(1, (int) round($sourceWidth / $targetRatio));
 
         return [0, (int) round(($sourceHeight - $cropHeight) / 2), $sourceWidth, $cropHeight];
     }
