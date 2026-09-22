@@ -202,6 +202,24 @@ final class MaterializationServiceTest extends FunctionalTestCase
     }
 
     /**
+     * The script tag's own src has to be rooted the same way the endpoint is.
+     * Letting PathUtility prefix it would derive the prefix from the request,
+     * which on v14 reaches the system resource publisher and its fallback to
+     * a global that only middlewares running inside this one populate.
+     */
+    #[Test]
+    public function theInjectedModuleIsLoadedFromTheSitePathOfASubdirectoryInstall(): void
+    {
+        self::useSitePath('/subdir/');
+
+        $marked = $this->markBody('<html><body><img src="/fileadmin/_processed_/csm_provisional.jpg"></body></html>');
+
+        self::assertSame(1, preg_match('#<script type="module" src="([^"]+)"#', $marked, $matches));
+        self::assertStringStartsWith('/subdir/', $matches[1]);
+        self::assertStringEndsWith('file-sync.js', $matches[1]);
+    }
+
+    /**
      * The only test that crosses a task boundary. The marking middleware and
      * the materialization service each define what a provisional image URL
      * looks like, and both sides were green while the two definitions did not

@@ -16,7 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Middleware;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, StorageService};
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, SitePath, StorageService};
 use Psr\Http\Message\{ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Cache\CacheManager;
@@ -426,9 +426,21 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             .'></script>';
     }
 
+    /**
+     * The site prefix comes from SitePath, not from PathUtility. Asking
+     * PathUtility to prefix would make it derive the prefix from the request,
+     * which on TYPO3 v14 means the system resource publisher and a fallback
+     * to $GLOBALS['TYPO3_REQUEST']. That global is only populated by
+     * middlewares that run inside this one, so the asset URL would depend on
+     * somebody else's side effect. It also keeps this URL and the endpoint
+     * URL derived from one source, which is the mismatch that made materialized
+     * images resolve against the current page instead of the site root.
+     */
     private function assetUrl(): string
     {
-        return PathUtility::getPublicResourceWebPath('EXT:'.Configuration::EXT_KEY.'/Resources/Public/JavaScript/file-sync.js');
+        return SitePath::absolute(
+            PathUtility::getPublicResourceWebPath('EXT:'.Configuration::EXT_KEY.'/Resources/Public/JavaScript/file-sync.js', false),
+        );
     }
 
     /**
