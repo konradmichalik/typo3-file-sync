@@ -232,9 +232,28 @@ final class PreviewService implements LoggerAwareInterface
      */
     private function isDamped(array $requested): bool
     {
-        $marked = $this->stored(self::damped($requested));
+        $marked = $this->marker(self::damped($requested));
 
         return null !== $marked && time() - (int) $marked < self::DAMPING_SECONDS;
+    }
+
+    /**
+     * Read past the store's WebP check, which a marker would never pass: it
+     * holds a timestamp rather than a picture.
+     *
+     * @param PreviewLocation $location
+     */
+    private function marker(array $location): ?string
+    {
+        try {
+            return $this->previewStore->readMarker($location['storage'], $location['identifier']);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Reading the failure marker of %s failed: %s', $location['identifier'], $exception->getMessage()),
+            );
+
+            return null;
+        }
     }
 
     /**

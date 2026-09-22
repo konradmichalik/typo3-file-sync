@@ -30,7 +30,9 @@ use function base64_encode;
 use function explode;
 use function file_get_contents;
 use function is_resource;
+use function pack;
 use function sprintf;
+use function strlen;
 use function time;
 
 /**
@@ -172,13 +174,14 @@ final class PreviewServiceTest extends FunctionalTestCase
     #[Test]
     public function aStoredPreviewIsReturnedWithoutAnyOutboundRequest(): void
     {
-        (new PreviewStore())->write(self::STORAGE, self::REQUESTED_IDENTIFIER, 'stored-preview-bytes');
+        $stored = self::webp('stored-preview-bytes');
+        (new PreviewStore())->write(self::STORAGE, self::REQUESTED_IDENTIFIER, $stored);
         $token = $this->get(DeferredTokenService::class)->create(10);
 
         $result = $this->get(PreviewService::class)->preview([$token]);
 
         self::assertSame(
-            ['preview' => 'data:image/webp;base64,'.base64_encode('stored-preview-bytes')],
+            ['preview' => 'data:image/webp;base64,'.base64_encode($stored)],
             $result[$token],
         );
         self::assertSame([], self::hits(), 'A store hit must not cost a single request.');
@@ -424,6 +427,15 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$bad]);
         self::assertSame(['error' => 'invalid'], $result['9999.deadbeef']);
         self::assertArrayHasKey('preview', $result[$good]);
+    }
+
+    /**
+     * A RIFF container around a payload no encoder would produce, which the
+     * store accepts and nothing else here can have generated.
+     */
+    private static function webp(string $payload): string
+    {
+        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     /**

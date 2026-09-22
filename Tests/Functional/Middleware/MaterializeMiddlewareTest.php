@@ -30,6 +30,8 @@ use function array_fill;
 use function base64_encode;
 use function json_decode;
 use function json_encode;
+use function pack;
+use function strlen;
 
 /**
  * MaterializeMiddlewareTest.
@@ -333,7 +335,8 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $this->enableFeature();
         $this->enablePreviewFeature();
         $this->importCSVDataSet(__DIR__.'/Fixtures/preview_token.csv');
-        (new PreviewStore())->write(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER, 'routed-preview-bytes');
+        $stored = self::webp('routed-preview-bytes');
+        (new PreviewStore())->write(self::ROUTED_STORAGE, self::ROUTED_IDENTIFIER, $stored);
         $token = $this->get(DeferredTokenService::class)->create(10);
         $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => [$token]]));
 
@@ -341,7 +344,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
 
         self::assertSame(200, $response->getStatusCode());
         self::assertSame(
-            json_encode([$token => ['preview' => 'data:image/webp;base64,'.base64_encode('routed-preview-bytes')]]),
+            json_encode([$token => ['preview' => 'data:image/webp;base64,'.base64_encode($stored)]]),
             (string) $response->getBody(),
         );
     }
@@ -398,6 +401,15 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
      * A handler that would answer 418 if it were ever reached, so a test
      * that forgot to assert on it would still fail loudly.
      */
+    /**
+     * A RIFF container around the payload, since the store reads anything
+     * that is not a complete WebP as absent.
+     */
+    private static function webp(string $payload): string
+    {
+        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
+    }
+
     private function stubHandler(): RequestHandlerInterface
     {
         $handler = $this->createMock(RequestHandlerInterface::class);

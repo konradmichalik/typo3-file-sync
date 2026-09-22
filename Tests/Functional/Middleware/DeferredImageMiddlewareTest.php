@@ -28,6 +28,7 @@ use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function base64_decode;
 use function base64_encode;
+use function pack;
 use function preg_match;
 use function preg_match_all;
 use function str_repeat;
@@ -428,11 +429,11 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
-        $this->storePreview('preview-bytes');
+        $stored = $this->storePreview('preview-bytes');
 
         $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
-        self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode('preview-bytes').'"', $result);
+        self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode($stored).'"', $result);
         // The point of inlining: the grey placeholder file is never requested.
         self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
         self::assertStringNotContainsString('data-file-sync-preview', $result);
@@ -483,8 +484,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
-        $bytes = "\x00\xff<>&\"'\x1a webp-ish";
-        $this->storePreview($bytes);
+        $bytes = $this->storePreview("\x00\xff<>&\"'\x1a webp-ish");
 
         $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
@@ -505,11 +505,11 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
-        $this->storePreview('preview-bytes');
+        $stored = $this->storePreview('preview-bytes');
 
         $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."' width='300' height='200'>"));
 
-        self::assertStringContainsString("src='data:image/webp;base64,".base64_encode('preview-bytes')."'", $result);
+        self::assertStringContainsString("src='data:image/webp;base64,".base64_encode($stored)."'", $result);
         self::assertStringNotContainsString('src="data:', $result);
     }
 
@@ -603,8 +603,9 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
-        $this->storePreview('first-image-preview-bytes');
-        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SECOND_PREVIEW_IDENTIFIER, 'second');
+        $first = $this->storePreview('first-image-preview-bytes');
+        $second = self::webp('second');
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SECOND_PREVIEW_IDENTIFIER, $second);
 
         $result = $this->processBody(
             $this->page(self::SIZED_PROVISIONAL_TAG.self::SECOND_SIZED_PROVISIONAL_TAG),
@@ -613,8 +614,8 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertSame(2, preg_match_all('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
         self::assertSame(
             [
-                'data:image/webp;base64,'.base64_encode('first-image-preview-bytes'),
-                'data:image/webp;base64,'.base64_encode('second'),
+                'data:image/webp;base64,'.base64_encode($first),
+                'data:image/webp;base64,'.base64_encode($second),
             ],
             $matches[1],
         );
@@ -632,13 +633,13 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
-        $this->storePreview('repeated-preview-bytes');
+        $stored = $this->storePreview('repeated-preview-bytes');
 
         $result = $this->processBody(
             $this->page(self::SIZED_PROVISIONAL_TAG.self::SIZED_PROVISIONAL_TAG),
         );
 
-        $expected = 'data:image/webp;base64,'.base64_encode('repeated-preview-bytes');
+        $expected = 'data:image/webp;base64,'.base64_encode($stored);
         self::assertSame(2, preg_match_all('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
         self::assertSame([$expected, $expected], $matches[1]);
         self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
@@ -649,9 +650,26 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
     }
 
-    private function storePreview(string $bytes): void
+    /**
+     * @return string the bytes the store now holds, which the middleware has
+     *                to inline unchanged
+     */
+    private function storePreview(string $payload): string
     {
-        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER, $bytes);
+        $webp = self::webp($payload);
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER, $webp);
+
+        return $webp;
+    }
+
+    /**
+     * A RIFF container around the payload, with the length field a real
+     * encoder would write. The store hands back nothing else, since it reads
+     * a short-written file as absent.
+     */
+    private static function webp(string $payload): string
+    {
+        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
     private function page(string $markup): string

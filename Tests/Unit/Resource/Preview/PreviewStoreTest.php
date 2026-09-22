@@ -19,6 +19,10 @@ use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Core\Environment;
 
+use function pack;
+use function strlen;
+use function substr;
+
 /**
  * PreviewStoreTest.
  *
@@ -51,28 +55,69 @@ final class PreviewStoreTest extends TestCase
     public function writtenPreviewIsReadBackUnchanged(): void
     {
         $subject = new PreviewStore();
-        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
 
         self::assertTrue($subject->has(1, '/user_upload/hero.jpg'));
-        self::assertSame('webp-bytes', $subject->read(1, '/user_upload/hero.jpg'));
+        self::assertSame(self::webp('webp-bytes'), $subject->read(1, '/user_upload/hero.jpg'));
+    }
+
+    /**
+     * GeneralUtility::writeFile() is not atomic, so a full disk leaves a
+     * file that is there and non-empty behind. Nothing ever rewrites a key
+     * the store already holds, which is what turns one short write into a
+     * preview served for the lifetime of the store.
+     */
+    #[Test]
+    public function aPreviewWrittenShortReadsAsAbsent(): void
+    {
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('a-payload-of-some-length'));
+        self::truncateStoredFileBy(4);
+
+        self::assertTrue($subject->has(1, '/user_upload/hero.jpg'));
+        self::assertNull($subject->read(1, '/user_upload/hero.jpg'));
+    }
+
+    #[Test]
+    public function contentThatIsNotAWebPAtAllReadsAsAbsent(): void
+    {
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', 'not-an-image');
+
+        self::assertNull($subject->read(1, '/user_upload/hero.jpg'));
+    }
+
+    /**
+     * PreviewService parks its failure markers in this store, and a marker
+     * holds the second it was written in rather than a picture. The WebP
+     * check must not swallow those, or a failing rendition would be retried
+     * by every visitor.
+     */
+    #[Test]
+    public function aMarkerIsReadBackAlthoughItIsNotAPicture(): void
+    {
+        $subject = new PreviewStore();
+        $subject->write(1, 'failed:/user_upload/hero.jpg', '1700000000');
+
+        self::assertSame('1700000000', $subject->readMarker(1, 'failed:/user_upload/hero.jpg'));
     }
 
     #[Test]
     public function theSameIdentifierInDifferentStoragesDoesNotCollide(): void
     {
         $subject = new PreviewStore();
-        $subject->write(1, '/user_upload/hero.jpg', 'storage-one');
-        $subject->write(2, '/user_upload/hero.jpg', 'storage-two');
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('storage-one'));
+        $subject->write(2, '/user_upload/hero.jpg', self::webp('storage-two'));
 
-        self::assertSame('storage-one', $subject->read(1, '/user_upload/hero.jpg'));
-        self::assertSame('storage-two', $subject->read(2, '/user_upload/hero.jpg'));
+        self::assertSame(self::webp('storage-one'), $subject->read(1, '/user_upload/hero.jpg'));
+        self::assertSame(self::webp('storage-two'), $subject->read(2, '/user_upload/hero.jpg'));
     }
 
     #[Test]
     public function previewsAreSpreadOverSubdirectories(): void
     {
         $subject = new PreviewStore();
-        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
 
         self::assertCount(1, glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: []);
     }
@@ -81,7 +126,7 @@ final class PreviewStoreTest extends TestCase
     public function removeDeletesThePreview(): void
     {
         $subject = new PreviewStore();
-        $subject->write(1, '/user_upload/hero.jpg', 'webp-bytes');
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
         $subject->remove(1, '/user_upload/hero.jpg');
 
         self::assertFalse($subject->has(1, '/user_upload/hero.jpg'));
@@ -94,5 +139,26 @@ final class PreviewStoreTest extends TestCase
         $subject->remove(1, '/user_upload/unknown.jpg');
 
         self::assertFalse($subject->has(1, '/user_upload/unknown.jpg'));
+    }
+
+    /**
+     * A RIFF container with the length field a real encoder would write,
+     * which is the only thing the store inspects. Built rather than encoded
+     * with GD, so the payload stays readable in a failure message.
+     */
+    private static function webp(string $payload): string
+    {
+        return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
+    }
+
+    /**
+     * Shortens the one file the store wrote, the way a write that ran out of
+     * disk would leave it.
+     */
+    private static function truncateStoredFileBy(int $bytes): void
+    {
+        $path = (glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: [])[0];
+        $contents = (string) file_get_contents($path);
+        file_put_contents($path, substr($contents, 0, strlen($contents) - $bytes));
     }
 }

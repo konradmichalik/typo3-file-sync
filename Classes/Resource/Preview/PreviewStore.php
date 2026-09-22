@@ -18,6 +18,9 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function dirname;
 use function is_file;
+use function strlen;
+use function substr;
+use function unpack;
 
 /**
  * PreviewStore.
@@ -27,21 +30,48 @@ use function is_file;
  * is precisely what a production sync does not overwrite, which makes a
  * preview a one-time cost per file instead of a cost per sync.
  *
+ * Not everything kept here is a picture: PreviewService parks its failure
+ * markers under keys of their own, and a marker holds a timestamp. That is
+ * why reading one has its own method, and why only read() is entitled to
+ * expect WebP.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
 final class PreviewStore
 {
+    /**
+     * "RIFF", the payload length, "WEBP". Nothing shorter can be a WebP,
+     * and the length is what makes a short write recognisable.
+     */
+    private const HEADER_BYTES = 12;
+
     public function has(int $storageUid, string $fileIdentifier): bool
     {
         return is_file($this->path($storageUid, $fileIdentifier));
     }
 
+    /**
+     * The stored preview, or null when what is there is not a complete one.
+     *
+     * GeneralUtility::writeFile() is not atomic, so a full disk or a killed
+     * process leaves a truncated file behind. It is non-empty, and nothing
+     * ever rewrites a key the store already holds, so a caller that took it
+     * for a preview would serve those bytes for the lifetime of the store.
+     */
     public function read(int $storageUid, string $fileIdentifier): ?string
     {
-        $path = $this->path($storageUid, $fileIdentifier);
+        $contents = $this->contents($storageUid, $fileIdentifier);
 
-        return is_file($path) ? (file_get_contents($path) ?: null) : null;
+        return null !== $contents && self::isCompleteWebP($contents) ? $contents : null;
+    }
+
+    /**
+     * The raw contents of a key that holds something other than a picture.
+     */
+    public function readMarker(int $storageUid, string $markerIdentifier): ?string
+    {
+        return $this->contents($storageUid, $markerIdentifier);
     }
 
     public function write(int $storageUid, string $fileIdentifier, string $webp): void
@@ -57,6 +87,33 @@ final class PreviewStore
         if (is_file($path)) {
             unlink($path);
         }
+    }
+
+    private function contents(int $storageUid, string $fileIdentifier): ?string
+    {
+        $path = $this->path($storageUid, $fileIdentifier);
+
+        return is_file($path) ? (file_get_contents($path) ?: null) : null;
+    }
+
+    /**
+     * A RIFF container states its own payload length, so a file that was
+     * written short says so itself rather than merely looking suspicious.
+     * Compared with "at least" rather than "exactly", because trailing
+     * bytes an encoder padded with are not the failure in question.
+     */
+    private static function isCompleteWebP(string $contents): bool
+    {
+        if (strlen($contents) < self::HEADER_BYTES
+            || 'RIFF' !== substr($contents, 0, 4)
+            || 'WEBP' !== substr($contents, 8, 4)
+        ) {
+            return false;
+        }
+
+        $header = unpack('V', substr($contents, 4, 4));
+
+        return false !== $header && strlen($contents) - 8 >= (int) $header[1];
     }
 
     private function path(int $storageUid, string $fileIdentifier): string
