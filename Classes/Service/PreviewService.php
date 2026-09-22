@@ -14,23 +14,16 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Service;
 
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewStore};
-use KonradMichalik\Typo3FileSync\Resource\StorageDriver;
+use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader, PreviewStore};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
 use Throwable;
-use TYPO3\CMS\Core\Resource\StorageRepository;
 
 use function array_key_exists;
-use function array_unique;
+use function array_map;
 use function array_values;
 use function base64_encode;
 use function count;
-use function fclose;
-use function is_resource;
-use function is_string;
 use function sprintf;
-use function stream_get_contents;
 use function time;
 
 /**
@@ -61,7 +54,6 @@ use function time;
  *
  * @phpstan-type PreviewLocation array{storage: int, identifier: string}
  * @phpstan-type PreviewPlan array{requested: PreviewLocation, source: array{identifier: string, storage: int, width: int, height: int}, width: int, height: int}
- * @phpstan-type PreviewFetch array{storage: int, identifier: string, path: string}
  * @phpstan-type PreviewResult array{preview: string}|array{error: string}
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
@@ -90,8 +82,8 @@ final class PreviewService implements LoggerAwareInterface
         private readonly DeferredTokenService $deferredTokenService,
         private readonly FileRepository $fileRepository,
         private readonly PreviewGenerator $previewGenerator,
+        private readonly PreviewSourceReader $previewSourceReader,
         private readonly PreviewStore $previewStore,
-        private readonly StorageRepository $storageRepository,
     ) {}
 
     /**
@@ -141,49 +133,62 @@ final class PreviewService implements LoggerAwareInterface
         $plans = [];
         $results = [];
         foreach ($uidsByToken as $token => $uid) {
-            $row = $processedRows[$uid] ?? null;
-            if (null === $row) {
-                $results[$token] = ['error' => 'invalid'];
+            $outcome = $this->decide($processedRows[$uid] ?? null);
+            if (array_key_exists('plan', $outcome)) {
+                $plans[$token] = $outcome['plan'];
                 continue;
             }
 
-            $requested = self::locate($row);
-            if (null === $requested) {
-                $results[$token] = ['error' => 'unavailable'];
-                continue;
-            }
-
-            // Ahead of the rendition lookup, let alone any request: a stored
-            // preview is what makes every visitor after the first one free.
-            $stored = $this->stored($requested);
-            if (null !== $stored) {
-                $results[$token] = self::dataUri($stored);
-                continue;
-            }
-
-            // A rendition that failed recently is answered without asking
-            // again. A failure is never stored as a preview, so without this
-            // every visitor of the same page retries the same dead fetch.
-            if ($this->isDamped($requested)) {
-                $results[$token] = ['error' => 'unavailable'];
-                continue;
-            }
-
-            $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
-            if (null === $source) {
-                $results[$token] = ['error' => 'unavailable'];
-                continue;
-            }
-
-            $plans[$token] = [
-                'requested' => $requested,
-                'source' => $source,
-                'width' => (int) $row['width'],
-                'height' => (int) $row['height'],
-            ];
+            $results[$token] = $outcome['result'];
         }
 
         return [$plans, $results];
+    }
+
+    /**
+     * What a single token resolves to before anything is fetched: a plan to
+     * build a preview, or the answer it already has.
+     *
+     * @param array<string, mixed>|null $row
+     *
+     * @return array{plan: PreviewPlan}|array{result: PreviewResult}
+     */
+    private function decide(?array $row): array
+    {
+        if (null === $row) {
+            return ['result' => ['error' => 'invalid']];
+        }
+
+        $requested = self::locate($row);
+        if (null === $requested) {
+            return ['result' => ['error' => 'unavailable']];
+        }
+
+        // Ahead of the rendition lookup, let alone any request: a stored
+        // preview is what makes every visitor after the first one free.
+        $stored = $this->stored($requested);
+        if (null !== $stored) {
+            return ['result' => self::dataUri($stored)];
+        }
+
+        // A rendition that failed recently is answered without asking again.
+        // A failure is never stored as a preview, so without this every
+        // visitor of the same page retries the same dead fetch.
+        if ($this->isDamped($requested)) {
+            return ['result' => ['error' => 'unavailable']];
+        }
+
+        $source = $this->fileRepository->findSmallestRendition((int) $row['original']);
+        if (null === $source) {
+            return ['result' => ['error' => 'unavailable']];
+        }
+
+        return ['plan' => [
+            'requested' => $requested,
+            'source' => $source,
+            'width' => (int) $row['width'],
+            'height' => (int) $row['height'],
+        ]];
     }
 
     /**
@@ -275,118 +280,17 @@ final class PreviewService implements LoggerAwareInterface
             return [];
         }
 
-        $sources = $this->resolveSources($plans);
-        $this->prefetch($sources);
+        $bytes = $this->previewSourceReader->read(array_map(
+            static fn (array $plan): array => ['storage' => $plan['source']['storage'], 'identifier' => $plan['source']['identifier']],
+            $plans,
+        ));
 
-        $bytes = [];
         $results = [];
         foreach ($plans as $token => $plan) {
-            $source = $sources[$token] ?? null;
-            if (null === $source) {
-                $results[$token] = ['error' => 'unavailable'];
-                continue;
-            }
-
-            // Cached by path, not by token: srcset routinely puts several
-            // renditions of one picture on a page, and they all resolve to
-            // the same smallest rendition. The prefetch buffer hands a path
-            // out exactly once, so a second read would go over the wire.
-            if (!array_key_exists($source['path'], $bytes)) {
-                $bytes[$source['path']] = $this->fetch($source);
-            }
-
-            $results[$token] = $this->render($plan, $bytes[$source['path']]);
+            $results[$token] = $this->render($plan, $bytes[$token] ?? null);
         }
 
         return $results;
-    }
-
-    /**
-     * @param array<string, PreviewPlan> $plans
-     *
-     * @return array<string, PreviewFetch>
-     */
-    private function resolveSources(array $plans): array
-    {
-        $sources = [];
-        foreach ($plans as $token => $plan) {
-            $source = $plan['source'];
-            // Through the driver, never through getPublicUrl() on the file:
-            // that dispatches GeneratePublicUrlForResourceEvent, so a project
-            // listener or a CDN base URL would yield a string the prefetch
-            // buffer was never filled under. The buffer would fill, nobody
-            // would read it, and the only trace would be a second request.
-            $path = $this->driver($source['storage'])?->getRemotePath($source['identifier']);
-            if (null === $path || '' === $path) {
-                continue;
-            }
-
-            $sources[$token] = [
-                'storage' => $source['storage'],
-                'identifier' => $source['identifier'],
-                'path' => $path,
-            ];
-        }
-
-        return $sources;
-    }
-
-    /**
-     * @param array<string, PreviewFetch> $sources
-     */
-    private function prefetch(array $sources): void
-    {
-        $pathsByStorage = [];
-        foreach ($sources as $source) {
-            $pathsByStorage[$source['storage']][] = $source['path'];
-        }
-
-        foreach ($pathsByStorage as $storageUid => $paths) {
-            try {
-                $this->driver($storageUid)?->prefetch(array_values(array_unique($paths)));
-            } catch (Throwable $exception) {
-                // A storage whose prefetch fails costs the batch its
-                // concurrency, never its previews: every source still runs,
-                // one serial fetch at a time.
-                $this->logger?->warning(
-                    sprintf('Preview prefetch for storage %d failed: %s', $storageUid, $exception->getMessage()),
-                );
-            }
-        }
-    }
-
-    /**
-     * Reads a rendition straight from the batch handlers rather than through
-     * FAL. Going through the storage would write the downloaded rendition
-     * into the processing folder, and going through the full handler chain
-     * would let a fallback handler answer with a generated placeholder,
-     * which is the grey box a preview exists to replace.
-     *
-     * @param PreviewFetch $source
-     */
-    private function fetch(array $source): ?string
-    {
-        $driver = $this->driver($source['storage']);
-        if (null === $driver) {
-            return null;
-        }
-
-        foreach ($driver->getBatchHandlers() as $handler) {
-            try {
-                $bytes = self::readStream($handler->getFile($source['identifier'], $source['path']));
-            } catch (Throwable $exception) {
-                $this->logger?->warning(
-                    sprintf('Fetching preview source %s failed: %s', $source['path'], $exception->getMessage()),
-                );
-                continue;
-            }
-
-            if (null !== $bytes) {
-                return $bytes;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -408,18 +312,6 @@ final class PreviewService implements LoggerAwareInterface
 
             return null;
         }
-    }
-
-    private static function readStream(mixed $stream): ?string
-    {
-        if (!is_resource($stream)) {
-            return null;
-        }
-
-        $bytes = stream_get_contents($stream);
-        fclose($stream);
-
-        return is_string($bytes) && '' !== $bytes ? $bytes : null;
     }
 
     /**
@@ -447,22 +339,6 @@ final class PreviewService implements LoggerAwareInterface
         $this->forget(self::damped($plan['requested']));
 
         return self::dataUri($webp);
-    }
-
-    private function driver(int $storageUid): ?FileSyncDriver
-    {
-        try {
-            $storage = $this->storageRepository->findByUid($storageUid);
-            $driver = null === $storage ? null : StorageDriver::extract($storage);
-        } catch (Throwable $exception) {
-            $this->logger?->warning(
-                sprintf('Storage %d is unavailable: %s', $storageUid, $exception->getMessage()),
-            );
-
-            return null;
-        }
-
-        return $driver instanceof FileSyncDriver ? $driver : null;
     }
 
     /**
