@@ -283,7 +283,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      */
     private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
     {
-        if (null === $preview) {
+        if (null === $preview || !self::declaresItsOwnSize($tag)) {
             return self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote);
         }
 
@@ -293,6 +293,25 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             $src[1] - $tagOffset,
             strlen($src[0]),
         );
+    }
+
+    /**
+     * A stored preview is 32 pixels on its longest edge, while the grey
+     * placeholder is generated at the rendition's own width and height. A tag
+     * that states no size of its own is laid out from whatever its src turns
+     * out to be, so inlining there would collapse it to 32 pixels until the
+     * module answers, and this branch promises no layout shift. Such a tag
+     * keeps the placeholder and asks the preview stage over the wire instead,
+     * which is what every tag did before inlining existed.
+     *
+     * The lookbehind is the one IMAGE_PATTERN uses on src=, for the same
+     * reason: a word boundary also sits between the hyphen and the "w" of
+     * data-width. An empty value states no size either.
+     */
+    private static function declaresItsOwnSize(string $tag): bool
+    {
+        return 1 === preg_match('/(?<![-\w])width=(["\'])[^"\']+\1/i', $tag)
+            && 1 === preg_match('/(?<![-\w])height=(["\'])[^"\']+\1/i', $tag);
     }
 
     /**

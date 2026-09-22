@@ -51,6 +51,12 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
     private const PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg';
 
+    /**
+     * Only a tag stating a width and a height of its own is inlined into, so
+     * every preview case that expects a data URI has to carry both.
+     */
+    private const SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg" width="300" height="200" alt="provisional">';
+
     private const REAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" alt="real">';
 
     /**
@@ -415,7 +421,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->enablePreviews();
         $this->storePreview('preview-bytes');
 
-        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+        $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
         self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode('preview-bytes').'"', $result);
         // The point of inlining: the grey placeholder file is never requested.
@@ -430,7 +436,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
 
-        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+        $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
         self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
         self::assertStringContainsString('data-file-sync-preview="1"', $result);
@@ -441,7 +447,8 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     /**
      * The stored preview is written on purpose: without it this case would
      * pass for a body that was never rewritten at all, which is why the token
-     * is asserted too.
+     * is asserted too. The tag states its size for the same reason, so the
+     * toggle is the only thing keeping the data URI out.
      */
     #[Test]
     public function inlinesNothingWhileThePreviewToggleIsOff(): void
@@ -449,7 +456,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->storePreview('preview-bytes');
 
-        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+        $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
         self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
@@ -470,7 +477,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $bytes = "\x00\xff<>&\"'\x1a webp-ish";
         $this->storePreview($bytes);
 
-        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+        $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
         self::assertSame(1, preg_match('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
         self::assertSame('data:image/webp;base64,'.base64_encode($bytes), $matches[1]);
@@ -488,7 +495,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->enablePreviews();
         $this->storePreview('preview-bytes');
 
-        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."'>"));
+        $result = $this->processBody($this->page("<img src='".self::PROVISIONAL_URL."' width='300' height='200'>"));
 
         self::assertStringContainsString("src='data:image/webp;base64,".base64_encode('preview-bytes')."'", $result);
         self::assertStringNotContainsString('src="data:', $result);
@@ -517,12 +524,54 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
         $this->enablePreviews();
         $this->storePreview('preview-bytes');
-        $markup = '<script>var h = "'."<img src='".self::PROVISIONAL_URL."'>".'";</script>';
+        $markup = '<script>var h = "'."<img src='".self::PROVISIONAL_URL."' width='300' height='200'>".'";</script>';
 
         $result = $this->processBody($this->page($markup));
 
         self::assertStringContainsString($markup, $result);
         self::assertStringNotContainsString('data:image/webp', $result);
+    }
+
+    /**
+     * Each entry states less than a width and a height together, whether by
+     * leaving one out, by emptying one, or by spelling them as data
+     * attributes the browser lays nothing out from.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function tagWithoutItsOwnSizeProvider(): array
+    {
+        return [
+            'no dimensions at all' => [self::PROVISIONAL_TAG],
+            'width only' => ['<img src="'.self::PROVISIONAL_URL.'" width="300">'],
+            'height only' => ['<img src="'.self::PROVISIONAL_URL.'" height="200">'],
+            'empty height' => ['<img src="'.self::PROVISIONAL_URL.'" width="300" height="">'],
+            'data attributes only' => ['<img src="'.self::PROVISIONAL_URL.'" data-width="300" data-height="200">'],
+        ];
+    }
+
+    /**
+     * The stored preview is 32 pixels on its longest edge and the grey
+     * placeholder is the rendition's full size, so inlining into a tag that
+     * states no size of its own would shrink it until the module answers.
+     * A preview is stored here on purpose: what is pinned is the guard, not
+     * an absent preview, so the case fails the moment the guard is dropped
+     * and the data URI arrives after all.
+     */
+    #[Test]
+    #[DataProvider('tagWithoutItsOwnSizeProvider')]
+    public function marksATagStatingNoSizeOfItsOwnForThePreviewStageInsteadOfInlining(string $tag): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('data-file-sync-preview="1"', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+        self::assertSame(110, $this->tokenOf($result));
     }
 
     private function enablePreviews(): void
