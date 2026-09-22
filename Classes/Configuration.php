@@ -31,6 +31,8 @@ final class Configuration
 
     public const FEATURE_DEFERRED_LOADING = 'fileSync.deferredLoading';
 
+    public const FEATURE_PREVIEW_IMAGES = 'fileSync.previewImages';
+
     public const FIELD_ENABLE = 'tx_typo3_file_sync_enable';
 
     public const FIELD_DEFERRED = 'tx_typo3_file_sync_deferred';
