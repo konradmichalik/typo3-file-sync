@@ -7,8 +7,8 @@ const ENDPOINT =
     document.querySelector('script[data-file-sync-endpoint]')?.dataset.fileSyncEndpoint ??
     '/tx-file-sync/materialize';
 // Must never exceed MaterializationService::MAX_TOKENS. The server answers a
-// larger batch with 400, request() swallows that into {}, and every image in
-// the batch silently stays a placeholder for the rest of the page view.
+// larger batch with 400, which leaves every image in the batch a placeholder
+// for the rest of the page view and a warning in the console.
 const BATCH_SIZE = 50;
 
 const canAnimate = () =>
@@ -32,7 +32,16 @@ const request = async (tokens, stage) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ stage, tokens }),
         });
-        return response.ok ? await response.json() : {};
+        if (!response.ok) {
+            // Every failure of this endpoint shows as an image that stays
+            // grey, or with previews on, one that stays blurred, and a
+            // blurred page looks like a slow success rather than a fault.
+            // Without this line a bug report about it carries nothing.
+            console.warn(`File Sync: the ${stage} stage answered ${response.status}.`);
+            return {};
+        }
+
+        return await response.json();
     } catch {
         return {};
     }
