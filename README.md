@@ -49,6 +49,10 @@ Download the zip file from [TYPO3 extension repository (TER)](https://extensions
 vendor/bin/typo3 extension:setup --extension=typo3_file_sync
 ```
 
+### Upgrading
+
+Run the same command after every update, or use the database analyser in the Install Tool. This release adds the column `tx_typo3_file_sync_failed` to `sys_file`, and deferred image loading needs it: between `composer update` and the schema update every materialize request fails with a database error and answers `500`, so every deferred image stays a grey placeholder.
+
 ## ⚙️ Configuration
 
 File Sync can be configured in two ways: via the **TYPO3 backend** (per storage) or via **PHP configuration** (e.g. in `ext_localconf.php` or `additional.php`).
