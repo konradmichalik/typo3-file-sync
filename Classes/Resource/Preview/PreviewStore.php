@@ -118,7 +118,7 @@ final readonly class PreviewStore
     private static function isCompleteWebP(string $contents): bool
     {
         if (strlen($contents) < self::HEADER_BYTES
-            || 'RIFF' !== substr($contents, 0, 4)
+            || !str_starts_with($contents, 'RIFF')
             || 'WEBP' !== substr($contents, 8, 4)
         ) {
             return false;
