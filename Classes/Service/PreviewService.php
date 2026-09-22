@@ -43,10 +43,17 @@ use function time;
  *
  * Two things make that affordable on demand. It downloads the smallest
  * rendition production already has, which is kilobytes where the original is
- * megabytes, and it stores what it built, so a picture is downloaded once per
- * installation rather than once per visitor. Every rendition of that picture
- * resolves to the same download and is stored under its own key, because the
- * crop follows the shape of the rendition the browser is waiting for.
+ * megabytes, and it stores what it built, so nothing is downloaded twice
+ * inside one batch and a page that has been visited before costs nothing.
+ *
+ * What that costs, for anyone sizing the traffic: every rendition of one
+ * picture resolves to the same source, so a batch downloads it once however
+ * many renditions ask for it. A preview is stored per rendition rather than
+ * per picture, though, because the crop follows the shape of the rendition
+ * the browser is waiting for. A rendition whose own preview is not stored yet
+ * therefore re-fetches a source a sibling already used, which puts the bound
+ * at one fetch per distinct rendition over the store's lifetime rather than
+ * one per picture.
  *
  * Nothing here throws. A preview that cannot be produced leaves the visitor
  * with the grey placeholder that is already on screen, and one unusable
