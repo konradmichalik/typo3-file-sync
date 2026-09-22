@@ -25,7 +25,7 @@ A lightweight TYPO3 extension that synchronizes missing files on demand — eith
 
 * TYPO3 13.4 LTS or 14.0+
 * PHP 8.2 – 8.5
-* PHP extension `ext-gd` (for placeholder image generation)
+* PHP extension `ext-gd` (for placeholder and preview image generation; previews additionally need a GD build with WebP support)
 
 ### Composer
 
@@ -161,7 +161,7 @@ A placeholder for an image on a storage with deferred loading enabled renders im
 With preview images enabled as well, the same image passes three stages:
 
 1. the grey placeholder, rendered with the page
-2. a blurred preview of the rendition, a few kilobytes
+2. a blurred preview of the rendition, a couple of hundred bytes
 3. the original, fetched from the remote instance
 
 Enable it by hand in `config/system/additional.php` (or `settings.php`), since the Install Tool only surfaces core feature toggles:
@@ -184,13 +184,17 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.previewImages'] = true;
 
 It requires `fileSync.deferredLoading` and does nothing without it: no image is marked, so nothing ever asks for a preview. Set on its own it is simply inert, and nothing warns about it.
 
-A preview is a WebP of 32 pixels on its longest edge, roughly 8 KB where the original of the same picture runs into megabytes. It is built from a small rendition of the same original that already exists, by preference the backend thumbnail, fetched from the remote instance and blurred locally with GD. A GD build without WebP support produces no previews at all and leaves the grey placeholder in place. The crop follows the aspect ratio of the rendition the browser is waiting for, so a square slot is not filled with a stretched landscape blur. That means one preview per rendition, not per picture: three renditions of one picture are three previews of roughly 8 KB each. The download is shared, so all renditions of one picture fetch their source once per batch.
+A preview is a WebP of 32 pixels on its longest edge, blurred twice. It weighs a couple of hundred bytes, so roughly 300 characters once it is base64-encoded into the HTML. A GD build without WebP support produces no previews at all and leaves the grey placeholder in place.
 
-Previews live in `var/file-sync/previews/`, outside the database and outside the file storage. A database sync from production does not touch them, and neither does `file-sync:delete` or `file-sync:reset`. Deleting the directory costs nothing but a repeat of the preview stage, since every preview is rebuilt the next time a page holding that image is visited.
+The source it is built from is the narrowest rendition of the same original recorded in `sys_file_processedfile`, by preference the backend thumbnail, fetched from the remote instance and blurred locally with GD. That is where the traffic goes, not into the previews themselves: a backend thumbnail is a few kilobytes against an original in the megabytes, but where no small rendition is recorded the lookup falls back to the narrowest one that is, which can be full-size. The preview then costs as much to fetch as that rendition does, to produce the same couple of hundred bytes of blur.
+
+The crop follows the aspect ratio of the rendition the browser is waiting for, so a square slot is not filled with a stretched landscape blur. That means one preview per rendition, not per picture: three renditions of one picture are three previews, each fetching its source separately once. Within a single page view the download is shared, so all renditions of one picture fetch their source once per batch.
+
+Previews live in `var/file-sync/previews/`, outside the database and outside the file storage. A database sync from production does not touch them, and neither does `file-sync:delete` or `file-sync:reset`. A sync does replace `sys_file_processedfile`, though, and previews are keyed by the processed identifier, so the previews belonging to the renditions it replaced become orphans that nothing prunes. Deleting the directory costs nothing but a repeat of the preview stage, since every preview is rebuilt the next time a page holding that image is visited.
 
 Nothing has to be installed or configured on the remote instance. The renditions are fetched through the same `remote_instance` handler as the originals, so all it takes is that the remote `_processed_` folder is publicly served.
 
-Where a preview is already stored, it is inlined into the `src` of the rendered tag as a `data:` URI instead of being requested at all. TYPO3's default frontend content security policy permits `data:` in `img-src`, so that works under it; only a hand-written policy dropping `data:` would block it. This is a different question from the `script-src` one above, which is about the injected module not running in the first place.
+Where a preview is already stored and the tag states its own size, it is inlined into the `src` of the rendered tag as a `data:` URI instead of being requested at all. TYPO3's default frontend content security policy permits `data:` in `img-src`, so that works under it; only a hand-written policy dropping `data:` would block it. This is a different question from the `script-src` one above, which is about the injected module not running in the first place.
 
 ### Known Limitations
 
@@ -199,10 +203,12 @@ Where a preview is already stored, it is inlined into the `src` of the rendered 
 - A storage with deferred loading enabled needs a non-deferrable fallback handler, such as the placeholder image generator, configured alongside the remote one. Without it the render has nothing left to answer with and produces no file at all rather than a placeholder.
 - The materialize endpoint is public and unauthenticated, so it is rate limited to 60 requests per minute per client address and answers `429` beyond that. A page view costs at most two requests, one per stage.
 - An image whose markup states no `width` and `height` gets no preview and keeps the grey placeholder until the original arrives. A preview is 32 pixels on its longest edge, so a tag laid out from whatever its `src` turns out to be would collapse and grow back again: two layout shifts where the placeholder alone costs none. TYPO3's own image rendering (`f:image`, `f:media`, the `IMAGE` cObj) always writes both attributes, so this concerns hand-written markup only.
-- A picture with no other rendition recorded in `sys_file_processedfile` has nothing to build a preview from and keeps the grey placeholder. Nothing is ever stored for it, so it is marked again on every response and costs one preview request per page view for as long as that stays true. This is a steady state, not a failure.
+- A rendition whose `sys_file_processedfile` row records no dimensions, and whose original has no sibling rendition that does, has nothing to build a preview from and keeps the grey placeholder. A row whose `identifier` is still empty behaves the same way. Nothing is ever stored in either case, so the image is marked again on every response and costs one preview request per page view for as long as that stays true. This is a steady state, not a failure.
 
 > [!WARNING]
 > This feature is experimental. The JSON contract of the materialize endpoint and the `data-file-sync` attribute name may change without a major release.
+
+### After a Database Sync
 
 After a database sync from production, `tx_typo3_file_sync_identifier` is empty again while the provisional files still sit on disk. They then count as real and are never replaced. This is the existing behaviour for placeholders, and the remedy belongs in the sync routine:
 
