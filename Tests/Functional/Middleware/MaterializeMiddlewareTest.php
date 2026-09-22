@@ -119,6 +119,120 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     /**
      * @return array<string, list<string>>
      */
+    public static function safelistedContentTypeProvider(): array
+    {
+        return [
+            'none' => [''],
+            'text/plain' => ['text/plain'],
+            'form urlencoded' => ['application/x-www-form-urlencoded'],
+            'multipart' => ['multipart/form-data; boundary=x'],
+        ];
+    }
+
+    /**
+     * Every media type here is CORS-safelisted, so a cross-origin fetch()
+     * carrying one is delivered without a preflight and processed in full.
+     * The attacker cannot read the answer and does not need to: the outbound
+     * fetches are the point, and the tokens sit in the site's public HTML.
+     */
+    #[Test]
+    #[DataProvider('safelistedContentTypeProvider')]
+    public function rejectsAPostThatDoesNotDeclareJson(string $contentType): void
+    {
+        $this->enableFeature();
+        $headers = '' === $contentType ? [] : ['Content-Type' => $contentType];
+        $request = $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}', $headers);
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(415, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'unsupported media type']), (string) $response->getBody());
+    }
+
+    /**
+     * The module sends a bare "application/json", but a proxy or a hand-written
+     * caller may append a charset. The parameter is not part of the media type.
+     */
+    #[Test]
+    public function acceptsAJsonContentTypeCarryingParameters(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'Application/JSON; charset=utf-8'],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function foreignFetchSiteProvider(): array
+    {
+        return [
+            'cross site' => ['cross-site'],
+            'same site' => ['same-site'],
+            'no origin' => ['none'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('foreignFetchSiteProvider')]
+    public function rejectsARequestThatStatesItCameFromElsewhere(string $fetchSite): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'application/json', 'Sec-Fetch-Site' => $fetchSite],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(403, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'forbidden']), (string) $response->getBody());
+    }
+
+    #[Test]
+    public function acceptsARequestThatStatesItCameFromTheSameOrigin(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(
+            self::PATH,
+            'POST',
+            '{"tokens":["9999.deadbeef"]}',
+            ['Content-Type' => 'application/json', 'Sec-Fetch-Site' => 'same-origin'],
+        );
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * The header is absent on older browsers and on every non-browser caller,
+     * so it can only harden the media type check, never replace it.
+     */
+    #[Test]
+    public function acceptsARequestWithoutASecFetchSiteHeader(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', '{"tokens":["9999.deadbeef"]}');
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
     public static function malformedBodyProvider(): array
     {
         return [
@@ -388,13 +502,25 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
     }
 
-    private function buildRequest(string $path, string $method, string $body = ''): ServerRequest
+    /**
+     * The headers default to what the extension's own module sends, so that
+     * every case not about them exercises the happy path rather than a
+     * rejection.
+     *
+     * @param array<string, string> $headers
+     */
+    private function buildRequest(string $path, string $method, string $body = '', array $headers = ['Content-Type' => 'application/json']): ServerRequest
     {
         $stream = new Stream('php://temp', 'r+');
         $stream->write($body);
 
-        return (new ServerRequest('https://example.com'.$path, $method, $stream))
+        $request = (new ServerRequest('https://example.com'.$path, $method, $stream))
             ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
+        }
+
+        return $request;
     }
 
     /**

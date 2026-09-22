@@ -23,13 +23,16 @@ use function array_filter;
 use function array_map;
 use function array_values;
 use function count;
+use function explode;
 use function is_array;
 use function is_scalar;
 use function is_string;
 use function json_decode;
 use function json_encode;
 use function rtrim;
+use function strtolower;
 use function strval;
+use function trim;
 
 /**
  * MaterializeMiddleware.
@@ -84,6 +87,14 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
             return $this->json(['error' => 'method not allowed'], 405);
         }
 
+        if (!self::declaresJson($request)) {
+            return $this->json(['error' => 'unsupported media type'], 415);
+        }
+
+        if (self::isCrossSite($request)) {
+            return $this->json(['error' => 'forbidden'], 403);
+        }
+
         $payload = json_decode((string) $request->getBody(), true);
         $tokens = self::readTokens($payload);
         if (null === $tokens) {
@@ -102,6 +113,42 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
         }
 
         return $this->json($this->materializationService->materialize($tokens));
+    }
+
+    /**
+     * Without this, any page on any host can drive this endpoint from its
+     * own visitors. text/plain, multipart/form-data and
+     * application/x-www-form-urlencoded are CORS-safelisted, so a
+     * cross-origin fetch() carrying one of them is delivered and processed
+     * in full; the attacker never sees the response and does not need to,
+     * because the side effects are the point and the tokens are public in
+     * the site's own HTML. application/json is not safelisted, so demanding
+     * it is what forces the preflight such a call cannot answer. The
+     * extension's own module already sends it, so nothing legitimate
+     * changes.
+     *
+     * The parameters are dropped before comparing, because
+     * "application/json; charset=utf-8" is the same media type.
+     */
+    private static function declaresJson(ServerRequestInterface $request): bool
+    {
+        $mediaType = strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'), 2)[0]));
+
+        return 'application/json' === $mediaType;
+    }
+
+    /**
+     * A second layer rather than a replacement for the one above. Every
+     * current browser sends Sec-Fetch-Site on a fetch(), and a same-origin
+     * POST is the only shape this endpoint has; but the header is absent on
+     * older browsers and on every non-browser caller, so an absent one
+     * cannot be read as a refusal without breaking them.
+     */
+    private static function isCrossSite(ServerRequestInterface $request): bool
+    {
+        $site = $request->getHeaderLine('Sec-Fetch-Site');
+
+        return '' !== $site && 'same-origin' !== $site;
     }
 
     /**
