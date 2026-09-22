@@ -17,11 +17,9 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader, PreviewStore};
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, PreviewService};
+use KonradMichalik\Typo3FileSync\Tests\Functional\RemoteInstanceHarness;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Log\LoggerInterface;
-use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
-use TYPO3\CMS\Core\Http\{NormalizedParams, ServerRequest};
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function array_filter;
@@ -30,7 +28,6 @@ use function base64_decode;
 use function base64_encode;
 use function explode;
 use function file_get_contents;
-use function is_resource;
 use function pack;
 use function sprintf;
 use function strlen;
@@ -56,6 +53,8 @@ use function time;
 #[CoversClass(PreviewSourceReader::class)]
 final class PreviewServiceTest extends FunctionalTestCase
 {
+    use RemoteInstanceHarness;
+
     private const REQUESTED_IDENTIFIER = '/_processed_/csm_provisional.jpg';
     private const SOURCE_PATH = '/fileadmin/_processed_/csm_provisional_small.jpg';
     private const STORAGE = 9;
@@ -79,50 +78,16 @@ final class PreviewServiceTest extends FunctionalTestCase
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
 
-    /** @var resource|null */
-    private static mixed $serverProcess = null;
-    private static string $baseUrl = '';
-
-    private string $basePath;
-
-    /** @var array<string, mixed> */
-    private array $serverBackup = [];
-
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
 
-        $router = __DIR__.'/Fixtures/Server/preview-router.php';
-        $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-
-        for ($attempt = 0; $attempt < 3; ++$attempt) {
-            $port = self::findFreePort();
-            $process = proc_open([\PHP_BINARY, '-S', '127.0.0.1:'.$port, $router], $descriptors, $pipes);
-
-            if (!is_resource($process)) {
-                continue;
-            }
-
-            self::$serverProcess = $process;
-            self::$baseUrl = 'http://127.0.0.1:'.$port;
-
-            if (self::waitForServer($port)) {
-                return;
-            }
-
-            self::stopServer();
+        if (!self::startServer(__DIR__.'/Fixtures/Server/preview-router.php')) {
+            // Failed rather than skipped: this class is the only coverage the
+            // preview stage has against a real remote, and a skip would let a
+            // run go green having exercised none of it.
+            self::fail('The PHP built-in server did not become reachable.');
         }
-
-        // Failed rather than skipped: this class is the only coverage the
-        // preview stage has against a real remote, and a skip would let a
-        // run go green having exercised none of it.
-        self::fail('The PHP built-in server did not become reachable.');
-    }
-
-    public static function tearDownAfterClass(): void
-    {
-        self::stopServer();
-        parent::tearDownAfterClass();
     }
 
     protected function setUp(): void
@@ -135,22 +100,12 @@ final class PreviewServiceTest extends FunctionalTestCase
         $this->importCSVDataSet(__DIR__.'/Fixtures/materialization.csv');
         $this->importCSVDataSet(__DIR__.'/Fixtures/preview.csv');
 
-        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+        $this->enterFrontendRequest();
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
-        $globalRequest = (new ServerRequest('https://example.com/'))
-            ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
-        $GLOBALS['TYPO3_REQUEST'] = $globalRequest
-            ->withAttribute('normalizedParams', NormalizedParams::createFromRequest($globalRequest));
 
-        $this->serverBackup = $_SERVER;
-        self::useSitePath('/');
-
-        // The local driver takes its storage offline when the base path is
-        // missing, and an offline storage hands out no driver to prefetch
-        // with. Nothing below this line reads a local file.
-        $this->basePath = Environment::getPublicPath().'/fileadmin/';
-        GeneralUtility::mkdir_deep($this->basePath.'user_upload');
-        GeneralUtility::mkdir_deep($this->basePath.'_processed_');
+        // Nothing below this line reads a local file; the storage needs its
+        // base path only in order to stay online.
+        $this->scaffoldFileadmin();
 
         self::resetHitLog();
     }
@@ -162,10 +117,8 @@ final class PreviewServiceTest extends FunctionalTestCase
             $store->remove(self::STORAGE, $identifier);
             $store->remove(self::STORAGE, 'failed:'.$identifier);
         }
-        unset($GLOBALS['TYPO3_REQUEST']);
-        $_SERVER = $this->serverBackup;
-        GeneralUtility::flushInternalRuntimeCaches();
-        GeneralUtility::rmdir($this->basePath, true);
+        $this->leaveFrontendRequest();
+        $this->removeFileadmin();
         putenv('TYPO3_FILE_SYNC_REMOTE_URL');
         self::resetHitLog();
         parent::tearDown();
@@ -577,56 +530,5 @@ final class PreviewServiceTest extends FunctionalTestCase
         return false === $contents
             ? []
             : array_values(array_filter(explode(\PHP_EOL, $contents), static fn (string $line): bool => '' !== $line));
-    }
-
-    /**
-     * TYPO3 derives the site path from the entry script and the request, both
-     * of which are meaningless under PHPUnit. Pointing them at an index.php
-     * below $sitePath is what a real installation at that path looks like.
-     */
-    private static function useSitePath(string $sitePath): void
-    {
-        $_SERVER['HTTP_HOST'] = 'example.com';
-        $_SERVER['SCRIPT_NAME'] = $sitePath.'index.php';
-        $_SERVER['REQUEST_URI'] = $sitePath;
-        GeneralUtility::flushInternalRuntimeCaches();
-    }
-
-    private static function findFreePort(): int
-    {
-        $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
-        if (false === $socket) {
-            self::markTestSkipped(sprintf('Could not allocate a port: %s (%d)', $errstr, $errno));
-        }
-
-        $name = (string) stream_socket_get_name($socket, false);
-        fclose($socket);
-
-        return (int) substr($name, strrpos($name, ':') + 1);
-    }
-
-    private static function waitForServer(int $port): bool
-    {
-        for ($attempt = 0; $attempt < 100; ++$attempt) {
-            $connection = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
-            if (is_resource($connection)) {
-                fclose($connection);
-
-                return true;
-            }
-            usleep(50_000);
-        }
-
-        return false;
-    }
-
-    private static function stopServer(): void
-    {
-        if (is_resource(self::$serverProcess)) {
-            proc_terminate(self::$serverProcess);
-            proc_close(self::$serverProcess);
-        }
-
-        self::$serverProcess = null;
     }
 }

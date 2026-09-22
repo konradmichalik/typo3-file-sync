@@ -17,25 +17,23 @@ use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
+use KonradMichalik\Typo3FileSync\Tests\Functional\RemoteInstanceHarness;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\AbstractLogger;
 use Stringable;
-use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
+use TYPO3\CMS\Core\Core\{SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Http\{NormalizedParams, Response, ServerRequest, Stream};
+use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Resource\{ProcessedFileRepository, ResourceFactory};
 use TYPO3\CMS\Core\Resource\Processing\TaskTypeRegistry;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function array_filter;
 use function array_values;
 use function count;
 use function file_get_contents;
-use function is_resource;
 use function preg_match;
-use function sprintf;
 use function str_contains;
 
 /**
@@ -57,49 +55,17 @@ use function str_contains;
 #[CoversClass(MaterializationService::class)]
 final class MaterializationServiceTest extends FunctionalTestCase
 {
+    use RemoteInstanceHarness;
+
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
-
-    /** @var resource|null */
-    private static mixed $serverProcess = null;
-    private static string $baseUrl = '';
-
-    private string $basePath;
-
-    /** @var array<string, mixed> */
-    private array $serverBackup = [];
 
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
 
-        $router = __DIR__.'/Fixtures/Server/router.php';
-        $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-
-        for ($attempt = 0; $attempt < 3; ++$attempt) {
-            $port = self::findFreePort();
-            $process = proc_open([\PHP_BINARY, '-S', '127.0.0.1:'.$port, $router], $descriptors, $pipes);
-
-            if (!is_resource($process)) {
-                continue;
-            }
-
-            self::$serverProcess = $process;
-            self::$baseUrl = 'http://127.0.0.1:'.$port;
-
-            if (self::waitForServer($port)) {
-                return;
-            }
-
-            self::stopServer();
+        if (!self::startServer(__DIR__.'/Fixtures/Server/router.php')) {
+            self::markTestSkipped('The PHP built-in server did not become reachable.');
         }
-
-        self::markTestSkipped('The PHP built-in server did not become reachable.');
-    }
-
-    public static function tearDownAfterClass(): void
-    {
-        self::stopServer();
-        parent::tearDownAfterClass();
     }
 
     protected function setUp(): void
@@ -111,43 +77,23 @@ final class MaterializationServiceTest extends FunctionalTestCase
         parent::setUp();
         $this->importCSVDataSet(__DIR__.'/Fixtures/materialization.csv');
 
-        // The endpoint this service backs is reached by a frontend request
-        // on a storage with deferred loading on, which is precisely the
-        // situation in which the driver refuses to fetch. Without both of
-        // these the service would be exercised in a mode it never runs in.
-        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
-        $globalRequest = (new ServerRequest('https://example.com/'))
-            ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
-        // TYPO3 v14 resolves an extension asset URL through the system
-        // resource publisher, which falls back to $GLOBALS['TYPO3_REQUEST']
-        // and reads normalizedParams off it. Core sets that attribute early
-        // in every real frontend request, so a global without it models an
-        // installation that cannot exist.
-        $GLOBALS['TYPO3_REQUEST'] = $globalRequest
-            ->withAttribute('normalizedParams', NormalizedParams::createFromRequest($globalRequest));
-
         // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
-        // TYPO3 read the site path as "vendor/bin/". Pinning it is what lets
-        // a test assert the URL the browser is handed, and lets another move
-        // the whole site into a subdirectory.
-        $this->serverBackup = $_SERVER;
-        self::useSitePath('/');
+        // TYPO3 read the site path as "vendor/bin/". enterFrontendRequest()
+        // pins it, which is what lets a test assert the URL the browser is
+        // handed, and lets another move the whole site into a subdirectory.
+        $this->enterFrontendRequest();
 
-        $this->basePath = Environment::getPublicPath().'/fileadmin/';
-        GeneralUtility::mkdir_deep($this->basePath.'user_upload');
-        GeneralUtility::mkdir_deep($this->basePath.'_processed_');
-        file_put_contents($this->basePath.'user_upload/provisional.jpg', 'placeholder-body');
-        file_put_contents($this->basePath.'user_upload/broken.txt', 'placeholder-body');
-        file_put_contents($this->basePath.'user_upload/fallback.jpg', 'placeholder-body');
-        file_put_contents($this->basePath.'_processed_/csm_provisional.jpg', 'placeholder-derivative');
+        $basePath = $this->scaffoldFileadmin();
+        file_put_contents($basePath.'user_upload/provisional.jpg', 'placeholder-body');
+        file_put_contents($basePath.'user_upload/broken.txt', 'placeholder-body');
+        file_put_contents($basePath.'user_upload/fallback.jpg', 'placeholder-body');
+        file_put_contents($basePath.'_processed_/csm_provisional.jpg', 'placeholder-derivative');
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['TYPO3_REQUEST']);
-        $_SERVER = $this->serverBackup;
-        GeneralUtility::flushInternalRuntimeCaches();
-        GeneralUtility::rmdir($this->basePath, true);
+        $this->leaveFrontendRequest();
+        $this->removeFileadmin();
         putenv('TYPO3_FILE_SYNC_REMOTE_URL');
         parent::tearDown();
     }
@@ -695,56 +641,5 @@ final class MaterializationServiceTest extends FunctionalTestCase
             explode(\PHP_EOL, $contents),
             static fn (string $line): bool => $filename === $line,
         ));
-    }
-
-    /**
-     * TYPO3 derives the site path from the entry script and the request, both
-     * of which are meaningless under PHPUnit. Pointing them at an index.php
-     * below $sitePath is what a real installation at that path looks like.
-     */
-    private static function useSitePath(string $sitePath): void
-    {
-        $_SERVER['HTTP_HOST'] = 'example.com';
-        $_SERVER['SCRIPT_NAME'] = $sitePath.'index.php';
-        $_SERVER['REQUEST_URI'] = $sitePath;
-        GeneralUtility::flushInternalRuntimeCaches();
-    }
-
-    private static function findFreePort(): int
-    {
-        $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
-        if (false === $socket) {
-            self::markTestSkipped(sprintf('Could not allocate a port: %s (%d)', $errstr, $errno));
-        }
-
-        $name = (string) stream_socket_get_name($socket, false);
-        fclose($socket);
-
-        return (int) substr($name, strrpos($name, ':') + 1);
-    }
-
-    private static function waitForServer(int $port): bool
-    {
-        for ($attempt = 0; $attempt < 100; ++$attempt) {
-            $connection = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
-            if (is_resource($connection)) {
-                fclose($connection);
-
-                return true;
-            }
-            usleep(50_000);
-        }
-
-        return false;
-    }
-
-    private static function stopServer(): void
-    {
-        if (is_resource(self::$serverProcess)) {
-            proc_terminate(self::$serverProcess);
-            proc_close(self::$serverProcess);
-        }
-
-        self::$serverProcess = null;
     }
 }
