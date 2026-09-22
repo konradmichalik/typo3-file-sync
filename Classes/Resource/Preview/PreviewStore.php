@@ -47,11 +47,6 @@ final readonly class PreviewStore
      */
     private const HEADER_BYTES = 12;
 
-    public function has(int $storageUid, string $fileIdentifier): bool
-    {
-        return is_file($this->path($storageUid, $fileIdentifier));
-    }
-
     /**
      * The stored preview, or null when what is there is not a complete one.
      *

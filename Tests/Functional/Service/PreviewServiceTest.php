@@ -206,7 +206,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         // Keyed by the rendition the token names, not by the original it was
         // built from, so the next rendition of the same picture gets a preview
         // cropped to its own shape rather than this one's.
-        self::assertTrue((new PreviewStore())->has(self::STORAGE, self::REQUESTED_IDENTIFIER));
+        self::assertNotNull((new PreviewStore())->read(self::STORAGE, self::REQUESTED_IDENTIFIER));
     }
 
     /**
@@ -261,8 +261,8 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame([self::SOURCE_PATH], self::hits(), 'The second request is a store hit.');
 
         $store = new PreviewStore();
-        self::assertTrue($store->has(self::STORAGE, self::REQUESTED_IDENTIFIER));
-        self::assertTrue($store->has(self::STORAGE, '/_processed_/csm_provisional_square.jpg'));
+        self::assertNotNull($store->read(self::STORAGE, self::REQUESTED_IDENTIFIER));
+        self::assertNotNull($store->read(self::STORAGE, '/_processed_/csm_provisional_square.jpg'));
     }
 
     /**
@@ -279,7 +279,9 @@ final class PreviewServiceTest extends FunctionalTestCase
         $result = $this->get(PreviewService::class)->preview([$token]);
 
         self::assertSame(['error' => 'unavailable'], $result[$token]);
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, ''));
+        // Read raw rather than as a preview, so that anything at all stored
+        // under the empty string shows up here.
+        self::assertNull((new PreviewStore())->readMarker(self::STORAGE, ''));
         self::assertSame([], self::hits());
     }
 
@@ -334,7 +336,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame([], self::hits(), 'A source rendition was downloaded to feed an encoder that does not exist.');
         // Damping would be the wrong answer here as well: it bounds how
         // often that download happens, never that it happens at all.
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
+        self::assertNull((new PreviewStore())->readMarker(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
     }
 
     #[Test]
@@ -394,7 +396,7 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame([self::SOURCE_PATH], self::hits());
         // The rendition works again, so its marker is gone rather than left to
         // be re-read for the rest of the store's life.
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
+        self::assertNull((new PreviewStore())->readMarker(self::STORAGE, 'failed:'.self::REQUESTED_IDENTIFIER));
     }
 
     /**
@@ -412,7 +414,7 @@ final class PreviewServiceTest extends FunctionalTestCase
 
         self::assertSame(['error' => 'unavailable'], $result[$token]);
         self::assertSame(['/fileadmin/_processed_/csm_fallback.jpg'], self::hits());
-        self::assertFalse((new PreviewStore())->has(self::STORAGE, '/_processed_/csm_fallback_large.jpg'));
+        self::assertNull((new PreviewStore())->readMarker(self::STORAGE, '/_processed_/csm_fallback_large.jpg'));
     }
 
     #[Test]

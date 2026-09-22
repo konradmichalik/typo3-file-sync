@@ -51,7 +51,6 @@ final class PreviewStoreTest extends TestCase
         $subject = new PreviewStore();
 
         self::assertNull($subject->read(1, '/user_upload/unknown.jpg'));
-        self::assertFalse($subject->has(1, '/user_upload/unknown.jpg'));
     }
 
     #[Test]
@@ -60,7 +59,6 @@ final class PreviewStoreTest extends TestCase
         $subject = new PreviewStore();
         $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
 
-        self::assertTrue($subject->has(1, '/user_upload/hero.jpg'));
         self::assertSame(self::webp('webp-bytes'), $subject->read(1, '/user_upload/hero.jpg'));
     }
 
@@ -77,7 +75,9 @@ final class PreviewStoreTest extends TestCase
         $subject->write(1, '/user_upload/hero.jpg', self::webp('a-payload-of-some-length'));
         self::truncateStoredFileBy(4);
 
-        self::assertTrue($subject->has(1, '/user_upload/hero.jpg'));
+        // The file is still there, which is what a short write leaves
+        // behind: unreadable as a preview rather than absent.
+        self::assertCount(1, self::storedFiles());
         self::assertNull($subject->read(1, '/user_upload/hero.jpg'));
     }
 
@@ -122,7 +122,7 @@ final class PreviewStoreTest extends TestCase
         $subject = new PreviewStore();
         $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
 
-        self::assertCount(1, glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: []);
+        self::assertCount(1, self::storedFiles());
     }
 
     #[Test]
@@ -132,7 +132,7 @@ final class PreviewStoreTest extends TestCase
         $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
         $subject->remove(1, '/user_upload/hero.jpg');
 
-        self::assertFalse($subject->has(1, '/user_upload/hero.jpg'));
+        self::assertSame([], self::storedFiles());
     }
 
     #[Test]
@@ -141,7 +141,7 @@ final class PreviewStoreTest extends TestCase
         $subject = new PreviewStore();
         $subject->remove(1, '/user_upload/unknown.jpg');
 
-        self::assertFalse($subject->has(1, '/user_upload/unknown.jpg'));
+        self::assertNull($subject->read(1, '/user_upload/unknown.jpg'));
     }
 
     /**
@@ -185,9 +185,17 @@ final class PreviewStoreTest extends TestCase
         return 'RIFF'.pack('V', 4 + strlen($payload)).'WEBP'.$payload;
     }
 
+    /**
+     * @return list<string>
+     */
+    private static function storedFiles(): array
+    {
+        return glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: [];
+    }
+
     private static function replaceStoredFileWithADirectory(): void
     {
-        $path = (glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: [])[0];
+        $path = self::storedFiles()[0];
         unlink($path);
         mkdir($path);
     }
@@ -198,7 +206,7 @@ final class PreviewStoreTest extends TestCase
      */
     private static function truncateStoredFileBy(int $bytes): void
     {
-        $path = (glob(Environment::getVarPath().'/file-sync/previews/*/*.webp') ?: [])[0];
+        $path = self::storedFiles()[0];
         $contents = (string) file_get_contents($path);
         file_put_contents($path, substr($contents, 0, strlen($contents) - $bytes));
     }
