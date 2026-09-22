@@ -86,11 +86,19 @@ final readonly class PreviewStore
         }
     }
 
+    /**
+     * A removal that did not happen has to say so, exactly as a write does.
+     * The only key this store ever drops is a damping marker, and a marker
+     * that stays behind keeps a rendition that works again unasked for the
+     * rest of the window, with nothing anywhere saying why.
+     *
+     * @throws RuntimeException when the key could not be dropped
+     */
     public function remove(int $storageUid, string $fileIdentifier): void
     {
         $path = $this->path($storageUid, $fileIdentifier);
-        if (is_file($path)) {
-            unlink($path);
+        if (is_file($path) && !unlink($path)) {
+            throw new RuntimeException('Preview could not be removed from "'.$path.'".', 1790035201);
         }
     }
 

@@ -20,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use TYPO3\CMS\Core\Core\Environment;
 
+use function dirname;
 use function pack;
 use function restore_error_handler;
 use function set_error_handler;
@@ -172,6 +173,46 @@ final class PreviewStoreTest extends TestCase
             $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
         } finally {
             restore_error_handler();
+        }
+    }
+
+    /**
+     * A marker that cannot be deleted leaves a rendition that works again
+     * damped for the rest of the window, and the caller answers 'unavailable'
+     * for a picture it could have produced. Silence there is invisible, so
+     * the store reports it the same way a failed write is reported.
+     *
+     * Modelled by taking write permission off the directory, which is the one
+     * way a regular file survives an unlink(). That is exactly why the test
+     * has to give up when the mode does not apply to the running user.
+     */
+    #[Test]
+    public function aRemovalThatCannotHappenThrows(): void
+    {
+        $subject = new PreviewStore();
+        $subject->write(1, '/user_upload/hero.jpg', self::webp('webp-bytes'));
+        $directory = dirname(self::storedFiles()[0]);
+        chmod($directory, 0o555);
+
+        try {
+            if (is_writable($directory)) {
+                self::markTestSkipped('The store directory stayed writable, so a failing unlink() cannot be modelled here.');
+            }
+
+            $this->expectException(RuntimeException::class);
+
+            // unlink() raises a PHP warning of its own on the very failure
+            // under test. Silenced rather than asserted, because it is not
+            // this store's to emit.
+            set_error_handler(static fn (): bool => true);
+
+            try {
+                $subject->remove(1, '/user_upload/hero.jpg');
+            } finally {
+                restore_error_handler();
+            }
+        } finally {
+            chmod($directory, 0o775);
         }
     }
 
