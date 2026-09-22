@@ -22,6 +22,7 @@ use function is_string;
 use function ltrim;
 use function parse_url;
 use function rawurldecode;
+use function str_starts_with;
 use function strlen;
 use function strpos;
 use function substr;
@@ -71,9 +72,21 @@ final readonly class PublicUrlResolver
     /**
      * A src is whatever the renderer produced: site-relative with or without
      * a leading slash depending on absRefPrefix, or absolute when the site
-     * points its assets at another host. Anchoring on the storage prefix as
-     * a path segment covers all three, and a wrong guess costs nothing
-     * because the lookup is an exact match on the processed file identifier.
+     * points its assets at another host. All three put the storage prefix at
+     * the start of the path once the leading slash is normalised, so that is
+     * where it is looked for first, longest prefix first.
+     *
+     * The unanchored search behind it is for the one shape the first pass
+     * cannot reach: an absRefPrefix that carries a path of its own, so the
+     * rendered src is /assets/fileadmin/... where the storage's own prefix is
+     * /fileadmin/. It has to stay second, because a storage rooted at
+     * /media/ that happens to contain a folder called fileadmin produces
+     * /media/fileadmin/photo.jpg, and an unanchored match on /fileadmin/
+     * turns that into /photo.jpg. That used to cost nothing, because the
+     * consequence was an attribute on a tag and the lookup behind it was an
+     * exact match that would simply miss. It is now also which stored preview
+     * is inlined into src, and that one does not miss: it shows the visitor
+     * another picture.
      *
      * @param list<string> $prefixes
      */
@@ -85,6 +98,12 @@ final readonly class PublicUrlResolver
         }
 
         $path = '/'.ltrim(rawurldecode($path), '/');
+        foreach ($prefixes as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                return '/'.substr($path, strlen($prefix));
+            }
+        }
+
         foreach ($prefixes as $prefix) {
             $position = strpos($path, $prefix);
             if (false !== $position) {

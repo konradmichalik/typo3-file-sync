@@ -38,8 +38,9 @@ final class PublicUrlResolverTest extends FunctionalTestCase
     {
         parent::setUp();
 
-        // The nested storage cannot be initialised before its root exists.
+        // A storage cannot be initialised before its root exists.
         GeneralUtility::mkdir_deep($this->instancePath.'/fileadmin/nested/');
+        GeneralUtility::mkdir_deep($this->instancePath.'/media/');
         $this->importCSVDataSet(__DIR__.'/Fixtures/public_url_storages.csv');
         $this->subject = $this->get(PublicUrlResolver::class);
     }
@@ -80,6 +81,34 @@ final class PublicUrlResolverTest extends FunctionalTestCase
         $result = $this->subject->identifiersByUrl(['/fileadmin/nested/_processed_/csm_bbb.jpg'], [9, 10]);
 
         self::assertSame(['/fileadmin/nested/_processed_/csm_bbb.jpg' => '/_processed_/csm_bbb.jpg'], $result);
+    }
+
+    /**
+     * Storage 11 is rooted at /media/ and happens to hold a folder called
+     * fileadmin, so an unanchored search for storage 9's own /fileadmin/
+     * prefix finds it six characters in and resolves the file to /photo.jpg.
+     * That identifier belongs to neither storage. It used to cost nothing
+     * because the lookup behind it simply missed; it is now also which stored
+     * preview is inlined into src, where a wrong hit shows another picture.
+     */
+    #[Test]
+    public function doesNotResolveAUrlAgainstAPrefixThatMerelyOccursInsideIt(): void
+    {
+        $result = $this->subject->identifiersByUrl(['/media/fileadmin/photo.jpg'], [9, 11]);
+
+        self::assertSame(['/media/fileadmin/photo.jpg' => '/fileadmin/photo.jpg'], $result);
+    }
+
+    /**
+     * The unanchored search is still what covers an absRefPrefix carrying a
+     * path of its own, where the rendered src is not at the site root.
+     */
+    #[Test]
+    public function fallsBackToAnUnanchoredSearchWhenNothingMatchesFromTheStart(): void
+    {
+        $result = $this->subject->identifiersByUrl(['/assets/fileadmin/_processed_/a/b/csm_aaa.jpg'], [9]);
+
+        self::assertSame(['/assets/fileadmin/_processed_/a/b/csm_aaa.jpg' => '/_processed_/a/b/csm_aaa.jpg'], $result);
     }
 
     #[Test]
