@@ -438,7 +438,7 @@ final readonly class FileRepository
                 $expressionBuilder->in('original', $queryBuilder->createNamedParameter($originalUids, ArrayParameterType::INTEGER)),
                 $expressionBuilder->gt('width', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
                 $expressionBuilder->gt('height', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
-                $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('')),
+                $expressionBuilder->neq('identifier', $queryBuilder->createNamedParameter('', ParameterType::STRING)),
             )
             // No LIMIT here: the WHERE above already scopes this to the
             // renditions of the originals asked for, a set bounded only by the
