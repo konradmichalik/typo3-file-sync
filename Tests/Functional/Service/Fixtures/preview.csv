@@ -1,0 +1,6 @@
+"sys_file"
+,"uid","pid","storage","identifier","identifier_hash","folder_hash","name","extension","mime_type","type","size","missing","tx_typo3_file_sync_identifier","tx_typo3_file_sync_tstamp"
+,4,0,9,"/user_upload/norendition.jpg","957702b93c87f7a0566a3d95bf02d749df55f5a5","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","norendition.jpg","jpg","image/jpeg",2,16,0,"placeholder_image",0
+"sys_file_processedfile"
+,"uid","storage","original","identifier","name","configuration","configurationsha1","task_type","width","height"
+,40,9,4,"","","a:2:{s:5:""width"";i:300;s:6:""height"";i:200;}","5bcf4b3ce884cacbb71271b88389cd42775c9c55","Image.CropScaleMask",300,200

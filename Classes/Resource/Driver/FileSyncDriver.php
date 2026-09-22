@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Resource\Driver;
 
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection;
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, RemoteResourceCollection, RemoteResourceInterface};
 use TYPO3\CMS\Core\Resource\Driver\{DriverInterface, LocalDriver};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -134,6 +134,14 @@ final class FileSyncDriver extends LocalDriver
     public function prefetch(array $filePaths): void
     {
         $this->remoteResourceCollection->prefetch($filePaths);
+    }
+
+    /**
+     * @return list<BatchRemoteResourceInterface&RemoteResourceInterface>
+     */
+    public function getBatchHandlers(): array
+    {
+        return $this->remoteResourceCollection->getBatchHandlers();
     }
 
     /**

@@ -254,6 +254,46 @@ final readonly class FileRepository
     }
 
     /**
+     * Where a set of files lives, straight from the row. A preview is keyed
+     * by storage and identifier, and reading those off a File object instead
+     * would mean building one per token: every accessor on it can reach the
+     * driver, and reaching the driver is what fetches.
+     *
+     * @param list<int> $fileUids
+     *
+     * @return array<int, array{storage: int, identifier: string}>
+     */
+    public function findLocationsByUids(array $fileUids): array
+    {
+        if ([] === $fileUids) {
+            return [];
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $rows = $queryBuilder
+            ->select('uid', 'storage', 'identifier')
+            ->from('sys_file')
+            ->where(
+                $queryBuilder->expr()->in(
+                    'uid',
+                    $queryBuilder->createNamedParameter($fileUids, ArrayParameterType::INTEGER),
+                ),
+            )
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['uid']] = [
+                'storage' => (int) $row['storage'],
+                'identifier' => (string) $row['identifier'],
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * @param list<int> $processedFileUids
      *
      * @return array<int, array<string, mixed>>
@@ -266,7 +306,10 @@ final readonly class FileRepository
 
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_processedfile');
         $rows = $queryBuilder
-            ->select('uid', 'original', 'task_type', 'configuration')
+            // width and height are the preview stage's: it crops to the shape
+            // of the rendition the browser is waiting for, not to the shape of
+            // the far smaller one it downloads.
+            ->select('uid', 'original', 'task_type', 'configuration', 'width', 'height')
             ->from('sys_file_processedfile')
             ->where(
                 $queryBuilder->expr()->in(

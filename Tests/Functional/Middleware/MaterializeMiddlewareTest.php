@@ -62,6 +62,7 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
         parent::setUp();
 
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = false;
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = false;
 
         // Under PHPUnit the entry script is vendor/bin/phpunit, which makes
         // TYPO3 read the site path as "vendor/bin/". Pinning it is what makes
@@ -291,6 +292,61 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     }
 
     /**
+     * The preview stage has a toggle of its own. An installation that runs
+     * deferred loading without previews must answer the stage it does not
+     * serve rather than fall back to fetching whole originals, which is the
+     * expensive half this stage exists to postpone.
+     */
+    #[Test]
+    public function previewStageReturnsNotFoundWhileThePreviewToggleIsOff(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => ['9999.deadbeef']]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(404, $response->getStatusCode());
+        self::assertSame(json_encode(['error' => 'disabled']), (string) $response->getBody());
+    }
+
+    /**
+     * The token is unresolvable like every other one in this class, so the
+     * map carries an error rather than a data URI. What is pinned here is
+     * that the stage is answered per token at all: paired with the 404 above
+     * and the fall-through below, that is the whole routing decision. Which
+     * bytes a resolvable token produces is PreviewServiceTest's subject.
+     */
+    #[Test]
+    public function previewStageIsAnsweredPerTokenWhileTheToggleIsOn(): void
+    {
+        $this->enableFeature();
+        $this->enablePreviewFeature();
+        $token = '9999.deadbeef';
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'preview', 'tokens' => [$token]]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(json_encode([$token => ['error' => 'invalid']]), (string) $response->getBody());
+    }
+
+    /**
+     * A browser running a cached copy of an older module, or a newer one
+     * asking for a stage this version does not know, must still be served
+     * the real file instead of the preview toggle's 404.
+     */
+    #[Test]
+    public function anUnknownStageValueFallsThroughToTheOriginalStage(): void
+    {
+        $this->enableFeature();
+        $request = $this->buildRequest(self::PATH, 'POST', (string) json_encode(['stage' => 'nonsense', 'tokens' => ['9999.deadbeef']]));
+
+        $response = $this->get(MaterializeMiddleware::class)->process($request, $this->stubHandler());
+
+        self::assertSame(200, $response->getStatusCode());
+    }
+
+    /**
      * TYPO3 derives the site path from the entry script and the request, both
      * of which are meaningless under PHPUnit. Pointing them at an index.php
      * below $sitePath is what a real installation at that path looks like.
@@ -306,6 +362,11 @@ final class MaterializeMiddlewareTest extends FunctionalTestCase
     private function enableFeature(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+    }
+
+    private function enablePreviewFeature(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
     }
 
     private function buildRequest(string $path, string $method, string $body = ''): ServerRequest

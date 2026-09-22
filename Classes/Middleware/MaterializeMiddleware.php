@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Middleware;
 
 use KonradMichalik\Typo3FileSync\Configuration;
-use KonradMichalik\Typo3FileSync\Service\{MaterializationService, MaterializeRateLimiter, SitePath};
+use KonradMichalik\Typo3FileSync\Service\{MaterializationService, MaterializeRateLimiter, PreviewService, SitePath};
 use Psr\Http\Message\{ResponseFactoryInterface, ResponseInterface, ServerRequestInterface, StreamFactoryInterface};
 use Psr\Http\Server\{MiddlewareInterface, RequestHandlerInterface};
 use TYPO3\CMS\Core\Configuration\Features;
@@ -25,6 +25,7 @@ use function array_values;
 use function count;
 use function is_array;
 use function is_scalar;
+use function is_string;
 use function json_decode;
 use function json_encode;
 use function rtrim;
@@ -47,6 +48,7 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
     public function __construct(
         private Features $features,
         private MaterializationService $materializationService,
+        private PreviewService $previewService,
         private MaterializeRateLimiter $rateLimiter,
         private ResponseFactoryInterface $responseFactory,
         private StreamFactoryInterface $streamFactory,
@@ -82,12 +84,36 @@ final readonly class MaterializeMiddleware implements MiddlewareInterface
             return $this->json(['error' => 'method not allowed'], 405);
         }
 
-        $tokens = self::readTokens(json_decode((string) $request->getBody(), true));
+        $payload = json_decode((string) $request->getBody(), true);
+        $tokens = self::readTokens($payload);
         if (null === $tokens) {
             return $this->json(['error' => 'bad request'], 400);
         }
 
+        // Routed last, behind every guard above: the preview stage is the
+        // cheaper half of this endpoint, not a way around its rate limit or
+        // its method check.
+        if ('preview' === self::readStage($payload)) {
+            if (!$this->features->isFeatureEnabled(Configuration::FEATURE_PREVIEW_IMAGES)) {
+                return $this->json(['error' => 'disabled'], 404);
+            }
+
+            return $this->json($this->previewService->preview($tokens));
+        }
+
         return $this->json($this->materializationService->materialize($tokens));
+    }
+
+    /**
+     * An unknown stage is the original one, so a browser still running the
+     * previous version of the module, or one that asks for a stage a later
+     * version adds, gets the real file rather than an error.
+     */
+    private static function readStage(mixed $payload): string
+    {
+        $stage = is_array($payload) ? ($payload['stage'] ?? null) : null;
+
+        return is_string($stage) ? $stage : 'original';
     }
 
     /**

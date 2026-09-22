@@ -44,6 +44,9 @@ services:
     KonradMichalik\Typo3FileSync\Service\MaterializationService:
         public: true
 
+    KonradMichalik\Typo3FileSync\Service\PreviewService:
+        public: true
+
     KonradMichalik\Typo3FileSync\Service\StorageService:
         public: true
 

@@ -1,0 +1,360 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * This file is part of the "typo3_file_sync" TYPO3 CMS extension.
+ *
+ * (c) 2025-2026 Konrad Michalik <hej@konradmichalik.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace KonradMichalik\Typo3FileSync\Service;
+
+use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
+use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewStore};
+use KonradMichalik\Typo3FileSync\Resource\StorageDriver;
+use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
+use Throwable;
+use TYPO3\CMS\Core\Resource\StorageRepository;
+
+use function array_key_exists;
+use function array_map;
+use function array_unique;
+use function array_values;
+use function base64_encode;
+use function count;
+use function fclose;
+use function is_resource;
+use function is_string;
+use function sprintf;
+use function stream_get_contents;
+
+/**
+ * PreviewService.
+ *
+ * The second stage of the materialize endpoint: instead of the real file it
+ * answers with a tiny blurred WebP inline as a data URI, so the grey
+ * placeholder on the page turns into a recognisable version of the picture
+ * while the real bytes are still on their way.
+ *
+ * Two things make that affordable on demand. It downloads the smallest
+ * rendition production already has, which is kilobytes where the original is
+ * megabytes, and it stores what it built, so a picture is paid for once per
+ * installation rather than once per visitor.
+ *
+ * Nothing here throws. A preview that cannot be produced leaves the visitor
+ * with the grey placeholder that is already on screen, and one unusable
+ * token must not cost the rest of the batch its previews.
+ *
+ * @phpstan-type PreviewLocation array{storage: int, identifier: string}
+ * @phpstan-type PreviewPlan array{original: PreviewLocation, rendition: array{identifier: string, storage: int, width: int, height: int}, width: int, height: int}
+ * @phpstan-type PreviewTarget array{storage: int, identifier: string, path: string}
+ * @phpstan-type PreviewResult array{preview: string}|array{error: string}
+ *
+ * @author Konrad Michalik <hej@konradmichalik.dev>
+ * @license GPL-2.0-or-later
+ */
+final class PreviewService implements LoggerAwareInterface
+{
+    use LoggerAwareTrait;
+
+    public function __construct(
+        private readonly DeferredTokenService $deferredTokenService,
+        private readonly FileRepository $fileRepository,
+        private readonly PreviewGenerator $previewGenerator,
+        private readonly PreviewStore $previewStore,
+        private readonly StorageRepository $storageRepository,
+    ) {}
+
+    /**
+     * @param list<string> $tokens
+     *
+     * @return array<string, PreviewResult>
+     */
+    public function preview(array $tokens): array
+    {
+        // The endpoint's own limit rather than a second copy of it: this
+        // service is reachable from the container like any other, and two
+        // definitions of "a page's worth of images" would drift.
+        if (count($tokens) > MaterializationService::MAX_TOKENS) {
+            return [];
+        }
+
+        $results = [];
+        $uidsByToken = [];
+        foreach ($tokens as $token) {
+            $uid = $this->deferredTokenService->resolve($token);
+            if (null === $uid) {
+                $results[$token] = ['error' => 'invalid'];
+                continue;
+            }
+            $uidsByToken[$token] = $uid;
+        }
+
+        [$plans, $answered] = $this->plan($uidsByToken);
+
+        return $results + $answered + $this->renderAll($plans);
+    }
+
+    /**
+     * Everything that can be decided without touching the network: which
+     * tokens name a rendition that exists, which originals already have a
+     * stored preview, and which of the rest have a rendition to build one
+     * from.
+     *
+     * @param array<string, int> $uidsByToken
+     *
+     * @return array{array<string, PreviewPlan>, array<string, PreviewResult>}
+     */
+    private function plan(array $uidsByToken): array
+    {
+        $processedRows = $this->fileRepository->findProcessedFilesByUids(array_values($uidsByToken));
+        $originals = $this->fileRepository->findLocationsByUids(array_values(array_unique(array_map(
+            static fn (array $row): int => (int) $row['original'],
+            $processedRows,
+        ))));
+
+        $plans = [];
+        $results = [];
+        foreach ($uidsByToken as $token => $uid) {
+            $row = $processedRows[$uid] ?? null;
+            $original = null === $row ? null : ($originals[(int) $row['original']] ?? null);
+            if (null === $row || null === $original) {
+                $results[$token] = ['error' => 'invalid'];
+                continue;
+            }
+
+            // Ahead of the rendition lookup, let alone any request: a stored
+            // preview is what makes every visitor after the first one free.
+            $stored = $this->stored($original);
+            if (null !== $stored) {
+                $results[$token] = self::dataUri($stored);
+                continue;
+            }
+
+            $rendition = $this->fileRepository->findSmallestRendition((int) $row['original']);
+            if (null === $rendition) {
+                $results[$token] = ['error' => 'unavailable'];
+                continue;
+            }
+
+            $plans[$token] = [
+                'original' => $original,
+                'rendition' => $rendition,
+                'width' => (int) $row['width'],
+                'height' => (int) $row['height'],
+            ];
+        }
+
+        return [$plans, $results];
+    }
+
+    /**
+     * @param PreviewLocation $original
+     */
+    private function stored(array $original): ?string
+    {
+        try {
+            return $this->previewStore->read($original['storage'], $original['identifier']);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Reading the stored preview of %s failed: %s', $original['identifier'], $exception->getMessage()),
+            );
+
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, PreviewPlan> $plans
+     *
+     * @return array<string, PreviewResult>
+     */
+    private function renderAll(array $plans): array
+    {
+        if ([] === $plans) {
+            return [];
+        }
+
+        $targets = $this->resolveTargets($plans);
+        $this->prefetch($targets);
+
+        $bytes = [];
+        $results = [];
+        foreach ($plans as $token => $plan) {
+            $target = $targets[$token] ?? null;
+            if (null === $target) {
+                $results[$token] = ['error' => 'unavailable'];
+                continue;
+            }
+
+            // Cached by path, not by token: srcset routinely puts several
+            // renditions of one picture on a page, and they all resolve to
+            // the same smallest rendition. The prefetch buffer hands a path
+            // out exactly once, so a second read would go over the wire.
+            if (!array_key_exists($target['path'], $bytes)) {
+                $bytes[$target['path']] = $this->fetch($target);
+            }
+
+            $results[$token] = $this->render($plan, $bytes[$target['path']]);
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param array<string, PreviewPlan> $plans
+     *
+     * @return array<string, PreviewTarget>
+     */
+    private function resolveTargets(array $plans): array
+    {
+        $targets = [];
+        foreach ($plans as $token => $plan) {
+            $rendition = $plan['rendition'];
+            // Through the driver, never through getPublicUrl() on the file:
+            // that dispatches GeneratePublicUrlForResourceEvent, so a project
+            // listener or a CDN base URL would yield a string the prefetch
+            // buffer was never filled under. The buffer would fill, nobody
+            // would read it, and the only trace would be a second request.
+            $path = $this->driver($rendition['storage'])?->getRemotePath($rendition['identifier']);
+            if (null === $path || '' === $path) {
+                continue;
+            }
+
+            $targets[$token] = [
+                'storage' => $rendition['storage'],
+                'identifier' => $rendition['identifier'],
+                'path' => $path,
+            ];
+        }
+
+        return $targets;
+    }
+
+    /**
+     * @param array<string, PreviewTarget> $targets
+     */
+    private function prefetch(array $targets): void
+    {
+        $pathsByStorage = [];
+        foreach ($targets as $target) {
+            $pathsByStorage[$target['storage']][] = $target['path'];
+        }
+
+        foreach ($pathsByStorage as $storageUid => $paths) {
+            try {
+                $this->driver($storageUid)?->prefetch(array_values(array_unique($paths)));
+            } catch (Throwable $exception) {
+                // A storage whose prefetch fails costs the batch its
+                // concurrency, never its previews: every target still runs,
+                // one serial fetch at a time.
+                $this->logger?->warning(
+                    sprintf('Preview prefetch for storage %d failed: %s', $storageUid, $exception->getMessage()),
+                );
+            }
+        }
+    }
+
+    /**
+     * Reads a rendition straight from the batch handlers rather than through
+     * FAL. Going through the storage would write the downloaded rendition
+     * into the processing folder, and going through the full handler chain
+     * would let a fallback handler answer with a generated placeholder,
+     * which is the grey box a preview exists to replace.
+     *
+     * @param PreviewTarget $target
+     */
+    private function fetch(array $target): ?string
+    {
+        $driver = $this->driver($target['storage']);
+        if (null === $driver) {
+            return null;
+        }
+
+        foreach ($driver->getBatchHandlers() as $handler) {
+            try {
+                $bytes = self::readStream($handler->getFile($target['identifier'], $target['path']));
+            } catch (Throwable $exception) {
+                $this->logger?->warning(
+                    sprintf('Fetching preview source %s failed: %s', $target['path'], $exception->getMessage()),
+                );
+                continue;
+            }
+
+            if (null !== $bytes) {
+                return $bytes;
+            }
+        }
+
+        return null;
+    }
+
+    private static function readStream(mixed $stream): ?string
+    {
+        if (!is_resource($stream)) {
+            return null;
+        }
+
+        $bytes = stream_get_contents($stream);
+        fclose($stream);
+
+        return is_string($bytes) && '' !== $bytes ? $bytes : null;
+    }
+
+    /**
+     * @param PreviewPlan $plan
+     *
+     * @return PreviewResult
+     */
+    private function render(array $plan, ?string $bytes): array
+    {
+        $webp = null === $bytes ? null : $this->previewGenerator->generate($bytes, $plan['width'], $plan['height']);
+        if (null === $webp) {
+            return ['error' => 'unavailable'];
+        }
+
+        try {
+            // Keyed by the original rather than by the rendition it was built
+            // from: one picture is paid for once, however many renditions of
+            // it a page carries.
+            $this->previewStore->write($plan['original']['storage'], $plan['original']['identifier'], $webp);
+        } catch (Throwable $exception) {
+            // An unwritable var/ costs the next visitor the same fetch. It
+            // must not cost this one the preview that is already built.
+            $this->logger?->warning(
+                sprintf('Storing the preview of %s failed: %s', $plan['original']['identifier'], $exception->getMessage()),
+            );
+        }
+
+        return self::dataUri($webp);
+    }
+
+    private function driver(int $storageUid): ?FileSyncDriver
+    {
+        try {
+            $storage = $this->storageRepository->findByUid($storageUid);
+            $driver = null === $storage ? null : StorageDriver::extract($storage);
+        } catch (Throwable $exception) {
+            $this->logger?->warning(
+                sprintf('Storage %d is unavailable: %s', $storageUid, $exception->getMessage()),
+            );
+
+            return null;
+        }
+
+        return $driver instanceof FileSyncDriver ? $driver : null;
+    }
+
+    /**
+     * @return array{preview: string}
+     */
+    private static function dataUri(string $webp): array
+    {
+        return ['preview' => 'data:image/webp;base64,'.base64_encode($webp)];
+    }
+}
