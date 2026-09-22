@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\AbstractLogger;
 use Stringable;
-use TYPO3\CMS\Core\Core\{SystemEnvironmentBuilder};
+use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\CMS\Core\Resource\{ProcessedFileRepository, ResourceFactory};
