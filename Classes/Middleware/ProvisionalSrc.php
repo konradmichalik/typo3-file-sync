@@ -110,11 +110,11 @@ final readonly class ProvisionalSrc
      * and caches fresh. Nothing here is per request, so a genuinely
      * materialized file keeps its long-lived cache entry.
      *
-     * The same coordinate shape withPreview() uses: the src value is replaced
-     * between the quotes the tag already carries, at the offsets the match
-     * reported against the original body. Those survive appended(), which
-     * only ever writes past the src span. It must never run on a tag
-     * withPreview() inlines a data URI into, because the two would then
+     * The same coordinate shape withPreviewData() uses: the src value is
+     * replaced between the quotes the tag already carries, at the offsets the
+     * match reported against the original body. Those survive appended(),
+     * which only ever writes past the src span. It must never run on a tag
+     * withPreviewData() inlines a data URI into, because the two would then
      * address one span through offsets taken against strings of different
      * lengths.
      *
@@ -154,7 +154,7 @@ final readonly class ProvisionalSrc
      * Appends in front of the closing ">" and keeps a self-closing tag
      * self-closing.
      *
-     * It must only ever change bytes after the src value: withPreview()
+     * It must only ever change bytes after the src value: withPreviewData()
      * replaces that value at the offsets the match reported, and an
      * insertion anywhere before it would silently shift them. Public because
      * DeferredImageMiddleware's own marker attributes are appended the same
