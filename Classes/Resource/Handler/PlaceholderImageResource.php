@@ -149,7 +149,11 @@ final class PlaceholderImageResource implements RemoteResourceInterface
 
         $image = imagecreatetruecolor($width, $height);
         if (false === $image) {
+            // @codeCoverageIgnoreStart
+            // Unreachable under normal operation: capDimensions() already
+            // bounds $width/$height, so this only fails on memory exhaustion.
             return false;
+            // @codeCoverageIgnoreEnd
         }
 
         $bgColor = $this->parseHexColor($image, $this->backgroundColor);

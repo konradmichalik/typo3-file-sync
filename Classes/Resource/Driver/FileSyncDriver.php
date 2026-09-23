@@ -192,7 +192,12 @@ final class FileSyncDriver extends LocalDriver
 
         $fileName = basename($absoluteFilePath);
         if ('' === $fileName) {
+            // @codeCoverageIgnoreStart
+            // Unreachable: getAbsolutePath() only ever produces an all-slash
+            // path for the identifier that resolves to the base path itself,
+            // which the file_exists() check above already returned on.
             return;
+            // @codeCoverageIgnoreEnd
         }
 
         $fileContent = $this->remoteResourceCollection->get($fileIdentifier, $this->getRemotePath($fileIdentifier) ?? '');

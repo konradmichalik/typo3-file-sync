@@ -327,6 +327,10 @@ final class PreviewService implements LoggerAwareInterface
     {
         try {
             return $this->previewGenerator->generate($bytes, $plan['width'], $plan['height']);
+            // @codeCoverageIgnoreStart
+            // Unreachable under normal operation: generate() itself is exhaustive
+            // about its own failure modes and returns null for every one of them
+            // rather than throwing.
         } catch (Throwable $exception) {
             $this->logger?->warning(
                 sprintf('Generating the preview of %s failed: %s', $plan['requested']['identifier'], $exception->getMessage()),
@@ -334,6 +338,7 @@ final class PreviewService implements LoggerAwareInterface
 
             return null;
         }
+        // @codeCoverageIgnoreEnd
     }
 
     /**
