@@ -25,17 +25,41 @@ const collect = () => {
     return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))];
 };
 
+// Every token one element could bring to a batch: its own src token, unless
+// data-file-sync carries the "srcset" marker instead of one, plus every
+// entry of data-file-sync-srcset that is not the "-" placeholder. A plain
+// image without a srcset therefore costs exactly the one token it always
+// did.
+const tokensOf = (element) => {
+    const srcToken = element.dataset.fileSync === 'srcset' ? [] : [element.dataset.fileSync];
+    const srcsetTokens = element.dataset.fileSyncSrcset
+        ? element.dataset.fileSyncSrcset.split(',').filter((token) => token !== '-')
+        : [];
+    return [...srcToken, ...srcsetTokens];
+};
+
 // Consecutive batches, viewport-first order preserved across the cut, so a
 // page with more than BATCH_SIZE deferred images still materializes all of
 // them instead of leaving everything past the first batch a placeholder for
-// the rest of the page view. One element costs one token until an element
-// can carry more than one, which is what tokensOf() will name once srcset
-// lands.
+// the rest of the page view. Counted in tokens rather than elements, since a
+// responsive image can bring several: a batch of fifty images each carrying
+// four srcset candidates would otherwise ask the endpoint for two hundred
+// tokens in one request it is bound to refuse.
 const batches = (elements) => {
     const result = [];
-    for (let index = 0; index < elements.length; index += BATCH_SIZE) {
-        result.push(elements.slice(index, index + BATCH_SIZE));
+    let current = [];
+    let tokenCount = 0;
+    for (const element of elements) {
+        const cost = tokensOf(element).length;
+        if (current.length > 0 && tokenCount + cost > BATCH_SIZE) {
+            result.push(current);
+            current = [];
+            tokenCount = 0;
+        }
+        current.push(element);
+        tokenCount += cost;
     }
+    if (current.length > 0) result.push(current);
     return result;
 };
 
@@ -85,22 +109,60 @@ const request = async (tokens, stage) => {
     }
 };
 
+// Rebuilds one element's srcset from data-file-sync-srcset, the candidate
+// URLs the middleware already wrote into srcset (each still carrying its own
+// descriptor, untouched) and this stage's answers.
+//
+// undefined when the element carries no srcset marking at all, so callers
+// can tell "nothing to do here" apart from "something failed". null when a
+// candidate that needed an answer did not get one: that fails the whole
+// element rather than committing a srcset with a placeholder candidate still
+// in it, which the browser could still pick over the ones that did resolve.
+const nextSrcset = (element, result, key) => {
+    const tokens = element.dataset.fileSyncSrcset;
+    if (tokens === undefined) return undefined;
+
+    const candidates = element.srcset.split(',').map((candidate) => candidate.trim());
+    const rebuilt = tokens.split(',').map((token, index) => {
+        if (token === '-') return candidates[index];
+        const url = result[token]?.[key];
+        if (!url) return null;
+        const [, ...descriptor] = candidates[index].split(/\s+/);
+        return [url, ...descriptor].join(' ');
+    });
+
+    return rebuilt.includes(null) ? null : rebuilt.join(', ');
+};
+
 // One function for both stages: key is 'preview' for the data URI and 'url'
 // for the real file, and final says whether what lands is the last thing this
 // element will be given.
 const apply = async (elements, result, key, final) => {
-    // Every src is assigned before anything is awaited, so the browser starts
-    // all the downloads at once. Awaiting decode() inside the loop instead
-    // would delay the single commit by the sum of the load times, which for a
-    // batch of fifty is most of what this feature exists to avoid.
+    // Every src and srcset is assigned before anything is awaited, so the
+    // browser starts all the downloads at once. Awaiting decode() inside the
+    // loop instead would delay the single commit by the sum of the load
+    // times, which for a batch of fifty is most of what this feature exists
+    // to avoid.
     const pending = elements
-        .map((element) => [element, result[element.dataset.fileSync]?.[key]])
-        .filter(([, url]) => Boolean(url))
-        .map(([element, url]) => {
+        .map((element) => {
+            const hasSrcToken = element.dataset.fileSync !== 'srcset';
+            const src = hasSrcToken ? result[element.dataset.fileSync]?.[key] : undefined;
+            if (hasSrcToken && !src) return null;
+
+            const srcset = nextSrcset(element, result, key);
+            if (srcset === null) return null;
+            if (src === undefined && srcset === undefined) return null;
+
+            return [element, src, srcset];
+        })
+        .filter(Boolean)
+        .map(([element, src, srcset]) => {
             const next = new Image();
-            next.src = url;
+            next.sizes = element.sizes;
+            if (srcset !== undefined) next.srcset = srcset;
+            if (src !== undefined) next.src = src;
             return next.decode().then(
-                () => [element, url],
+                () => [element, src, srcset],
                 () => null,
             );
         });
@@ -137,12 +199,14 @@ const apply = async (elements, result, key, final) => {
     // data-file-sync already shows its original, and a preview arriving after
     // it must not blur a sharp image.
     const commit = () => {
-        for (const [element, url] of swaps) {
+        for (const [element, src, srcset] of swaps) {
             if (!element.hasAttribute('data-file-sync')) continue;
-            element.src = url;
+            if (srcset !== undefined) element.srcset = srcset;
+            if (src !== undefined) element.src = src;
             element.removeAttribute('data-file-sync-preview');
             if (final) {
                 element.removeAttribute('data-file-sync');
+                element.removeAttribute('data-file-sync-srcset');
                 stopShimmer(element);
             }
         }
@@ -174,13 +238,9 @@ const runBatch = async (elements) => {
     // apply() settles whichever order the answers come back in.
     const previews =
         unpreviewed.length > 0
-            ? request(unpreviewed.map((element) => element.dataset.fileSync), 'preview').then((result) =>
-                  apply(unpreviewed, result, 'preview', false),
-              )
+            ? request(unpreviewed.flatMap(tokensOf), 'preview').then((result) => apply(unpreviewed, result, 'preview', false))
             : Promise.resolve();
-    const originals = request(elements.map((element) => element.dataset.fileSync), 'original').then((result) =>
-        apply(elements, result, 'url', true),
-    );
+    const originals = request(elements.flatMap(tokensOf), 'original').then((result) => apply(elements, result, 'url', true));
 
     await Promise.allSettled([previews, originals]);
 };
