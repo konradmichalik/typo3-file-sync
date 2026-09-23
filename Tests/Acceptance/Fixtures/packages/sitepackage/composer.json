@@ -5,7 +5,7 @@
 	"type": "typo3-cms-extension",
 	"require": {
 		"konradmichalik/typo3-file-sync": "*",
-		"typo3/cms-fluid-styled-content": "*"
+		"typo3/cms-fluid-styled-content": "14.3.7"
 	},
 	"extra": {
 		"typo3/cms": {
