@@ -1147,6 +1147,28 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     /**
+     * A srcset attribute quoted with double quotes but carrying an apostrophe
+     * in its value is present but unreadable by PATTERN, which excludes both
+     * quote characters from the value. Without PRESENCE_PATTERN this would be
+     * indistinguishable from "no srcset at all", inlining the preview into
+     * src (which the browser never reads once srcset exists) while the
+     * srcset the browser does read stays completely untouched. Declining the
+     * whole tag, the same as any other unparseable srcset, is what src
+     * being left exactly as it was proves.
+     */
+    #[Test]
+    public function declinesTheWholeTagWhenTheSrcsetContainsTheOtherQuoteCharacter(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="it\'s.jpg 400w, photo.jpg 800w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString($tag, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    /**
      * data-srcset is a lazy-loading attribute, not the one the browser reads
      * candidates from. Without the lookbehind this middleware shares with
      * IMAGE_PATTERN, the value here would be handed to the srcset parser,

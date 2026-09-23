@@ -54,6 +54,17 @@ final readonly class SrcsetMarking
     private const PATTERN = '/(?<![-\w])srcset=(["\'])([^"\']*)\1/i';
 
     /**
+     * Any srcset attribute at all, whatever its quoting: whitespace around
+     * the "=", unquoted, or one carrying the other quote character inside
+     * its value (which PATTERN's exclusion of both stops it from reading,
+     * the same tradeoff DeferredImageMiddleware's own src pattern makes).
+     * Used only to tell "no srcset at all" apart from "a srcset PATTERN
+     * cannot read", so resolve() declines the latter instead of treating it
+     * as the former.
+     */
+    private const PRESENCE_PATTERN = '/(?<![-\w])srcset\s*=/i';
+
+    /**
      * @param list<string>                                                             $tokens
      * @param array{identifier: string, rendition: array{uid: int, storage: int}}|null $firstProvisional
      */
@@ -114,7 +125,7 @@ final readonly class SrcsetMarking
         DeferredTokenService $deferredTokenService,
     ): self|false|null {
         if (1 !== preg_match(self::PATTERN, $tag, $match)) {
-            return null;
+            return 1 === preg_match(self::PRESENCE_PATTERN, $tag) ? false : null;
         }
 
         $candidates = SrcsetCandidates::parse($match[2]);
