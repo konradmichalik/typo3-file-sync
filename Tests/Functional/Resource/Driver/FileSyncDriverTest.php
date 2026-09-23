@@ -14,8 +14,8 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Tests\Functional\Resource\Driver;
 
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, FetchMode, RemoteResourceCollection, RemoteResourceInterface};
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
-use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Database\ConnectionPool;
@@ -253,6 +253,33 @@ final class FileSyncDriverTest extends FunctionalTestCase
         self::assertTrue($driver->fileExists('/missing.jpg'));
         self::assertSame('streamed-content', file_get_contents($this->basePath.'missing.jpg'));
         self::assertFalse(is_resource($stream));
+    }
+
+    #[Test]
+    public function prefetchGetBatchHandlersAndGetDeferrableIdentifiersDelegateToTheCollection(): void
+    {
+        $handler = $this->createMockForIntersectionOfInterfaces([
+            RemoteResourceInterface::class,
+            BatchRemoteResourceInterface::class,
+            DeferrableResourceInterface::class,
+        ]);
+        $handler->expects(self::once())->method('prefetch')->with(['fileadmin/a.jpg']);
+
+        $remoteResourceCollection = new RemoteResourceCollection(
+            [['identifier' => 'stub-handler', 'handler' => $handler]],
+            $this->createMock(StorageRepository::class),
+            $this->get(ResourceFactory::class),
+            $this->get(FileRepository::class),
+            $this->get(ConnectionPool::class),
+            1,
+            $this->get(FetchMode::class),
+        );
+
+        $driver = $this->createDriver($remoteResourceCollection);
+        $driver->prefetch(['fileadmin/a.jpg']);
+
+        self::assertSame([$handler], $driver->getBatchHandlers());
+        self::assertSame(['stub-handler'], $driver->getDeferrableIdentifiers());
     }
 
     private function createDriver(RemoteResourceCollection $remoteResourceCollection): FileSyncDriver

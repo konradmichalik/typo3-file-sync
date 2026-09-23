@@ -119,4 +119,19 @@ final class FileRepositoryTest extends TestCase
         self::assertSame(1, $count);
         self::assertFileDoesNotExist($localFile);
     }
+
+    #[Test]
+    public function countProvisionalIsZeroWithoutAskingTheDatabaseWhenNoStorageIsGiven(): void
+    {
+        $connectionPool = $this->createMock(ConnectionPool::class);
+        $connectionPool->expects(self::never())->method('getQueryBuilderForTable');
+
+        $subject = new FileRepository(
+            $connectionPool,
+            $this->createMock(ProcessedFileRepository::class),
+            $this->createMock(StorageRepository::class),
+        );
+
+        self::assertSame(0, $subject->countProvisional([]));
+    }
 }

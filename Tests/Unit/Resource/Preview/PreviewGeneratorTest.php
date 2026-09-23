@@ -268,6 +268,23 @@ final class PreviewGeneratorTest extends TestCase
     }
 
     /**
+     * A source whose header is intact but whose body is truncated: exactly
+     * what a partial download over an unreliable remote leaves behind.
+     * getimagesizefromstring() reads only the header and accepts it, so only
+     * the decode itself catches this, distinctly from a payload that is not
+     * an image at all.
+     */
+    #[Test]
+    public function aStructurallyValidButTruncatedSourceIsRejectedWithoutASizeWarning(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+        $this->subject->setLogger($logger);
+
+        self::assertNull($this->subject->generate($this->truncatedPng(400, 300), 400, 300));
+    }
+
+    /**
      * A structurally valid JPEG padded past PreviewGenerator's byte cap
      * with trailing zero bytes after the JPEG's own end-of-image marker.
      * The header stays intact, so a decoder still accepts the file; only
@@ -278,6 +295,18 @@ final class PreviewGeneratorTest extends TestCase
         $jpeg = $this->jpeg(400, 300);
 
         return $jpeg.str_repeat('0', max(0, 2_097_153 - strlen($jpeg)));
+    }
+
+    /**
+     * A PNG whose IHDR chunk (the header getimagesizefromstring() reads) is
+     * intact, cut off well before its own end.
+     *
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    private function truncatedPng(int $width, int $height): string
+    {
+        return substr($this->png($width, $height), 0, 30);
     }
 
     /**
