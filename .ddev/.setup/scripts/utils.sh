@@ -340,7 +340,10 @@ function classic_post_setup() {
         --password="$TYPO3_DB_PASSWORD" \
         --admin-user-password="$TYPO3_SETUP_ADMIN_PASSWORD" \
         --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}"
+    ensure_sitepackage_set_dependency
     remove_default_typoscript_template
+    remove_default_site_setup_typoscript
+    remove_default_welcome_content
   _done
 
   _progress " ├─ Activate extensions (classic)"
@@ -753,6 +756,74 @@ function remove_default_typoscript_template() {
         "DELETE FROM sys_template WHERE title = 'Main TypoScript Rendering'"
 }
 
+# TYPO3\CMS\Install\Service\SetupService::createSite() no longer inserts the
+# sys_template row on v14: it writes the same default `page = PAGE` (the
+# "Welcome to your default website" placeholder, wrapped in a COA with the
+# TYPO3 logo) straight into a site-local
+# config/sites/<identifier>/setup.typoscript file instead, loaded for that
+# site unconditionally, regardless of Sets or dependencies.
+#
+# remove_default_typoscript_template() deletes nothing on v14 because of
+# this, so sitepackage's own `page = PAGE` (added unconditionally too, via
+# ExtensionManagementUtility::addTypoScript() in ext_localconf.php) still
+# loses to it: a classic assignment replaces the whole object rather than
+# merging, and whichever is evaluated last wins. That is what silently kept
+# Page/Default.html from ever rendering on v14 even after the sys_template
+# row was gone.
+#
+# Removing the file is safe for the same reason removing the sys_template
+# row is: a sitepackage always exists by the time this runs, so the site is
+# never left without a page = PAGE of its own. A no-op on any version that
+# does not write this file.
+#
+# Composer mode's site sits under config/sites/, classic mode's under
+# public/typo3conf/sites/ (see import_site_configs()); rm -f on whichever one
+# does not apply is silent, so both are named rather than branching on MODE.
+function remove_default_site_setup_typoscript() {
+    rm -f "$BASE_PATH/config/sites/main/setup.typoscript" \
+        "$BASE_PATH/public/typo3conf/sites/main/setup.typoscript"
+}
+
+# createSite() also inserts a "Welcome to your default website" text content
+# element onto the new root page, a demo row v13's own createSite() never
+# added. Left in place it becomes colPos=0's first element by sorting order,
+# ahead of the fixture's own "Welcome to File Sync Demo", which makes v14
+# render one more content element than v13 for the same fixture. A no-op on
+# any version whose createSite() does not insert this row.
+function remove_default_welcome_content() {
+    mysql -h db -u root -proot "$DATABASE" -e \
+        "DELETE FROM tt_content WHERE CType = 'text' AND header = 'Welcome to your default website'"
+}
+
+# TYPO3\CMS\Core\Site\Entity\Site::isTypoScriptRoot() decides whether a site
+# counts as having TypoScript of its own at all: a non-empty `sets` list, a
+# site-local TypoScript file, or a tsConfig one. `setup --create-site` never
+# adds this fixture's own Set as a dependency on v13 (its config.yaml gets no
+# `dependencies` key at all), and with remove_default_typoscript_template()
+# also removing the one sys_template row, isTypoScriptRoot() is false and
+# TypoScriptFrontendInitialization throws "No TypoScript record found!"
+# before the sitepackage's own addTypoScript() registration ever gets a
+# chance to render anything, on every version whose sys_template row this
+# removes. v14 already ships its own default Sets dependencies, so this is a
+# no-op there in practice, but it is added unconditionally rather than left
+# to depend on that happening to be true.
+#
+# Composer mode's site sits under config/sites/, classic mode's under
+# public/typo3conf/sites/; the `dependencies:` key exists on some versions
+# and not others, so both cases are handled rather than assumed.
+function ensure_sitepackage_set_dependency() {
+    local config_file
+    for config_file in "$BASE_PATH/config/sites/main/config.yaml" "$BASE_PATH/public/typo3conf/sites/main/config.yaml"; do
+        [ -f "$config_file" ] || continue
+        grep -q '^  - test/sitepackage$' "$config_file" && continue
+        if grep -q '^dependencies:' "$config_file"; then
+            sed -i '/^dependencies:/a\  - test/sitepackage' "$config_file"
+        else
+            sed -i '1i\dependencies:\n  - test/sitepackage' "$config_file"
+        fi
+    done
+}
+
 # Function to update TYPO3.
 # It updates the TYPO3 database schema and flushes the cache.
 function update_typo3() {
@@ -943,7 +1014,10 @@ function post_setup_12 {
 function post_setup_13 {
   mysql -h db -u root -p"root" -e "CREATE DATABASE $DATABASE;"
   $TYPO3_BIN  setup -n --dbname=$DATABASE --password=$TYPO3_DB_PASSWORD --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}" --admin-user-password=$TYPO3_SETUP_ADMIN_PASSWORD
+  ensure_sitepackage_set_dependency
   remove_default_typoscript_template
+  remove_default_site_setup_typoscript
+  remove_default_welcome_content
   setup_typo3
 
   sed -i "/'deprecations'/,/^[[:space:]]*'disabled' => true,/s/'disabled' => true,/'disabled' => false,/" /var/www/html/.Build/$VERSION/config/system/settings.php
@@ -957,7 +1031,10 @@ function post_setup_13 {
 function post_setup_14 {
   mysql -h db -u root -p"root" -e "CREATE DATABASE $DATABASE;"
   $TYPO3_BIN  setup -n --dbname=$DATABASE --password=$TYPO3_DB_PASSWORD --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}" --admin-user-password=$TYPO3_SETUP_ADMIN_PASSWORD
+  ensure_sitepackage_set_dependency
   remove_default_typoscript_template
+  remove_default_site_setup_typoscript
+  remove_default_welcome_content
   setup_typo3
 
   sed -i "/'deprecations'/,/^[[:space:]]*'disabled' => true,/s/'disabled' => true,/'disabled' => false,/" /var/www/html/.Build/$VERSION/config/system/settings.php
