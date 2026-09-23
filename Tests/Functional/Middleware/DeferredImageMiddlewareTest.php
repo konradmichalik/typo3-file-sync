@@ -56,6 +56,13 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     private const PROVISIONAL_URL = '/fileadmin/_processed_/a/b/csm_provisional_aaa.jpg';
 
     /**
+     * What a still provisional src carries so that the browser cannot answer
+     * the reload after materialization from the placeholder it cached before
+     * the module had a chance to run.
+     */
+    private const PROVISIONAL_QUERY = 'file-sync-provisional=1';
+
+    /**
      * Only a tag stating a width and a height of its own is inlined into, so
      * every preview case that expects a data URI has to carry both.
      */
@@ -456,7 +463,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
         $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
-        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
         self::assertStringContainsString('data-file-sync-preview="1"', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
@@ -476,7 +483,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
         $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
 
-        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertStringNotContainsString('data-file-sync-preview', $result);
         self::assertSame(110, $this->tokenOf($result));
@@ -592,7 +599,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
         $result = $this->processBody($this->page($tag));
 
-        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
         self::assertStringNotContainsString('data-file-sync-preview', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
@@ -617,7 +624,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
         $result = $this->processBody($this->page(self::SRCSET_PROVISIONAL_TAG));
 
-        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
         self::assertStringNotContainsString('data-file-sync-preview', $result);
         self::assertStringNotContainsString('data:image/webp', $result);
         // The original stage is untouched: the real file still replaces the
@@ -698,6 +705,99 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertSame(2, preg_match_all('/<img[^>]*\ssrc="([^"]+)"/', $result, $matches));
         self::assertSame([$expected, $expected], $matches[1]);
         self::assertStringNotContainsString(self::PROVISIONAL_URL, $result);
+    }
+
+    /**
+     * The placeholder and the real file share one processed path, and the
+     * .htaccess TYPO3 generates hands every path under _processed_ a month of
+     * browser cache. Without the suffix the reload after materialization,
+     * which renders the plain URL again, is answered from the placeholder the
+     * browser cached while it was still parsing the very first response.
+     */
+    #[Test]
+    public function appendsTheProvisionalQueryToAMarkedSrcWhilePreviewsAreOff(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page(self::PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    #[Test]
+    public function joinsTheProvisionalQueryToASrcThatAlreadyCarriesOneWithAnAmpersand(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page('<img src="'.self::PROVISIONAL_URL.'?v=17" alt="provisional">'));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?v=17&'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertStringNotContainsString('?'.self::PROVISIONAL_QUERY, $result);
+    }
+
+    /**
+     * The suffix and the data URI are both written into the src span, through
+     * offsets taken against strings of different lengths, so a suffix applied
+     * before the inlining decision is left stranded behind the base64 payload
+     * rather than replaced with it. Nothing about that is ruled out by luck:
+     * neither "?" nor "-" belongs to the base64 alphabet, so the suffix
+     * turning up in a payload by coincidence is impossible and a match here
+     * can only be the suffix itself.
+     */
+    #[Test]
+    public function appendsNoProvisionalQueryToATagItInlinesAPreviewInto(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $stored = $this->storePreview('preview-bytes');
+
+        $result = $this->processBody($this->page(self::SIZED_PROVISIONAL_TAG));
+
+        self::assertStringContainsString('src="data:image/webp;base64,'.base64_encode($stored).'"', $result);
+        self::assertStringNotContainsString(self::PROVISIONAL_QUERY, $result);
+    }
+
+    /**
+     * Each entry is a tag the middleware already refuses for a reason of its
+     * own: one that carries the attribute from an earlier pass, one whose
+     * quotes do not balance because the pattern stopped inside an attribute
+     * value, and one sitting in a span whose contents the browser renders as
+     * text rather than as markup.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function declinedTagProvider(): array
+    {
+        return [
+            'already carries the attribute' => ['<img src="'.self::PROVISIONAL_URL.'" data-file-sync="stale">'],
+            'trailing attribute hides a greater than sign' => ['<img src="'.self::PROVISIONAL_URL.'" alt="a > b">'],
+            'inside a textarea' => ['<textarea name="t">'.self::PROVISIONAL_TAG.'</textarea>'],
+        ];
+    }
+
+    /**
+     * The suffix is a src rewrite like any other, so it sits behind the same
+     * refusals rather than beside them.
+     *
+     * Every body carries a second, ordinary provisional image as well. A body
+     * holding nothing but a declined tag is marked nowhere, so the middleware
+     * discards its whole rewrite and hands back the original: such a case
+     * passes for a tag the suffix was written into just as readily as for one
+     * it was kept out of. The companion keeps the rewrite alive, and its own
+     * suffix is then the only one the result may hold.
+     */
+    #[Test]
+    #[DataProvider('declinedTagProvider')]
+    public function appendsNoProvisionalQueryToATagItDeclines(string $markup): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page($markup.self::SECOND_SIZED_PROVISIONAL_TAG));
+
+        self::assertStringContainsString($markup, $result);
+        self::assertStringContainsString('src="'.self::SECOND_PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertSame(1, substr_count($result, self::PROVISIONAL_QUERY));
     }
 
     private function enablePreviews(): void
