@@ -30,6 +30,7 @@ use function array_map;
 use function array_unique;
 use function array_values;
 use function base64_encode;
+use function explode;
 use function htmlspecialchars;
 use function intval;
 use function is_array;
@@ -355,13 +356,27 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * address one span through offsets taken against strings of different
      * lengths.
      *
+     * The separator is escaped as "&amp;" rather than a bare "&" when a query
+     * already exists, because this is HTML attribute content and TYPO3 itself
+     * escapes the query strings it renders the same way: "?a=1&amp;b=2" is
+     * what a multi-parameter src already looks like here, and matching that
+     * convention costs nothing.
+     *
+     * A src carrying a fragment keeps it last, since a "#" is never sent to
+     * the server and a query added after it would be part of the fragment
+     * instead, silently fetching the same cached response the fragment was
+     * supposed to bust.
+     *
      * @param array{string, int} $src the matched src value and its offset in the body
      */
     private static function withProvisionalQuery(string $tag, array $src, int $tagOffset): string
     {
+        [$path, $fragment] = explode('#', $src[0], 2) + [1 => ''];
+        $separator = str_contains($path, '?') ? '&amp;' : '?';
+
         return substr_replace(
             $tag,
-            $src[0].(str_contains($src[0], '?') ? '&' : '?').self::PROVISIONAL_QUERY,
+            $path.$separator.self::PROVISIONAL_QUERY.('' === $fragment ? '' : '#'.$fragment),
             $src[1] - $tagOffset,
             strlen($src[0]),
         );

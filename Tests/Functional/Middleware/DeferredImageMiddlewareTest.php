@@ -725,15 +725,35 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertSame(110, $this->tokenOf($result));
     }
 
+    /**
+     * Escaped as "&amp;" rather than a bare "&", matching how TYPO3 itself
+     * renders a multi-parameter query in an attribute value.
+     */
     #[Test]
-    public function joinsTheProvisionalQueryToASrcThatAlreadyCarriesOneWithAnAmpersand(): void
+    public function joinsTheProvisionalQueryToASrcThatAlreadyCarriesOneWithAnEscapedAmpersand(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
 
         $result = $this->processBody($this->page('<img src="'.self::PROVISIONAL_URL.'?v=17" alt="provisional">'));
 
-        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?v=17&'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?v=17&amp;'.self::PROVISIONAL_QUERY.'"', $result);
         self::assertStringNotContainsString('?'.self::PROVISIONAL_QUERY, $result);
+        self::assertStringNotContainsString('v=17&'.self::PROVISIONAL_QUERY, $result);
+    }
+
+    /**
+     * A fragment is never sent to the server, so it has to stay last: the
+     * query goes in before it, not after, or the browser would request the
+     * same URL it already cached and the whole fix would be a silent no-op.
+     */
+    #[Test]
+    public function keepsAFragmentAfterTheProvisionalQuery(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page('<img src="'.self::PROVISIONAL_URL.'#section" alt="provisional">'));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'#section"', $result);
     }
 
     /**
