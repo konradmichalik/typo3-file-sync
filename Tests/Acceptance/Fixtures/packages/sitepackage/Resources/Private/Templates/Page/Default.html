@@ -14,17 +14,29 @@
             Both reference FAL originals the rest of this fixture already
             marks provisional, so a fresh `ddev prepare-test` clears these
             renditions too.
+
+            Each URL is resolved into its own variable first rather than
+            calling f:uri.image inline inside the attribute: two or more
+            inline calls sharing one attribute value, separated by the plain
+            comma srcset itself needs, make Fluid's parser read the whole
+            value as an array literal instead of text ("Cannot cast an array
+            to string").
         -->
+        <f:variable name="responsive300" value="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '300')}" />
+        <f:variable name="responsive600" value="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '600')}" />
+        <f:variable name="picture400" value="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '400')}" />
+        <f:variable name="picture800" value="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '800')}" />
+
         <h2>Responsive image</h2>
-        <img src="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '600')}"
-             srcset="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '300')} 300w, {f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '600')} 600w"
+        <img src="{responsive600}"
+             srcset="{responsive300} 300w, {responsive600} 600w"
              width="600" height="400" alt="Responsive srcset fixture">
 
         <h2>Picture</h2>
         <picture>
-            <source media="(min-width: 800px)" srcset="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '800')} 800w">
-            <source media="(max-width: 799px)" srcset="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '400')} 400w">
-            <img src="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '400')}" width="400" height="300" alt="Picture fixture">
+            <source media="(min-width: 800px)" srcset="{picture800} 800w">
+            <source media="(max-width: 799px)" srcset="{picture400} 400w">
+            <img src="{picture400}" width="400" height="300" alt="Picture fixture">
         </picture>
     </main>
 </f:section>
