@@ -11,9 +11,9 @@ const ENDPOINT =
 // for the rest of the page view and a warning in the console.
 const BATCH_SIZE = 50;
 
-const canAnimate = () =>
-    typeof document.startViewTransition === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+const prefersMotion = () => window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+
+const canAnimate = () => typeof document.startViewTransition === 'function' && prefersMotion();
 
 const inViewport = (element) => {
     const box = element.getBoundingClientRect();
@@ -23,6 +23,30 @@ const inViewport = (element) => {
 const collect = () => {
     const nodes = Array.from(document.querySelectorAll('img[data-file-sync]'));
     return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))].slice(0, BATCH_SIZE);
+};
+
+// A pulse on the image itself, not a spinner in a wrapper: wrapping an <img>
+// this module does not own is the one layout change this branch has refused
+// throughout. Keyed by element rather than by attribute, so swapping in a
+// preview partway through (src changes, data-file-sync stays) does not
+// restart the animation from its first frame.
+const shimmers = new WeakMap();
+
+const startShimmer = (element) => {
+    if (typeof element.animate !== 'function' || shimmers.has(element)) return;
+    shimmers.set(
+        element,
+        element.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(0.85)' }, { filter: 'brightness(1)' }], {
+            duration: 1600,
+            iterations: Infinity,
+            easing: 'ease-in-out',
+        }),
+    );
+};
+
+const stopShimmer = (element) => {
+    shimmers.get(element)?.cancel();
+    shimmers.delete(element);
 };
 
 const request = async (tokens, stage) => {
@@ -71,6 +95,23 @@ const apply = async (elements, result, key, final) => {
     // reject here: one image the browser refuses must not take the rest of
     // the batch down with it.
     const swaps = (await Promise.all(pending)).filter(Boolean);
+
+    // The last stage's own failures are the only ones this module can see: no
+    // url came back, or the browser refused to decode the one it got. An
+    // element the loop below will not touch keeps its shimmer running forever
+    // otherwise, which claims progress on a page that has none left to make.
+    // data-file-sync-failed is left for a site to style; nothing in this file
+    // reads it back.
+    if (final) {
+        const swapped = new Set(swaps.map(([element]) => element));
+        for (const element of elements) {
+            if (element.hasAttribute('data-file-sync') && !swapped.has(element)) {
+                element.setAttribute('data-file-sync-failed', '1');
+                stopShimmer(element);
+            }
+        }
+    }
+
     if (swaps.length === 0) return;
 
     // decode() already ran above, so the assignment below never shows a
@@ -86,7 +127,10 @@ const apply = async (elements, result, key, final) => {
             if (!element.hasAttribute('data-file-sync')) continue;
             element.src = url;
             element.removeAttribute('data-file-sync-preview');
-            if (final) element.removeAttribute('data-file-sync');
+            if (final) {
+                element.removeAttribute('data-file-sync');
+                stopShimmer(element);
+            }
         }
     };
 
@@ -102,6 +146,12 @@ const apply = async (elements, result, key, final) => {
 const run = async () => {
     const elements = collect();
     if (elements.length === 0) return;
+
+    // Started here rather than inside each request handler, because every
+    // element this module will ever touch is already known at this point,
+    // and motion is the only thing being decided: whether a preview or an
+    // original lands first changes nothing about which images are pending.
+    if (prefersMotion()) elements.forEach(startShimmer);
 
     // Only the images the middleware marked for this stage, which are the
     // ones that state their own size and have no preview stored yet. A
