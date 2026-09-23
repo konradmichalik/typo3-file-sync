@@ -22,7 +22,21 @@ const inViewport = (element) => {
 
 const collect = () => {
     const nodes = Array.from(document.querySelectorAll('img[data-file-sync]'));
-    return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))].slice(0, BATCH_SIZE);
+    return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))];
+};
+
+// Consecutive batches, viewport-first order preserved across the cut, so a
+// page with more than BATCH_SIZE deferred images still materializes all of
+// them instead of leaving everything past the first batch a placeholder for
+// the rest of the page view. One element costs one token until an element
+// can carry more than one, which is what tokensOf() will name once srcset
+// lands.
+const batches = (elements) => {
+    const result = [];
+    for (let index = 0; index < elements.length; index += BATCH_SIZE) {
+        result.push(elements.slice(index, index + BATCH_SIZE));
+    }
+    return result;
 };
 
 // A pulse on the image itself, not a spinner in a wrapper: wrapping an <img>
@@ -143,16 +157,7 @@ const apply = async (elements, result, key, final) => {
     canAnimate() && !stale ? document.startViewTransition(commit) : commit();
 };
 
-const run = async () => {
-    const elements = collect();
-    if (elements.length === 0) return;
-
-    // Started here rather than inside each request handler, because every
-    // element this module will ever touch is already known at this point,
-    // and motion is the only thing being decided: whether a preview or an
-    // original lands first changes nothing about which images are pending.
-    if (prefersMotion()) elements.forEach(startShimmer);
-
+const runBatch = async (elements) => {
     // Only the images the middleware marked for this stage, which are the
     // ones that state their own size and have no preview stored yet. A
     // settled installation therefore asks for nothing here and costs the one
@@ -178,6 +183,25 @@ const run = async () => {
     );
 
     await Promise.allSettled([previews, originals]);
+};
+
+const run = async () => {
+    const elements = collect();
+    if (elements.length === 0) return;
+
+    // Started here rather than inside each request handler, because every
+    // element this module will ever touch is already known at this point,
+    // and motion is the only thing being decided: whether a preview or an
+    // original lands first changes nothing about which images are pending.
+    if (prefersMotion()) elements.forEach(startShimmer);
+
+    // One batch after another, never in parallel: batches() already keeps
+    // each one within MAX_TOKENS on its own, but firing all of a large
+    // gallery's batches at once would still turn the per-address rate limit
+    // into a wall the later batches hit.
+    for (const batch of batches(elements)) {
+        await runBatch(batch);
+    }
 };
 
 if (document.readyState === 'complete') {
