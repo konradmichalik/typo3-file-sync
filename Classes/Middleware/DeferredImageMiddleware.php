@@ -30,6 +30,7 @@ use function array_map;
 use function array_unique;
 use function array_values;
 use function base64_encode;
+use function explode;
 use function htmlspecialchars;
 use function intval;
 use function is_array;
@@ -82,6 +83,13 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private const PREVIEW_ATTRIBUTE = 'data-file-sync-preview';
 
     private const PREVIEW_URI_PREFIX = 'data:image/webp;base64,';
+
+    /**
+     * Appended to the src of a tag that still points at a provisional
+     * rendition. Neither "?" nor "-" occurs in the base64 alphabet, so this
+     * can never turn up by accident inside an inlined preview.
+     */
+    private const PROVISIONAL_QUERY = 'file-sync-provisional=1';
 
     private const CACHE_KEY = 'fileSyncProvisionalCount';
 
@@ -230,7 +238,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
                 // A tag that was marked had both of these, so the second half
                 // of this narrows the types rather than deciding anything.
                 if (!$previewsEnabled || null === $identifier || null === $rendition) {
-                    return $rewritten;
+                    return self::withProvisionalQuery($rewritten, $match[2], $offset);
                 }
 
                 // array_key_exists rather than ??=, because "there is no
@@ -306,16 +314,69 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
     {
         if (!self::declaresItsOwnSize($tag) || self::picksFromSrcset($tag)) {
-            return $tag;
+            return self::withProvisionalQuery($tag, $src, $tagOffset);
         }
 
         if (null === $preview) {
-            return self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote);
+            return self::withProvisionalQuery(
+                self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote),
+                $src,
+                $tagOffset,
+            );
         }
 
         return substr_replace(
             $tag,
             self::PREVIEW_URI_PREFIX.base64_encode($preview),
+            $src[1] - $tagOffset,
+            strlen($src[0]),
+        );
+    }
+
+    /**
+     * A processed filename is checksum-derived, so the "access plus 1 month"
+     * expiry TYPO3 writes into public/.htaccess rests on its bytes never
+     * changing. A deferred rendition breaks that: the placeholder and the
+     * real file share one path, and only the bytes behind it change. Without
+     * this suffix the reload after materialization is answered from the
+     * placeholder the browser cached before the module had even run, for as
+     * long as that month lasts.
+     *
+     * A fixed string is enough. It is added only while the tag is still
+     * marked, and once the rendition is materialized the render emits the
+     * plain URL, which that browser has never requested and therefore fetches
+     * and caches fresh. Nothing here is per request, so a genuinely
+     * materialized file keeps its long-lived cache entry.
+     *
+     * The same coordinate shape withPreview() uses: the src value is replaced
+     * between the quotes the tag already carries, at the offsets the match
+     * reported against the original body. Those survive appended(), which
+     * only ever writes past the src span. It must never run on a tag
+     * withPreview() inlines a data URI into, because the two would then
+     * address one span through offsets taken against strings of different
+     * lengths.
+     *
+     * The separator is escaped as "&amp;" rather than a bare "&" when a query
+     * already exists, because this is HTML attribute content and TYPO3 itself
+     * escapes the query strings it renders the same way: "?a=1&amp;b=2" is
+     * what a multi-parameter src already looks like here, and matching that
+     * convention costs nothing.
+     *
+     * A src carrying a fragment keeps it last, since a "#" is never sent to
+     * the server and a query added after it would be part of the fragment
+     * instead, silently fetching the same cached response the fragment was
+     * supposed to bust.
+     *
+     * @param array{string, int} $src the matched src value and its offset in the body
+     */
+    private static function withProvisionalQuery(string $tag, array $src, int $tagOffset): string
+    {
+        [$path, $fragment] = explode('#', $src[0], 2) + [1 => ''];
+        $separator = str_contains($path, '?') ? '&amp;' : '?';
+
+        return substr_replace(
+            $tag,
+            $path.$separator.self::PROVISIONAL_QUERY.('' === $fragment ? '' : '#'.$fragment),
             $src[1] - $tagOffset,
             strlen($src[0]),
         );
