@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, FetchMo
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\Preview\{PreviewGenerator, PreviewSourceReader};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\NullLogger;
@@ -97,6 +98,7 @@ final class PreviewSourceReaderTest extends TestCase
         $originalDriver = $this->createMock(DriverInterface::class);
         $originalDriver->method('getPublicUrl')->willReturn('https://remote.example.com/a.jpg');
 
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $batchHandler */
         $batchHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $batchHandler->method('prefetch')->willThrowException(new RuntimeException('prefetch boom'));
 
@@ -142,6 +144,7 @@ final class PreviewSourceReaderTest extends TestCase
         $originalDriver = $this->createMock(DriverInterface::class);
         $originalDriver->method('getPublicUrl')->willReturn('https://remote.example.com/a.jpg');
 
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $failingHandler */
         $failingHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $failingHandler->method('getFile')->willThrowException(new RuntimeException('handler boom'));
 
@@ -149,6 +152,7 @@ final class PreviewSourceReaderTest extends TestCase
         self::assertIsResource($stream);
         fwrite($stream, 'preview-bytes');
         rewind($stream);
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $workingHandler */
         $workingHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $workingHandler->method('getFile')->willReturn($stream);
 
@@ -177,6 +181,7 @@ final class PreviewSourceReaderTest extends TestCase
 
         $stream = fopen('php://memory', 'r+');
         self::assertIsResource($stream);
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $handler */
         $handler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $handler->method('getFile')->willReturn($stream);
 
@@ -206,6 +211,7 @@ final class PreviewSourceReaderTest extends TestCase
         self::assertIsResource($stream);
         fwrite($stream, str_repeat('x', PreviewGenerator::MAX_BYTES + 1));
         rewind($stream);
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $handler */
         $handler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $handler->method('getFile')->willReturn($stream);
 

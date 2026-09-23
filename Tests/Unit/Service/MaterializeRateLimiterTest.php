@@ -76,7 +76,7 @@ final class MaterializeRateLimiterTest extends TestCase
     #[Test]
     public function isAddressAcceptedFallsBackToDerivingTheAddressWhenNoNormalizedParamsAreAttached(): void
     {
-        $request = new ServerRequest('https://example.com/', serverParams: ['REMOTE_ADDR' => '10.0.0.3']);
+        $request = new ServerRequest('https://example.com/', null, 'php://input', [], ['REMOTE_ADDR' => '10.0.0.3']);
 
         self::assertTrue($this->subject->isAddressAccepted($request));
     }
@@ -113,6 +113,6 @@ final class MaterializeRateLimiterTest extends TestCase
 
     private function normalizedParamsFor(string $remoteAddress): NormalizedParams
     {
-        return NormalizedParams::createFromRequest(new ServerRequest('https://example.com/', serverParams: ['REMOTE_ADDR' => $remoteAddress]));
+        return NormalizedParams::createFromRequest(new ServerRequest('https://example.com/', null, 'php://input', [], ['REMOTE_ADDR' => $remoteAddress]));
     }
 }

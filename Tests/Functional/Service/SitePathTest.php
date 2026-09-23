@@ -11,12 +11,12 @@ declare(strict_types=1);
  * file that was distributed with this source code.
  */
 
-namespace KonradMichalik\Typo3FileSync\Tests\Unit\Service;
+namespace KonradMichalik\Typo3FileSync\Tests\Functional\Service;
 
 use KonradMichalik\Typo3FileSync\Service\SitePath;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
-use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 /**
  * SitePathTest.
@@ -25,12 +25,22 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(SitePath::class)]
-final class SitePathTest extends TestCase
+final class SitePathTest extends FunctionalTestCase
 {
+    /** @var array<string, mixed> */
+    private array $serverBackup = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->serverBackup = $_SERVER;
+    }
+
     protected function tearDown(): void
     {
-        unset($_SERVER['HTTP_HOST'], $_SERVER['SCRIPT_NAME'], $_SERVER['REQUEST_URI']);
+        $_SERVER = $this->serverBackup;
         GeneralUtility::flushInternalRuntimeCaches();
+        parent::tearDown();
     }
 
     #[Test]
@@ -73,6 +83,12 @@ final class SitePathTest extends TestCase
         self::assertSame('/sub/dir/fileadmin/x.jpg', SitePath::absolute('fileadmin/x.jpg'));
     }
 
+    /**
+     * TYPO3 derives the site path from the entry script and the request,
+     * both of which are meaningless under PHPUnit. Pointing them at an
+     * index.php below $sitePath is what a real installation at that path
+     * looks like.
+     */
     private static function useSitePath(string $sitePath): void
     {
         $_SERVER['HTTP_HOST'] = 'example.com';

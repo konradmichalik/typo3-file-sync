@@ -34,7 +34,7 @@ final class StashedFileTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->dir = sys_get_temp_dir().'/file-sync-stash-test-'.uniqid();
+        $this->dir = sys_get_temp_dir().'/file-sync-stash-test-'.bin2hex(random_bytes(8));
         mkdir($this->dir);
         $this->path = $this->dir.'/original.jpg';
         $this->stashPath = $this->dir.'/.tx-file-sync-stash-original.jpg';

@@ -57,7 +57,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10" data-file-sync="x">';
 
-        $result = $this->subject->rewriteTag([[$tag, 0]], 0, ['a.jpg' => 'ident'], ['ident' => ['uid' => 1, 'storage' => 1]], false, false, []);
+        $result = $this->subject->rewriteTag($this->imgMatch($tag), 0, ['a.jpg' => 'ident'], ['ident' => ['uid' => 1, 'storage' => 1]], false, false, []);
 
         self::assertNull($result);
     }
@@ -67,7 +67,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" alt="broken>';
 
-        $result = $this->subject->rewriteTag([[$tag, 0]], 0, [], [], false, false, []);
+        $result = $this->subject->rewriteTag($this->imgMatch($tag), 0, [], [], false, false, []);
 
         self::assertNull($result);
     }
@@ -97,7 +97,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10">';
 
-        [$rewritten, $previewByIdentifier] = $this->subject->rewriteTag(
+        [$rewritten, $previewByIdentifier] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -117,7 +117,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10">';
 
-        [$rewritten, $previewByIdentifier] = $this->subject->rewriteTag(
+        [$rewritten, $previewByIdentifier] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -141,7 +141,7 @@ final class TagRewriterTest extends TestCase
         $this->previewStore->write(1, 'ident', self::webp('x'));
         $tag = '<img src="a.jpg" width="10" height="10">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -161,7 +161,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -180,7 +180,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -199,7 +199,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10" srcset="b.jpg 1x, c.jpg 2x">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['b.jpg' => 'identB'],
@@ -221,7 +221,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<source srcset="b.jpg 1x, c.jpg 2x">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->sourceMatch($tag),
             0,
             ['b.jpg' => 'identB'],
@@ -244,7 +244,7 @@ final class TagRewriterTest extends TestCase
         $this->previewStore->write(1, 'ident', self::webp('x'));
         $tag = '<img src="a.jpg" width="10" height="10">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['a.jpg' => 'ident'],
@@ -266,7 +266,7 @@ final class TagRewriterTest extends TestCase
     {
         $tag = '<img src="a.jpg" width="10" height="10" srcset="b.jpg 1x, c.jpg 2x">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['b.jpg' => 'identB'],
@@ -289,7 +289,7 @@ final class TagRewriterTest extends TestCase
         $this->previewStore->write(1, 'identB', self::webp('x'));
         $tag = '<img src="a.jpg" width="10" height="10" srcset="b.jpg 1x, c.jpg 2x">';
 
-        [$rewritten] = $this->subject->rewriteTag(
+        [$rewritten] = $this->rewriteTagOrFail(
             $this->imgMatch($tag),
             0,
             ['b.jpg' => 'identB'],
@@ -305,6 +305,29 @@ final class TagRewriterTest extends TestCase
             '<img src="a.jpg" width="10" height="10" srcset="'.$previewUri.'" data-file-sync="srcset" data-file-sync-srcset="'.$token.' 1x, c.jpg 2x">',
             $rewritten,
         );
+    }
+
+    /**
+     * @param array{0: array{string, int}, 1: array{string, int}, 2: array{string, int}, 3?: array{string, int}} $match
+     * @param array<string, string>                                                                              $identifierByUrl
+     * @param array<string, array{uid: int, storage: int}>                                                       $renditionByIdentifier
+     * @param array<string, string|null>                                                                         $previewByIdentifier
+     *
+     * @return array{0: string, 1: array<string, string|null>}
+     */
+    private function rewriteTagOrFail(
+        array $match,
+        int $offset,
+        array $identifierByUrl,
+        array $renditionByIdentifier,
+        bool $previewsEnabled,
+        bool $insidePicture,
+        array $previewByIdentifier,
+    ): array {
+        $result = $this->subject->rewriteTag($match, $offset, $identifierByUrl, $renditionByIdentifier, $previewsEnabled, $insidePicture, $previewByIdentifier);
+        self::assertNotNull($result);
+
+        return $result;
     }
 
     /**

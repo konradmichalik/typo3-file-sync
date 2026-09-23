@@ -19,6 +19,7 @@ use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, FetchMode, RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use ReflectionClass;
@@ -698,6 +699,7 @@ final class RemoteResourceCollectionTest extends TestCase
     #[Test]
     public function prefetchDelegatesOnlyToBatchCapableHandlers(): void
     {
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $batchHandler */
         $batchHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $batchHandler->expects(self::once())->method('prefetch')->with(['fileadmin/a.jpg']);
 
@@ -714,6 +716,7 @@ final class RemoteResourceCollectionTest extends TestCase
     #[Test]
     public function getBatchHandlersReturnsOnlyBatchCapableHandlers(): void
     {
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $batchHandler */
         $batchHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
         $plainHandler = $this->createMock(RemoteResourceInterface::class);
 
@@ -728,6 +731,7 @@ final class RemoteResourceCollectionTest extends TestCase
     #[Test]
     public function getDeferrableIdentifiersReturnsOnlyDeferrableHandlerIdentifiers(): void
     {
+        /** @var DeferrableResourceInterface&MockObject&RemoteResourceInterface $deferrableHandler */
         $deferrableHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, DeferrableResourceInterface::class]);
         $plainHandler = $this->createMock(RemoteResourceInterface::class);
 
