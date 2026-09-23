@@ -15,9 +15,15 @@ FIXTURES="/var/www/html/Tests/Acceptance/Fixtures/remote-files"
 [ -d "$INSTANCE" ] || { message red "TYPO3 instance not found for version ${VERSION}"; exit 1; }
 
 # The originals. The vhost remote.<project>.ddev.site serves .Build, so this is
-# what turns a 404 from the remote handler into a real download.
+# what turns a 404 from the remote handler into a real download. Excludes the
+# fixture's own index.html: nothing reads it, and .Build is also the shared
+# document root the bare hostname answers from, where the multi-version
+# add-on's own index.php lists the installed versions. Apache's default
+# DirectoryIndex tries index.html first, so copying it over shadows that page
+# with a six-byte placeholder for every hostname sharing the root, not only
+# the remote one.
 mkdir -p "$REMOTE_ROOT"
-cp -r "$FIXTURES"/. "$REMOTE_ROOT"/
+rsync -a --exclude=index.html "$FIXTURES"/ "$REMOTE_ROOT"/
 
 # Blow the originals up on the remote only. The committed fixtures are a few
 # kilobytes each, which over loopback arrives faster than the crossfade can be
