@@ -18,7 +18,6 @@ use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationS
 use function array_map;
 use function array_merge;
 use function count;
-use function implode;
 use function preg_match;
 use function preg_replace_callback;
 
@@ -27,8 +26,11 @@ use function preg_replace_callback;
  *
  * The resolved state of one tag's srcset attribute against the identifier
  * and rendition maps DeferredImageMiddleware has already built for the whole
- * body: which candidate is provisional, the token each one carries, and the
- * rewrite that suffixes every provisional candidate's URL.
+ * body: which candidate is provisional, the token each one carries, the
+ * rewrite that suffixes every provisional candidate's URL or collapses them
+ * all to a preview, and the identifier of the first provisional candidate,
+ * which DeferredImageMiddleware falls back to when src itself is not
+ * provisional.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -43,12 +45,6 @@ final readonly class SrcsetMarking
     private const NOT_PROVISIONAL_TOKEN = '-';
 
     /**
-     * Tokens carry only digits, a dot and hex, so a comma can join them
-     * without ever needing to be escaped.
-     */
-    private const TOKEN_SEPARATOR = ',';
-
-    /**
      * The same lookbehind DeferredImageMiddleware's own src pattern uses,
      * for the same reason: a word boundary also sits between the hyphen and
      * the "s" of data-srcset, which this must leave alone. An empty value is
@@ -58,13 +54,15 @@ final readonly class SrcsetMarking
     private const PATTERN = '/(?<![-\w])srcset=(["\'])([^"\']*)\1/i';
 
     /**
-     * @param list<string> $tokens
+     * @param list<string>                                                             $tokens
+     * @param array{identifier: string, rendition: array{uid: int, storage: int}}|null $firstProvisional
      */
     private function __construct(
         private SrcsetCandidates $candidates,
         private string $quote,
         private array $tokens,
         public bool $hasProvisional,
+        public ?array $firstProvisional,
     ) {}
 
     /**
@@ -125,6 +123,7 @@ final readonly class SrcsetMarking
         }
 
         $hasProvisional = false;
+        $firstProvisional = null;
         $tokens = [];
         foreach ($candidates->urls() as $url) {
             $identifier = $identifierByUrl[$url] ?? null;
@@ -135,15 +134,32 @@ final readonly class SrcsetMarking
             }
 
             $hasProvisional = true;
+            $firstProvisional ??= ['identifier' => $identifier, 'rendition' => $rendition];
             $tokens[] = $deferredTokenService->create($rendition['uid']);
         }
 
-        return new self($candidates, $match[1], $tokens, $hasProvisional);
+        return new self($candidates, $match[1], $tokens, $hasProvisional, $firstProvisional);
     }
 
+    /**
+     * The value data-file-sync-srcset carries: the same candidate list as
+     * srcset itself, with a token standing in for each provisional
+     * candidate's URL and every other URL left as it is. This is what makes
+     * the attribute reconstructable on its own once a preview has collapsed
+     * the live srcset to a single candidate: unlike srcset, nothing ever
+     * overwrites this one, so it is what the client rebuilds the real
+     * candidate list from, descriptors included, regardless of what srcset
+     * currently shows.
+     */
     public function attributeValue(): string
     {
-        return implode(self::TOKEN_SEPARATOR, $this->tokens);
+        $values = array_map(
+            static fn (string $url, string $token): string => self::NOT_PROVISIONAL_TOKEN === $token ? $url : $token,
+            $this->candidates->urls(),
+            $this->tokens,
+        );
+
+        return $this->candidates->withUrls($values);
     }
 
     /**
@@ -172,6 +188,25 @@ final readonly class SrcsetMarking
         return (string) preg_replace_callback(
             self::PATTERN,
             fn (): string => 'srcset='.$this->quote.$this->candidates->withUrls($urls).$this->quote,
+            $tag,
+            1,
+        );
+    }
+
+    /**
+     * Collapses the whole candidate list, provisional or not, to the one
+     * preview URI as its sole remaining candidate: with only one candidate
+     * left the browser has nothing to choose between, and every descriptor
+     * is dropped along with the rest, since none applies to a data URI
+     * anyway. Nothing is lost: attributeValue() is untouched by this and
+     * still carries the real list, which is what the module rebuilds srcset
+     * from once the original stage answers.
+     */
+    public function appliedToWithPreview(string $tag, string $previewUri): string
+    {
+        return (string) preg_replace_callback(
+            self::PATTERN,
+            fn (): string => 'srcset='.$this->quote.$previewUri.$this->quote,
             $tag,
             1,
         );

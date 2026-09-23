@@ -25,18 +25,51 @@ const collect = () => {
     return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))];
 };
 
+// A token is digits, a dot and hex, which nothing SrcsetCandidates would
+// have accepted as a real URL looks like: no scheme, no slash, no query.
+// That is what lets data-file-sync-srcset carry a token and a real,
+// untouched URL side by side and still tell which is which.
+const TOKEN_PATTERN = /^\d+\.[0-9a-f]+$/;
+
+const isToken = (value) => TOKEN_PATTERN.test(value);
+
+// data-file-sync-srcset holds the same candidate list srcset does, with a
+// token standing in for a provisional candidate's URL and every other
+// candidate's real URL left as it is. Reading it apart here, once, rather
+// than in both tokensOf() and nextSrcset(), is what makes it safe to read
+// even after the preview stage has overwritten the live srcset attribute:
+// this one is never touched by anything in this module.
+const srcsetEntries = (element) => {
+    const value = element.dataset.fileSyncSrcset;
+    if (value === undefined) return [];
+
+    return value.split(/,\s*/).map((entry) => {
+        const [urlOrToken, ...descriptor] = entry.split(/\s+/);
+        return { urlOrToken, descriptor: descriptor.join(' ') };
+    });
+};
+
 // Every token one element could bring to a batch: its own src token, unless
 // data-file-sync carries the "srcset" marker instead of one, plus every
-// entry of data-file-sync-srcset that is not the "-" placeholder. A plain
+// srcset candidate that is a token rather than an already-final URL. A plain
 // image without a srcset therefore costs exactly the one token it always
 // did.
 const tokensOf = (element) => {
     const srcToken = element.dataset.fileSync === 'srcset' ? [] : [element.dataset.fileSync];
-    const srcsetTokens = element.dataset.fileSyncSrcset
-        ? element.dataset.fileSyncSrcset.split(',').filter((token) => token !== '-')
-        : [];
+    const srcsetTokens = srcsetEntries(element)
+        .map((entry) => entry.urlOrToken)
+        .filter(isToken);
     return [...srcToken, ...srcsetTokens];
 };
+
+// The one token D6 has the whole tag share a preview from: src's own when
+// src is itself provisional, otherwise the first srcset candidate that is a
+// token. Undefined only for an element run() would never have marked
+// data-file-sync-preview on in the first place.
+const previewTokenOf = (element) =>
+    element.dataset.fileSync !== 'srcset'
+        ? element.dataset.fileSync
+        : srcsetEntries(element).find((entry) => isToken(entry.urlOrToken))?.urlOrToken;
 
 // Consecutive batches, viewport-first order preserved across the cut, so a
 // page with more than BATCH_SIZE deferred images still materializes all of
@@ -109,9 +142,12 @@ const request = async (tokens, stage) => {
     }
 };
 
-// Rebuilds one element's srcset from data-file-sync-srcset, the candidate
-// URLs the middleware already wrote into srcset (each still carrying its own
-// descriptor, untouched) and this stage's answers.
+// Rebuilds srcset for the original stage from data-file-sync-srcset and this
+// stage's answers, keeping each candidate's own descriptor. Reads
+// data-file-sync-srcset rather than the live srcset attribute on purpose:
+// the preview stage may already have collapsed srcset to its own single
+// candidate by the time this runs, and data-file-sync-srcset is the one
+// place that structure survives untouched.
 //
 // undefined when the element carries no srcset marking at all, so callers
 // can tell "nothing to do here" apart from "something failed". null when a
@@ -119,16 +155,13 @@ const request = async (tokens, stage) => {
 // element rather than committing a srcset with a placeholder candidate still
 // in it, which the browser could still pick over the ones that did resolve.
 const nextSrcset = (element, result, key) => {
-    const tokens = element.dataset.fileSyncSrcset;
-    if (tokens === undefined) return undefined;
+    const entries = srcsetEntries(element);
+    if (entries.length === 0) return undefined;
 
-    const candidates = element.srcset.split(',').map((candidate) => candidate.trim());
-    const rebuilt = tokens.split(',').map((token, index) => {
-        if (token === '-') return candidates[index];
-        const url = result[token]?.[key];
+    const rebuilt = entries.map(({ urlOrToken, descriptor }) => {
+        const url = isToken(urlOrToken) ? result[urlOrToken]?.[key] : urlOrToken;
         if (!url) return null;
-        const [, ...descriptor] = candidates[index].split(/\s+/);
-        return [url, ...descriptor].join(' ');
+        return descriptor ? `${url} ${descriptor}` : url;
     });
 
     return rebuilt.includes(null) ? null : rebuilt.join(', ');
@@ -143,8 +176,21 @@ const apply = async (elements, result, key, final) => {
     // loop instead would delay the single commit by the sum of the load
     // times, which for a batch of fifty is most of what this feature exists
     // to avoid.
+    // The preview stage shares one URI across the whole tag (D6), assigned
+    // wholesale to whichever attribute the browser actually reads (D7): the
+    // original stage instead rebuilds srcset candidate by candidate through
+    // nextSrcset(), since every candidate materializes on its own.
     const pending = elements
         .map((element) => {
+            if (!final) {
+                const token = previewTokenOf(element);
+                const uri = token ? result[token]?.[key] : undefined;
+                if (!uri) return null;
+
+                const hasSrcset = element.dataset.fileSyncSrcset !== undefined;
+                return [element, hasSrcset ? undefined : uri, hasSrcset ? uri : undefined];
+            }
+
             const hasSrcToken = element.dataset.fileSync !== 'srcset';
             const src = hasSrcToken ? result[element.dataset.fileSync]?.[key] : undefined;
             if (hasSrcToken && !src) return null;
@@ -238,7 +284,9 @@ const runBatch = async (elements) => {
     // apply() settles whichever order the answers come back in.
     const previews =
         unpreviewed.length > 0
-            ? request(unpreviewed.flatMap(tokensOf), 'preview').then((result) => apply(unpreviewed, result, 'preview', false))
+            ? request(unpreviewed.map(previewTokenOf).filter(Boolean), 'preview').then((result) =>
+                  apply(unpreviewed, result, 'preview', false),
+              )
             : Promise.resolve();
     const originals = request(elements.flatMap(tokensOf), 'original').then((result) => apply(elements, result, 'url', true));
 

@@ -26,10 +26,11 @@ use function substr_replace;
 /**
  * ProvisionalSrc.
  *
- * What a tag's own src attribute gets rewritten to, independent of whatever
- * its srcset needs (see SrcsetMarking): a stored preview inlined as a data
- * URI, or the query suffix that busts the browser's cache once
- * materialization replaces the same URL's bytes.
+ * What a tag's own src attribute gets rewritten to: the query suffix that
+ * busts the browser's cache once materialization replaces the same URL's
+ * bytes, or, once DeferredImageMiddleware has decided a preview applies and
+ * built its data URI, that URI inlined either here or, per SrcsetMarking,
+ * into srcset instead.
  *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
@@ -53,16 +54,14 @@ final readonly class ProvisionalSrc
     private const PROVISIONAL_QUERY = 'file-sync-provisional=1';
 
     /**
-     * What an already marked tag gains from the preview store: the stored
-     * preview in place of the URL the browser would otherwise fetch the grey
-     * placeholder from, or the attribute that asks the module to go and get
-     * one, or nothing at all, because a tag that states no size of its own
-     * takes no part in the preview stage.
+     * The stored preview inlined in place of the URL the browser would
+     * otherwise fetch the grey placeholder from. Callers decide whether a
+     * preview even applies to this tag before reaching for this: it never
+     * inspects the tag itself.
      *
      * Only the src value is replaced, between the quotes the tag already
-     * carries, at the offsets the match reported: the quoting survives because
-     * it is never touched, not because anything mirrors it. $quote is mirrored
-     * by the marking branch alone, which appends an attribute of its own.
+     * carries, at the offsets the match reported: the quoting survives
+     * because it is never touched, not because anything mirrors it.
      *
      * The replacement still has to survive between those quotes, and it does:
      * a base64 payload behind a fixed prefix is alphanumerics, "+", "/", "=",
@@ -70,26 +69,30 @@ final readonly class ProvisionalSrc
      *
      * @param array{string, int} $src the matched src value and its offset in the body
      */
-    public static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
+    public static function withPreviewData(string $tag, array $src, int $tagOffset, string $preview): string
     {
-        if (!self::declaresItsOwnSize($tag) || self::picksFromSrcset($tag)) {
-            return self::withProvisionalQuery($tag, $src, $tagOffset);
-        }
+        return substr_replace($tag, self::previewUri($preview), $src[1] - $tagOffset, strlen($src[0]));
+    }
 
-        if (null === $preview) {
-            return self::withProvisionalQuery(
-                self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote),
-                $src,
-                $tagOffset,
-            );
-        }
+    /**
+     * The same data URI withPreviewData() inlines into src, exposed on its
+     * own so SrcsetMarking::appliedToWithPreview() can inline it into srcset
+     * instead: one tag never gets a preview through both.
+     */
+    public static function previewUri(string $preview): string
+    {
+        return self::PREVIEW_URI_PREFIX.base64_encode($preview);
+    }
 
-        return substr_replace(
-            $tag,
-            self::PREVIEW_URI_PREFIX.base64_encode($preview),
-            $src[1] - $tagOffset,
-            strlen($src[0]),
-        );
+    /**
+     * The attribute that asks the module to fetch a preview for this tag,
+     * ready to append. Added at most once per tag regardless of whether the
+     * preview would end up on src or on srcset, since D6 has the whole tag
+     * share one preview.
+     */
+    public static function previewMarkerAttribute(string $quote): string
+    {
+        return ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote;
     }
 
     /**
@@ -168,42 +171,24 @@ final readonly class ProvisionalSrc
     }
 
     /**
-     * Whether the tag takes part in the preview stage at all.
+     * Whether the tag takes part in the preview stage at all, whether that
+     * preview would land on src or, per SrcsetMarking, on srcset instead.
      *
      * A stored preview is 32 pixels on its longest edge, while the grey
      * placeholder is generated at the rendition's own width and height. A tag
-     * that states no size of its own is laid out from whatever its src turns
-     * out to be, so a preview reaching it would collapse it to 32 pixels and
-     * grow it back when the original lands: two layout shifts where the
-     * placeholder alone costs none. That holds however the preview travels,
-     * since the module assigns the very same data URI to src, so such a tag
-     * is left with the placeholder and the original and nothing in between.
+     * that states no size of its own is laid out from whatever its image
+     * turns out to be, so a preview reaching it would collapse it to 32
+     * pixels and grow it back when the original lands: two layout shifts
+     * where the placeholder alone costs none.
      *
      * The lookbehind is the one DeferredImageMiddleware's own src pattern
      * uses, for the same reason: a word boundary also sits between the
      * hyphen and the "w" of data-width. An empty value states no size
      * either.
      */
-    private static function declaresItsOwnSize(string $tag): bool
+    public static function declaresItsOwnSize(string $tag): bool
     {
         return 1 === preg_match('/(?<![-\w])width=(["\'])[^"\']+\1/i', $tag)
             && 1 === preg_match('/(?<![-\w])height=(["\'])[^"\']+\1/i', $tag);
-    }
-
-    /**
-     * Whether the browser takes this tag's image from a candidate list
-     * rather than from src, in which case it never reads src at all. The
-     * preview would then be a data URI nothing renders, and the tag would be
-     * marked for the stage on every response: a source rendition downloaded
-     * and a preview stored for a picture no visitor ever sees blurred.
-     *
-     * The same lookbehind as the size guard, for the same reason: a word
-     * boundary also sits between the hyphen and the "s" of data-srcset, which
-     * is a lazy-loading attribute the browser lays nothing out from. An
-     * empty value names no candidate either.
-     */
-    private static function picksFromSrcset(string $tag): bool
-    {
-        return 1 === preg_match('/(?<![-\w])srcset=(["\'])[^"\']+\1/i', $tag);
     }
 }

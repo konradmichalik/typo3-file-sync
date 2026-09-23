@@ -102,6 +102,13 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
     private const SECOND_PREVIEW_IDENTIFIER = '/_processed_/a/b/csm_provisional_ccc.jpg';
 
+    /**
+     * The rendition SRCSET_CANDIDATE_URL resolves to, which a preview is
+     * stored under when the test wants the srcset candidate, rather than
+     * src, to be the tag's one preview source.
+     */
+    private const SRCSET_CANDIDATE_PREVIEW_IDENTIFIER = '/_processed_/a/b/csm_provisional_ddd.jpg';
+
     private const PREVIEW_STORAGE = 9;
 
     protected array $testExtensionsToLoad = ['typo3_file_sync'];
@@ -134,6 +141,7 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $store = new PreviewStore();
         $store->remove(self::PREVIEW_STORAGE, self::PREVIEW_IDENTIFIER);
         $store->remove(self::PREVIEW_STORAGE, self::SECOND_PREVIEW_IDENTIFIER);
+        $store->remove(self::PREVIEW_STORAGE, self::SRCSET_CANDIDATE_PREVIEW_IDENTIFIER);
         parent::tearDown();
     }
 
@@ -621,10 +629,13 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
     /**
      * A responsive tag states its size and would pass the size gate, but the
-     * browser picks its image from srcset and never reads src. Marking it
-     * buys a source rendition downloaded and a preview stored for something
-     * no visitor ever sees, and inlining writes a data URI into the HTML
-     * that nothing renders.
+     * browser picks its image from srcset and never reads src, so a preview
+     * inlined into src would be invisible. This tag's own candidates resolve
+     * to nothing, so nothing about srcset is provisional either: the whole
+     * tag genuinely has no preview to show anywhere, not merely one src
+     * chooses not to use. inlinesSrcsPreviewAsTheSoleSrcsetCandidateWhenSrcIsProvisionalToo
+     * and the tests after it cover a srcset whose candidates do resolve,
+     * where the preview goes into srcset instead of disappearing.
      *
      * The preview is stored on purpose, so the case fails the moment the
      * guard is dropped rather than for want of a preview.
@@ -643,6 +654,106 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertStringNotContainsString('data:image/webp', $result);
         // The original stage is untouched: the real file still replaces the
         // placeholder, which is all a responsive tag ever got.
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * D6: one preview per tag, and src's own rendition wins whenever src
+     * itself is provisional, even though the preview is shown through
+     * srcset rather than src once srcset is present. A second, distinct
+     * preview is stored under the srcset candidate's own identifier so the
+     * assertion fails if priority ever slips to it instead.
+     */
+    #[Test]
+    public function inlinesSrcsPreviewAsTheSoleSrcsetCandidateWhenSrcIsProvisionalToo(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $stored = $this->storePreview('src-is-the-source');
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SRCSET_CANDIDATE_PREVIEW_IDENTIFIER, self::webp('not-this-one'));
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString('srcset="data:image/webp;base64,'.base64_encode($stored).'"', $result);
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * src itself is not provisional here, so it never had a rendition of its
+     * own to offer: the srcset candidate is the only source, per D6's
+     * "otherwise the first provisional candidate".
+     */
+    #[Test]
+    public function inlinesTheFirstProvisionalCandidatesPreviewWhenSrcIsNotProvisional(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $stored = self::webp('srcset-is-the-source');
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SRCSET_CANDIDATE_PREVIEW_IDENTIFIER, $stored);
+        $tag = '<img src="'.self::REAL_URL.'" srcset="'.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString('srcset="data:image/webp;base64,'.base64_encode($stored).'"', $result);
+        self::assertStringContainsString('src="'.self::REAL_URL.'"', $result);
+        self::assertStringNotContainsString(self::PROVISIONAL_QUERY, $result);
+        self::assertStringContainsString('data-file-sync="srcset"', $result);
+    }
+
+    /**
+     * Without a stored preview, srcset is marked exactly as it was before
+     * previews existed for it: every provisional candidate suffixed for the
+     * placeholder it already serves, real candidates untouched. The tag
+     * still needs a preview, so data-file-sync-preview says so, and
+     * data-file-sync-srcset keeps every position reconstructable: a real
+     * URL for the one candidate that needs nothing done to it, a token for
+     * the one that does.
+     */
+    #[Test]
+    public function marksASrcsetImageWithoutAStoredPreviewForThePreviewStage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::REAL_URL.' 300w, '.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString(
+            'srcset="'.self::REAL_URL.' 300w, '.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"',
+            $result,
+        );
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertSame(1, substr_count($result, 'data-file-sync-preview'));
+        self::assertStringContainsString('data-file-sync-preview="1"', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+        self::assertSame([null, 113], $this->srcsetTokensOf($result));
+    }
+
+    /**
+     * D6's size gate applies to the whole tag, not only to src: an unsized
+     * srcset image gets no preview through either attribute, exactly like an
+     * unsized plain image. The preview is stored on purpose so the case
+     * fails the moment the gate is dropped rather than for want of one.
+     */
+    #[Test]
+    public function leavesAnUnsizedSrcsetImageOutOfThePreviewStageEntirely(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::SRCSET_CANDIDATE_URL.' 600w">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString(
+            'srcset="'.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"',
+            $result,
+        );
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
         self::assertSame(110, $this->tokenOf($result));
     }
 
@@ -1044,9 +1155,12 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     /**
-     * Reads data-file-sync-srcset apart and resolves every entry back to a
-     * processed file uid, in the order the attribute lists them, with null
-     * standing in for the "-" a non-provisional candidate carries.
+     * Reads data-file-sync-srcset apart the same way the module has to: each
+     * candidate is a token or a real URL, followed by the descriptor
+     * SrcsetCandidates::withUrls() kept from the original srcset. Resolves
+     * every entry back to a processed file uid, in the order the attribute
+     * lists them, with null standing in for a real URL a non-provisional
+     * candidate carries instead of a token.
      *
      * @return list<int|null>
      */
@@ -1059,8 +1173,12 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         $tokenService = $this->get(DeferredTokenService::class);
 
         return array_map(
-            static fn (string $token): ?int => '-' === $token ? null : $tokenService->resolve($token),
-            explode(',', $matches[1]),
+            static function (string $entry) use ($tokenService): ?int {
+                [$urlOrToken] = explode(' ', $entry, 2);
+
+                return $tokenService->resolve($urlOrToken);
+            },
+            explode(', ', $matches[1]),
         );
     }
 
