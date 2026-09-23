@@ -340,6 +340,7 @@ function classic_post_setup() {
         --password="$TYPO3_DB_PASSWORD" \
         --admin-user-password="$TYPO3_SETUP_ADMIN_PASSWORD" \
         --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}"
+    remove_default_typoscript_template
   _done
 
   _progress " ├─ Activate extensions (classic)"
@@ -727,6 +728,31 @@ function setup_typo3() {
     done
 }
 
+# `typo3 setup --create-site` always inserts its own root sys_template
+# alongside the site it creates: TYPO3\CMS\Install\Service\SetupService
+# hardcodes one titled "Main TypoScript Rendering", with an inline `page =
+# PAGE` that renders the "Welcome to a default website made with TYPO3"
+# placeholder plus a bare tt_content listing. That is meant as a starting
+# point for a project with no TypoScript of its own yet; this repo always
+# installs a real sitepackage alongside it (composer or a fixture
+# ext_emconf.php symlink, either way), whose own `page = PAGE` the site's
+# generated config.yaml already depends on as a Set.
+#
+# A classic assignment like `page = PAGE` replaces the whole object rather
+# than merging into it, so whichever of the two is evaluated last wins outright,
+# and the hardcoded record wins: it stays in the database, entirely separate
+# from the Set the site declares. Left in place, the sitepackage's own
+# templates, layouts and partials are dead code that never renders on any
+# frontend request, which is what silently broke Page/Default.html.
+#
+# Removing it is safe here specifically because a sitepackage always exists
+# by the time this runs: nothing about the fallback's own purpose is lost,
+# since there is no "no TypoScript configured yet" state to fall back to.
+function remove_default_typoscript_template() {
+    mysql -h db -u root -proot "$DATABASE" -e \
+        "DELETE FROM sys_template WHERE title = 'Main TypoScript Rendering'"
+}
+
 # Function to update TYPO3.
 # It updates the TYPO3 database schema and flushes the cache.
 function update_typo3() {
@@ -917,6 +943,7 @@ function post_setup_12 {
 function post_setup_13 {
   mysql -h db -u root -p"root" -e "CREATE DATABASE $DATABASE;"
   $TYPO3_BIN  setup -n --dbname=$DATABASE --password=$TYPO3_DB_PASSWORD --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}" --admin-user-password=$TYPO3_SETUP_ADMIN_PASSWORD
+  remove_default_typoscript_template
   setup_typo3
 
   sed -i "/'deprecations'/,/^[[:space:]]*'disabled' => true,/s/'disabled' => true,/'disabled' => false,/" /var/www/html/.Build/$VERSION/config/system/settings.php
@@ -930,6 +957,7 @@ function post_setup_13 {
 function post_setup_14 {
   mysql -h db -u root -p"root" -e "CREATE DATABASE $DATABASE;"
   $TYPO3_BIN  setup -n --dbname=$DATABASE --password=$TYPO3_DB_PASSWORD --create-site="https://${VERSION}.${DDEV_SITENAME}.${DDEV_TLD}" --admin-user-password=$TYPO3_SETUP_ADMIN_PASSWORD
+  remove_default_typoscript_template
   setup_typo3
 
   sed -i "/'deprecations'/,/^[[:space:]]*'disabled' => true,/s/'disabled' => true,/'disabled' => false,/" /var/www/html/.Build/$VERSION/config/system/settings.php
