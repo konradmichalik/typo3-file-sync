@@ -23,6 +23,7 @@ use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Configuration\Features;
 use TYPO3\CMS\Core\Utility\PathUtility;
 
+use function array_filter;
 use function array_map;
 use function array_merge;
 use function array_unique;
@@ -72,8 +73,16 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * between the hyphen and the "s" of data-src, and because [^>]* is
      * greedy the engine backtracks from the right and would settle on the
      * lazy-loading attribute instead of the src the browser renders.
+     *
+     * The second alternative is a picture's source: it names its candidates
+     * through srcset rather than src, so its own quote is captured in group
+     * 3 instead of group 1, which TagRewriter falls back to whenever group 1
+     * did not participate. A video or audio source names its file through
+     * src instead, which is why this requires srcset rather than matching
+     * every source element there is; one carrying both is not a shape any
+     * renderer this extension supports produces.
      */
-    private const IMAGE_PATTERN = '/<img\b[^>]*(?<![-\w])src=(["\'])([^"\']+)\1[^>]*>/i';
+    private const IMAGE_PATTERN = '/<img\b[^>]*(?<![-\w])src=(["\'])([^"\']+)\1[^>]*>|<source\b[^>]*(?<![-\w])srcset=(["\'])[^"\']*\3[^>]*\/?>/i';
 
     /**
      * Spans whose contents are not markup the browser renders as elements.
@@ -82,6 +91,18 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * textarea it would show up as visible page text.
      */
     private const SKIP_PATTERN = '/<script\b[^>]*>.*?<\/script\s*>|<textarea\b[^>]*>.*?<\/textarea\s*>|<!--.*?-->/is';
+
+    /**
+     * A source's preview never reaches anywhere a visitor sees it, the same
+     * as an unresolved srcset's, but for a different reason: the browser
+     * renders whichever source matches or, failing all of them, the img
+     * itself, never both, so a preview stored for one crop while another is
+     * shown is pure waste. This is what tells TagRewriter an img sits inside
+     * a picture too, not only what marks the source itself, since an img
+     * with its own width and height would otherwise pass the same preview
+     * gate a bare responsive img does.
+     */
+    private const PICTURE_PATTERN = '/<picture\b[^>]*>.*?<\/picture\s*>/is';
 
     public function __construct(
         private CacheManager $cacheManager,
@@ -141,7 +162,9 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
-        $urls = array_merge($matches[2], SrcsetMarking::urlsIn($matches[0]));
+        // $matches[2] is empty for a source match: the pattern's src group
+        // only ever participates for an img.
+        $urls = array_merge(array_filter($matches[2], static fn (string $url): bool => '' !== $url), SrcsetMarking::urlsIn($matches[0]));
         $identifierByUrl = $this->publicUrlResolver->identifiersByUrl(array_values(array_unique($urls)), $storageUids);
         if ([] === $identifierByUrl) {
             return null;
@@ -175,6 +198,7 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
     private function rewriteTags(string $body, array $identifierByUrl, array $renditionByIdentifier): ?string
     {
         $skipSpans = self::skipSpans($body);
+        $pictureSpans = self::spans(self::PICTURE_PATTERN, $body);
         // Resolved once for the whole body rather than per tag, and only
         // after a provisional rendition was actually found, so a response
         // that ends up untouched never asks.
@@ -188,13 +212,14 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         $total = 0;
         $result = preg_replace_callback(
             self::IMAGE_PATTERN,
-            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $previewsEnabled, &$marked, &$previewByIdentifier): string {
+            function (array $match) use ($identifierByUrl, $renditionByIdentifier, $skipSpans, $pictureSpans, $previewsEnabled, &$marked, &$previewByIdentifier): string {
                 [$tag, $offset] = $match[0];
                 if (self::isWithinSpan($offset, $skipSpans)) {
                     return $tag;
                 }
 
-                $outcome = $this->tagRewriter->rewriteTag($match, $offset, $identifierByUrl, $renditionByIdentifier, $previewsEnabled, $previewByIdentifier);
+                $insidePicture = self::isWithinSpan($offset, $pictureSpans);
+                $outcome = $this->tagRewriter->rewriteTag($match, $offset, $identifierByUrl, $renditionByIdentifier, $previewsEnabled, $insidePicture, $previewByIdentifier);
                 if (null === $outcome) {
                     return $tag;
                 }
@@ -222,7 +247,15 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      */
     private static function skipSpans(string $body): array
     {
-        preg_match_all(self::SKIP_PATTERN, $body, $matches, \PREG_OFFSET_CAPTURE);
+        return self::spans(self::SKIP_PATTERN, $body);
+    }
+
+    /**
+     * @return list<array{int, int}> start and end offset of each span
+     */
+    private static function spans(string $pattern, string $body): array
+    {
+        preg_match_all($pattern, $body, $matches, \PREG_OFFSET_CAPTURE);
 
         return array_map(
             static fn (array $match): array => [$match[1], $match[1] + strlen($match[0])],

@@ -57,6 +57,15 @@ use function strtolower;
  * src whenever a srcset attribute exists at all, as its sole candidate; the
  * real candidate list survives in data-file-sync-srcset regardless.
  *
+ * D8: a picture's source is marked the same way a responsive img's srcset
+ * is, since it names its candidates the same way and carries no src of its
+ * own, but it and the picture's own img both take no part in the preview
+ * stage at all: the browser renders whichever source matches or, failing
+ * every one of them, the img, never more than one, so a preview stored for
+ * a crop that particular visitor may never see is pure waste. The img
+ * still gets marked and swapped through its own src exactly like any other;
+ * only the preview decision changes.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
@@ -96,10 +105,20 @@ final readonly class TagRewriter
      * comes back as the second element of the tuple, for the caller, which
      * owns the variable across every tag, to carry into the next one.
      *
-     * @param array{0: array{string, int}, 1: array{string, int}, 2: array{string, int}} $match
-     * @param array<string, string>                                                      $identifierByUrl
-     * @param array<string, array{uid: int, storage: int}>                               $renditionByIdentifier
-     * @param array<string, string|null>                                                 $previewByIdentifier
+     * A picture's source matches the same pattern as an img, in its second
+     * alternative: group 1 (src's quote) and group 2 (src's value) never
+     * participate for it, so $identifier resolves to null and $rendition
+     * stays null the same way it would for an img whose src nobody
+     * recognised. Group 3 (srcset's own quote) is what the fallback below
+     * uses for the new attributes it appends instead; PCRE drops a trailing
+     * group entirely, rather than padding it empty, whenever the alternative
+     * that owns it did not match, which is why it is optional here and img's
+     * own match array simply has no fourth element at all.
+     *
+     * @param array{0: array{string, int}, 1: array{string, int}, 2: array{string, int}, 3?: array{string, int}} $match
+     * @param array<string, string>                                                                              $identifierByUrl
+     * @param array<string, array{uid: int, storage: int}>                                                       $renditionByIdentifier
+     * @param array<string, string|null>                                                                         $previewByIdentifier
      *
      * @return array{0: string, 1: array<string, string|null>}|null
      */
@@ -109,6 +128,7 @@ final readonly class TagRewriter
         array $identifierByUrl,
         array $renditionByIdentifier,
         bool $previewsEnabled,
+        bool $insidePicture,
         array $previewByIdentifier,
     ): ?array {
         [$tag] = $match[0];
@@ -128,6 +148,8 @@ final readonly class TagRewriter
             return null;
         }
 
+        $quote = '' !== $match[1][0] ? $match[1][0] : ($match[3][0] ?? '');
+
         // D7: the browser never reads src once a srcset attribute is
         // present, whatever it contains, so a preview only ever lands on
         // src when there is no srcset at all to read from instead.
@@ -136,6 +158,7 @@ final readonly class TagRewriter
             $showsPreviewOnSrc,
             $srcsetHasProvisional,
             $previewsEnabled,
+            $insidePicture,
             $tag,
             $identifier,
             $rendition,
@@ -147,12 +170,12 @@ final readonly class TagRewriter
         $rewritten = self::rewriteSrcset($rewritten, $srcset, $preview);
 
         if ($previewEligible && null === $preview) {
-            $rewritten = ProvisionalSrc::appended($rewritten, ProvisionalSrc::previewMarkerAttribute($match[1][0]));
+            $rewritten = ProvisionalSrc::appended($rewritten, ProvisionalSrc::previewMarkerAttribute($quote));
         }
 
         [$fileSyncValue, $srcsetValue] = $this->markerValues($rendition, $srcsetHasProvisional, $srcset);
 
-        return [self::withMarkerAttributes($rewritten, $match[1][0], $fileSyncValue, $srcsetValue), $previewByIdentifier];
+        return [self::withMarkerAttributes($rewritten, $quote, $fileSyncValue, $srcsetValue), $previewByIdentifier];
     }
 
     /**
@@ -202,6 +225,14 @@ final readonly class TagRewriter
      * D6's size gate applies to the whole tag: an unsized tag reaches this
      * as ineligible regardless of what src or srcset would otherwise offer.
      *
+     * $insidePicture forces the same ineligibility on a sized img: the
+     * browser renders whichever source matches or, failing all of them, the
+     * img, never both, so a preview reaching one is stored for a crop no
+     * visitor is guaranteed to ever see. A source itself never reaches this
+     * as eligible regardless, since it carries neither width nor height of
+     * its own for declaresItsOwnSize() to find; $insidePicture exists for
+     * the img sitting beside it, not for the source.
+     *
      * @param array{uid: int, storage: int}|null $rendition
      * @param array<string, string|null>         $previewByIdentifier
      *
@@ -211,13 +242,15 @@ final readonly class TagRewriter
         bool $showsPreviewOnSrc,
         bool $srcsetHasProvisional,
         bool $previewsEnabled,
+        bool $insidePicture,
         string $tag,
         ?string $identifier,
         ?array $rendition,
         ?SrcsetMarking $srcset,
         array $previewByIdentifier,
     ): array {
-        $eligible = ($showsPreviewOnSrc || $srcsetHasProvisional)
+        $eligible = !$insidePicture
+            && ($showsPreviewOnSrc || $srcsetHasProvisional)
             && $previewsEnabled
             && ProvisionalSrc::declaresItsOwnSize($tag);
         if (!$eligible) {

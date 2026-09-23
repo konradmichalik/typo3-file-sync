@@ -758,6 +758,94 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     /**
+     * A source inside a picture is marked on the same terms as a srcset on
+     * an img: no src of its own, so data-file-sync always carries the
+     * "srcset" marker, and every provisional candidate gets a token in
+     * data-file-sync-srcset. It is handled independently of the picture's
+     * own img, which carries its own, unrelated token.
+     */
+    #[Test]
+    public function marksASourceSrcsetInsideAPicture(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $picture = '<picture><source srcset="'.self::SRCSET_CANDIDATE_URL.' 600w">'.self::SIZED_PROVISIONAL_TAG.'</picture>';
+
+        $result = $this->processBody($this->page($picture));
+
+        self::assertStringContainsString(
+            '<source srcset="'.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w" data-file-sync="srcset" data-file-sync-srcset="',
+            $result,
+        );
+        // tokenOf() takes the first data-file-sync in the body, which is now
+        // the source's literal "srcset" marker rather than a real token; the
+        // img's own is asserted directly instead.
+        self::assertStringContainsString(
+            'data-file-sync="'.$this->get(DeferredTokenService::class)->create(110).'"',
+            $result,
+        );
+    }
+
+    /**
+     * A video or audio source names its file through src, not srcset, so it
+     * never matches the source pattern at all: nothing here is a picture's
+     * responsive candidate for this extension to have an opinion about.
+     */
+    #[Test]
+    public function leavesAVideoSourceWithSrcAlone(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $markup = '<video><source src="movie.mp4" type="video/mp4"></video>'.self::PROVISIONAL_TAG;
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString('<source src="movie.mp4" type="video/mp4">', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
+     * D8: the browser renders whichever source matches, never the picture's
+     * own img, so a preview reaching either would be stored and inlined for
+     * a crop no visitor ever sees. Both are stored on purpose, so the case
+     * fails the moment the guard is dropped for either rather than for want
+     * of one.
+     */
+    #[Test]
+    public function leavesBothTheImgAndTheSourceOfAPictureOutOfThePreviewStage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $this->enablePreviews();
+        $this->storePreview('preview-bytes');
+        (new PreviewStore())->write(self::PREVIEW_STORAGE, self::SRCSET_CANDIDATE_PREVIEW_IDENTIFIER, self::webp('preview-bytes'));
+        $picture = '<picture><source srcset="'.self::SRCSET_CANDIDATE_URL.' 600w">'.self::SIZED_PROVISIONAL_TAG.'</picture>';
+
+        $result = $this->processBody($this->page($picture));
+
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertStringContainsString(
+            'srcset="'.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"',
+            $result,
+        );
+        self::assertStringNotContainsString('data-file-sync-preview', $result);
+        self::assertStringNotContainsString('data:image/webp', $result);
+    }
+
+    /**
+     * The same refusal an img inside a comment or a script gets: this
+     * extension owns none of that markup, whatever tag sits inside it.
+     */
+    #[Test]
+    public function leavesASourceInsideACommentAlone(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $markup = '<!-- <source srcset="'.self::SRCSET_CANDIDATE_URL.' 600w"> -->'.self::PROVISIONAL_TAG;
+
+        $result = $this->processBody($this->page($markup));
+
+        self::assertStringContainsString('<!-- <source srcset="'.self::SRCSET_CANDIDATE_URL.' 600w"> -->', $result);
+        self::assertSame(110, $this->tokenOf($result));
+    }
+
+    /**
      * data-srcset is a lazy-loading attribute the browser lays nothing out
      * from, so a tag carrying only that still renders from its src and still
      * deserves its preview. Without the lookbehind the guard would read the

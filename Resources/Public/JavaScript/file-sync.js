@@ -15,13 +15,22 @@ const prefersMotion = () => window.matchMedia('(prefers-reduced-motion: no-prefe
 
 const canAnimate = () => typeof document.startViewTransition === 'function' && prefersMotion();
 
+// A <source> inside a <picture> has no box of its own: the browser lays out
+// and paints the picture's <img>, whichever source it picked from. Viewport
+// checking and the shimmer both act on that <img> instead, so several
+// sources sharing one picture also share its one shimmer rather than each
+// starting a pointless animation on an element nothing ever renders.
+const layoutElementFor = (element) => (element.localName === 'source' ? element.closest('picture')?.querySelector('img') : element);
+
 const inViewport = (element) => {
-    const box = element.getBoundingClientRect();
+    const target = layoutElementFor(element);
+    if (!target) return false;
+    const box = target.getBoundingClientRect();
     return box.top < window.innerHeight && box.bottom > 0;
 };
 
 const collect = () => {
-    const nodes = Array.from(document.querySelectorAll('img[data-file-sync]'));
+    const nodes = Array.from(document.querySelectorAll('[data-file-sync]'));
     return [...nodes.filter(inViewport), ...nodes.filter((node) => !inViewport(node))];
 };
 
@@ -104,10 +113,11 @@ const batches = (elements) => {
 const shimmers = new WeakMap();
 
 const startShimmer = (element) => {
-    if (typeof element.animate !== 'function' || shimmers.has(element)) return;
+    const target = layoutElementFor(element);
+    if (!target || typeof target.animate !== 'function' || shimmers.has(target)) return;
     shimmers.set(
-        element,
-        element.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(0.85)' }, { filter: 'brightness(1)' }], {
+        target,
+        target.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(0.85)' }, { filter: 'brightness(1)' }], {
             duration: 1600,
             iterations: Infinity,
             easing: 'ease-in-out',
@@ -115,9 +125,15 @@ const startShimmer = (element) => {
     );
 };
 
+// Whichever of a picture's elements settles first stops the shared shimmer
+// for all of them: harmless, since every one of them still swaps in
+// correctly once its own answer arrives, just without the pulse for
+// whichever is still in flight at that point.
 const stopShimmer = (element) => {
-    shimmers.get(element)?.cancel();
-    shimmers.delete(element);
+    const target = layoutElementFor(element);
+    if (!target) return;
+    shimmers.get(target)?.cancel();
+    shimmers.delete(target);
 };
 
 const request = async (tokens, stage) => {

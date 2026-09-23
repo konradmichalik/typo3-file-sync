@@ -5,6 +5,27 @@
     <main>
         <h1>{data.title}</h1>
         <f:format.raw>{content}</f:format.raw>
+
+        <!--
+            Hand-authored, independent of the textmedia content elements
+            above: fluid_styled_content's own image partial renders neither
+            srcset nor picture markup, so responsive and picture support have
+            nothing to materialize against on a real page without these.
+            Both reference FAL originals the rest of this fixture already
+            marks provisional, so a fresh `ddev prepare-test` clears these
+            renditions too.
+        -->
+        <h2>Responsive image</h2>
+        <img src="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '600')}"
+             srcset="{f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '300')} 300w, {f:uri.image(src: '1:/user_upload/test-image-1.jpg', width: '600')} 600w"
+             width="600" height="400" alt="Responsive srcset fixture">
+
+        <h2>Picture</h2>
+        <picture>
+            <source media="(min-width: 800px)" srcset="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '800')} 800w">
+            <source media="(max-width: 799px)" srcset="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '400')} 400w">
+            <img src="{f:uri.image(src: '1:/user_upload/test-image-2.jpg', width: '400')}" width="400" height="300" alt="Picture fixture">
+        </picture>
     </main>
 </f:section>
 </html>
