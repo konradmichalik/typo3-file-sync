@@ -16,7 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Functional\Middleware;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Resource\Preview\PreviewStore;
-use KonradMichalik\Typo3FileSync\Service\DeferredTokenService;
+use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
 use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use Psr\Http\Message\ResponseInterface;
@@ -27,10 +27,14 @@ use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\{Response, ServerRequest, Stream};
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
+use function array_map;
 use function base64_decode;
 use function base64_encode;
+use function explode;
+use function implode;
 use function preg_match;
 use function preg_match_all;
+use function range;
 use function str_repeat;
 use function strlen;
 use function substr;
@@ -78,7 +82,17 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
 
     private const SECOND_SIZED_PROVISIONAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_provisional_ccc.jpg" width="150" height="100" alt="second">';
 
+    /**
+     * A third rendition of the same original as PROVISIONAL_URL, so a
+     * srcset combining it with SECOND_PROVISIONAL_URL exercises two
+     * different provisional candidates of one picture rather than one
+     * candidate repeated.
+     */
+    private const SRCSET_CANDIDATE_URL = '/fileadmin/_processed_/a/b/csm_provisional_ddd.jpg';
+
     private const REAL_TAG = '<img src="/fileadmin/_processed_/a/b/csm_real_bbb.jpg" alt="real">';
+
+    private const REAL_URL = '/fileadmin/_processed_/a/b/csm_real_bbb.jpg';
 
     /**
      * The rendition the fixture's provisional image resolves to, which is the
@@ -820,6 +834,161 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         self::assertSame(1, substr_count($result, self::PROVISIONAL_QUERY));
     }
 
+    /**
+     * Every candidate of the srcset is a rendition of the same original as
+     * src, so materializing the batch this produces still costs one remote
+     * fetch, not three.
+     */
+    #[Test]
+    public function marksEveryProvisionalCandidateOfASrcsetInOrder(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::SECOND_PROVISIONAL_URL.' 300w, '.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame(110, $this->tokenOf($result));
+        self::assertSame([112, 113], $this->srcsetTokensOf($result));
+        self::assertStringContainsString(
+            'srcset="'.self::SECOND_PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.' 300w, '.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"',
+            $result,
+        );
+    }
+
+    /**
+     * The real rendition is a candidate this extension has nothing to do
+     * for, so its URL is left exactly as it was: no token, no suffix, and no
+     * "-" placeholder anywhere but in data-file-sync-srcset.
+     */
+    #[Test]
+    public function leavesTheNonProvisionalCandidateOfAMixedSrcsetUntouched(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::REAL_URL.' 300w, '.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame([null, 113], $this->srcsetTokensOf($result));
+        self::assertStringContainsString(
+            'srcset="'.self::REAL_URL.' 300w, '.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"',
+            $result,
+        );
+    }
+
+    /**
+     * src alone decides nothing here: the browser reading srcset never
+     * looks at it, so a non-provisional src carries no token of its own and
+     * "srcset" stands in its place, telling the module to look at
+     * data-file-sync-srcset instead.
+     */
+    #[Test]
+    public function marksTheAttributeWithASrcsetMarkerWhenOnlyTheSrcsetIsProvisional(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::REAL_URL.'" srcset="'.self::SRCSET_CANDIDATE_URL.' 600w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString('data-file-sync="srcset"', $result);
+        self::assertSame([113], $this->srcsetTokensOf($result));
+        self::assertStringContainsString('src="'.self::REAL_URL.'"', $result);
+        self::assertStringNotContainsString(self::PROVISIONAL_QUERY.'"', $result);
+    }
+
+    /**
+     * The offsets withProvisionalQuery() substitutes src at are taken
+     * against the original tag, so a srcset rewrite sitting between the two
+     * offset-based passes over src would shift them the moment its own
+     * length changes. Both orders have to land on the same result.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function srcsetPositionProvider(): array
+    {
+        $attributes = 'width="300" height="200"';
+
+        return [
+            'srcset before src' => ['<img srcset="'.self::SRCSET_CANDIDATE_URL.' 600w" src="'.self::PROVISIONAL_URL.'" '.$attributes.'>'],
+            'srcset after src' => ['<img src="'.self::PROVISIONAL_URL.'" srcset="'.self::SRCSET_CANDIDATE_URL.' 600w" '.$attributes.'>'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('srcsetPositionProvider')]
+    public function rewritesSrcAndSrcsetRegardlessOfTheirOrderInTheTag(string $tag): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame(110, $this->tokenOf($result));
+        self::assertSame([113], $this->srcsetTokensOf($result));
+        self::assertStringContainsString('src="'.self::PROVISIONAL_URL.'?'.self::PROVISIONAL_QUERY.'"', $result);
+        self::assertStringContainsString('srcset="'.self::SRCSET_CANDIDATE_URL.'?'.self::PROVISIONAL_QUERY.' 600w"', $result);
+    }
+
+    /**
+     * The parser declines the whole srcset the moment a candidate lacks a
+     * descriptor while another one has one, which is what an unescaped comma
+     * inside a filename produces. Declining takes the whole tag down with
+     * it: src would otherwise have been perfectly markable on its own, and
+     * marking it regardless would swap a src the browser never reads while
+     * leaving the srcset it does read untouched.
+     */
+    #[Test]
+    public function declinesTheWholeTagWhenTheSrcsetCannotBeParsed(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="photo,2.jpg 400w, photo3.jpg 800w" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString($tag, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
+    /**
+     * data-srcset is a lazy-loading attribute, not the one the browser reads
+     * candidates from. Without the lookbehind this middleware shares with
+     * IMAGE_PATTERN, the value here would be handed to the srcset parser,
+     * which would decline it, taking the whole tag down for a reason that
+     * has nothing to do with the srcset this tag does not have.
+     */
+    #[Test]
+    public function ignoresADataSrcsetAttributeEvenWhenItWouldNotParse(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" data-srcset="not, a, real, srcset, value" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertSame(110, $this->tokenOf($result));
+        self::assertStringNotContainsString('data-file-sync-srcset', $result);
+    }
+
+    /**
+     * MaterializationService::MAX_TOKENS bounds a single POST, and a tag
+     * whose srcset alone would need more tokens than that batch could ever
+     * carry can never settle. Declining it here is the same call as
+     * declining a srcset the parser cannot read at all: src is left with
+     * nothing rather than with a token half the picture cannot use.
+     */
+    #[Test]
+    public function declinesASrcsetCarryingMoreCandidatesThanOneBatchCouldMaterialize(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tooMany = implode(', ', array_map(
+            static fn (int $index): string => '/fileadmin/candidate-'.$index.'.jpg '.$index.'w',
+            range(1, MaterializationService::MAX_TOKENS + 1),
+        ));
+        $tag = '<img src="'.self::PROVISIONAL_URL.'" srcset="'.$tooMany.'" width="300" height="200">';
+
+        $result = $this->processBody($this->page($tag));
+
+        self::assertStringContainsString($tag, $result);
+        self::assertStringNotContainsString('data-file-sync', $result);
+    }
+
     private function enablePreviews(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_PREVIEW_IMAGES] = true;
@@ -872,6 +1041,27 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
         }
 
         return $this->get(DeferredTokenService::class)->resolve($matches[1]);
+    }
+
+    /**
+     * Reads data-file-sync-srcset apart and resolves every entry back to a
+     * processed file uid, in the order the attribute lists them, with null
+     * standing in for the "-" a non-provisional candidate carries.
+     *
+     * @return list<int|null>
+     */
+    private function srcsetTokensOf(string $body): array
+    {
+        if (1 !== preg_match('/data-file-sync-srcset="([^"]+)"/', $body, $matches)) {
+            self::fail('No data-file-sync-srcset attribute was injected.');
+        }
+
+        $tokenService = $this->get(DeferredTokenService::class);
+
+        return array_map(
+            static fn (string $token): ?int => '-' === $token ? null : $tokenService->resolve($token),
+            explode(',', $matches[1]),
+        );
     }
 
     private function handlerReturning(string $body, string $contentType, int $status, ?string $contentLength): RequestHandlerInterface

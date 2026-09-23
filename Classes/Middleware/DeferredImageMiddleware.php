@@ -27,10 +27,9 @@ use TYPO3\CMS\Core\Utility\PathUtility;
 
 use function array_key_exists;
 use function array_map;
+use function array_merge;
 use function array_unique;
 use function array_values;
-use function base64_encode;
-use function explode;
 use function htmlspecialchars;
 use function intval;
 use function is_array;
@@ -39,15 +38,12 @@ use function preg_match;
 use function preg_match_all;
 use function preg_replace;
 use function preg_replace_callback;
-use function rtrim;
 use function str_contains;
-use function str_ends_with;
 use function str_starts_with;
 use function strlen;
 use function strripos;
 use function strtolower;
 use function substr;
-use function substr_replace;
 
 /**
  * DeferredImageMiddleware.
@@ -66,6 +62,18 @@ use function substr_replace;
  * part in the preview stage at all and still fetches the placeholder, because
  * the browser picks its candidate from there and ignores src entirely.
  *
+ * A srcset attribute is marked for the original stage on the same terms as
+ * src: every candidate that names a provisional rendition gets a token of
+ * its own in data-file-sync-srcset, positionally, with "-" standing in for a
+ * candidate this extension has nothing to do for. src keeps data-file-sync
+ * when it is itself provisional; a tag whose src already resolved but whose
+ * srcset has not gets the literal marker "srcset" there instead, since the
+ * browser never reads src once srcset is present and a token on it would
+ * name a rendition nothing renders from. A srcset this middleware cannot
+ * confidently parse, or one that names more candidates than one materialize
+ * batch could ever carry, takes the whole tag down with it: src is left
+ * exactly as it was rather than marked for a swap the browser would ignore.
+ *
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
@@ -73,23 +81,23 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
 {
     private const ATTRIBUTE = 'data-file-sync';
 
+    /**
+     * Carries one entry per srcset candidate, positionally, so the module
+     * can rebuild the attribute without having to re-parse it against the
+     * URLs still sitting in srcset itself.
+     */
+    private const SRCSET_ATTRIBUTE = 'data-file-sync-srcset';
+
+    /**
+     * What ATTRIBUTE carries instead of a token when src itself did not
+     * resolve to a provisional rendition but the srcset did. The browser
+     * never reads src once srcset is present, so a token there would name a
+     * rendition nothing renders from; this tells the module to look at
+     * SRCSET_ATTRIBUTE instead of trying to resolve ATTRIBUTE as one.
+     */
+    private const SRCSET_MARKER = 'srcset';
+
     private const ENDPOINT_ATTRIBUTE = 'data-file-sync-endpoint';
-
-    /**
-     * Carried only by an image that states its own size and whose preview is
-     * still missing, so the module asks the preview stage for those and for
-     * nothing else.
-     */
-    private const PREVIEW_ATTRIBUTE = 'data-file-sync-preview';
-
-    private const PREVIEW_URI_PREFIX = 'data:image/webp;base64,';
-
-    /**
-     * Appended to the src of a tag that still points at a provisional
-     * rendition. Neither "?" nor "-" occurs in the base64 alphabet, so this
-     * can never turn up by accident inside an inlined preview.
-     */
-    private const PROVISIONAL_QUERY = 'file-sync-provisional=1';
 
     private const CACHE_KEY = 'fileSyncProvisionalCount';
 
@@ -175,7 +183,8 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
             return null;
         }
 
-        $identifierByUrl = $this->publicUrlResolver->identifiersByUrl(array_values(array_unique($matches[2])), $storageUids);
+        $urls = array_merge($matches[2], SrcsetMarking::urlsIn($matches[0]));
+        $identifierByUrl = $this->publicUrlResolver->identifiersByUrl(array_values(array_unique($urls)), $storageUids);
         if ([] === $identifierByUrl) {
             return null;
         }
@@ -227,34 +236,15 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
                     return $tag;
                 }
 
-                $identifier = $identifierByUrl[$match[2][0]] ?? null;
-                $rendition = null === $identifier ? null : ($renditionByIdentifier[$identifier] ?? null);
-                $rewritten = $this->withAttribute($tag, $match[1][0], $rendition['uid'] ?? null);
-                if ($rewritten === $tag) {
+                $outcome = $this->rewriteTag($match, $offset, $identifierByUrl, $renditionByIdentifier, $previewsEnabled, $previewByIdentifier);
+                if (null === $outcome) {
                     return $tag;
                 }
 
+                [$rewritten, $previewByIdentifier] = $outcome;
                 ++$marked;
-                // A tag that was marked had both of these, so the second half
-                // of this narrows the types rather than deciding anything.
-                if (!$previewsEnabled || null === $identifier || null === $rendition) {
-                    return self::withProvisionalQuery($rewritten, $match[2], $offset);
-                }
 
-                // array_key_exists rather than ??=, because "there is no
-                // preview" is the answer worth remembering: it is what a
-                // freshly synced installation answers for every tag.
-                if (!array_key_exists($identifier, $previewByIdentifier)) {
-                    $previewByIdentifier[$identifier] = $this->storedPreview($rendition['storage'], $identifier);
-                }
-
-                return self::withPreview(
-                    $rewritten,
-                    $match[1][0],
-                    $previewByIdentifier[$identifier],
-                    $match[2],
-                    $offset,
-                );
+                return $rewritten;
             },
             $body,
             -1,
@@ -275,150 +265,131 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
      * quotes do not balance, which means the pattern stopped at a ">" inside
      * an attribute value and the match is only part of the real tag.
      *
-     * The new attribute reuses the quote character the tag already uses for
-     * its src. A tag written with single quotes is the one that turns up
-     * inside a double-quoted JavaScript string literal, where injecting a
-     * double quote would end the string and break the whole script block.
-     * The token is digits, a dot and hex, so it never needs escaping.
+     * Checked before anything about src or srcset is resolved, because a
+     * declined tag must not have either substituted into it at all.
      */
-    private function withAttribute(string $tag, string $quote, ?int $processedFileUid): string
+    private static function isDeclined(string $tag): bool
     {
-        if (null === $processedFileUid
-            || str_contains(strtolower($tag), self::ATTRIBUTE)
-            || self::hasUnbalancedQuotes($tag)
-        ) {
-            return $tag;
+        return str_contains(strtolower($tag), self::ATTRIBUTE) || self::hasUnbalancedQuotes($tag);
+    }
+
+    /**
+     * The single per-tag decision rewriteTags()'s callback delegates to, so
+     * that closure stays a dispatcher rather than carrying every branch
+     * itself. Returns null for every reason a tag is left untouched: it is
+     * declined outright, its srcset does not parse, or neither src nor any
+     * srcset candidate turned out to be provisional.
+     *
+     * $previewByIdentifier travels by value rather than by reference: it
+     * comes back as the second element of the tuple, for the caller, which
+     * owns the variable across every tag, to carry into the next one.
+     *
+     * @param array{0: array{string, int}, 1: array{string, int}, 2: array{string, int}} $match
+     * @param array<string, string>                                                      $identifierByUrl
+     * @param array<string, array{uid: int, storage: int}>                               $renditionByIdentifier
+     * @param array<string, string|null>                                                 $previewByIdentifier
+     *
+     * @return array{0: string, 1: array<string, string|null>}|null
+     */
+    private function rewriteTag(
+        array $match,
+        int $offset,
+        array $identifierByUrl,
+        array $renditionByIdentifier,
+        bool $previewsEnabled,
+        array $previewByIdentifier,
+    ): ?array {
+        [$tag] = $match[0];
+        if (self::isDeclined($tag)) {
+            return null;
         }
 
-        return self::appended($tag, ' '.self::ATTRIBUTE.'='.$quote.$this->deferredTokenService->create($processedFileUid).$quote);
-    }
-
-    /**
-     * What an already marked tag gains from the preview store: the stored
-     * preview in place of the URL the browser would otherwise fetch the grey
-     * placeholder from, or the attribute that asks the module to go and get
-     * one, or nothing at all, because a tag that states no size of its own
-     * takes no part in the preview stage.
-     *
-     * Only the src value is replaced, between the quotes the tag already
-     * carries, at the offsets the match reported: the quoting survives because
-     * it is never touched, not because anything mirrors it. $quote is mirrored
-     * by the marking branch alone, which appends an attribute of its own.
-     *
-     * The replacement still has to survive between those quotes, and it does:
-     * a base64 payload behind a fixed prefix is alphanumerics, "+", "/", "=",
-     * ":", ";", "," and ".", so neither quote character occurs in it.
-     *
-     * @param array{string, int} $src the matched src value and its offset in the body
-     */
-    private static function withPreview(string $tag, string $quote, ?string $preview, array $src, int $tagOffset): string
-    {
-        if (!self::declaresItsOwnSize($tag) || self::picksFromSrcset($tag)) {
-            return self::withProvisionalQuery($tag, $src, $tagOffset);
+        $srcset = SrcsetMarking::resolve($tag, $identifierByUrl, $renditionByIdentifier, $this->deferredTokenService);
+        if (false === $srcset) {
+            return null;
         }
 
-        if (null === $preview) {
-            return self::withProvisionalQuery(
-                self::appended($tag, ' '.self::PREVIEW_ATTRIBUTE.'='.$quote.'1'.$quote),
-                $src,
-                $tagOffset,
-            );
+        $srcsetHasProvisional = null !== $srcset && $srcset->hasProvisional;
+
+        $identifier = $identifierByUrl[$match[2][0]] ?? null;
+        $rendition = null === $identifier ? null : ($renditionByIdentifier[$identifier] ?? null);
+        if (null === $rendition && !$srcsetHasProvisional) {
+            return null;
         }
 
-        return substr_replace(
-            $tag,
-            self::PREVIEW_URI_PREFIX.base64_encode($preview),
-            $src[1] - $tagOffset,
-            strlen($src[0]),
-        );
+        $rewritten = $tag;
+        if (null !== $rendition) {
+            [$rewritten, $previewByIdentifier] = $this->rewriteSrc($tag, $match, $offset, $identifier, $rendition, $previewsEnabled, $previewByIdentifier);
+        }
+
+        if ($srcsetHasProvisional) {
+            $rewritten = $srcset->appliedTo($rewritten, ProvisionalSrc::suffixedWithProvisionalQuery(...));
+        }
+
+        $fileSyncValue = null !== $rendition ? $this->deferredTokenService->create($rendition['uid']) : self::SRCSET_MARKER;
+        $srcsetValue = $srcsetHasProvisional ? $srcset->attributeValue() : null;
+
+        return [self::withMarkerAttributes($rewritten, $match[1][0], $fileSyncValue, $srcsetValue), $previewByIdentifier];
     }
 
     /**
-     * A processed filename is checksum-derived, so the "access plus 1 month"
-     * expiry TYPO3 writes into public/.htaccess rests on its bytes never
-     * changing. A deferred rendition breaks that: the placeholder and the
-     * real file share one path, and only the bytes behind it change. Without
-     * this suffix the reload after materialization is answered from the
-     * placeholder the browser cached before the module had even run, for as
-     * long as that month lasts.
+     * src's own half of rewriteTag(): the offset-based substitution that
+     * inlines a preview or appends the provisional query, unconditional on
+     * whatever the srcset half decides. $identifier is never null here: it
+     * is only null when $rendition is, and rewriteTag() only calls this
+     * once $rendition is known to be an array.
      *
-     * A fixed string is enough. It is added only while the tag is still
-     * marked, and once the rendition is materialized the render emits the
-     * plain URL, which that browser has never requested and therefore fetches
-     * and caches fresh. Nothing here is per request, so a genuinely
-     * materialized file keeps its long-lived cache entry.
+     * @param array{0: array{string, int}, 1: array{string, int}, 2: array{string, int}} $match
+     * @param array{uid: int, storage: int}                                              $rendition
+     * @param array<string, string|null>                                                 $previewByIdentifier
      *
-     * The same coordinate shape withPreview() uses: the src value is replaced
-     * between the quotes the tag already carries, at the offsets the match
-     * reported against the original body. Those survive appended(), which
-     * only ever writes past the src span. It must never run on a tag
-     * withPreview() inlines a data URI into, because the two would then
-     * address one span through offsets taken against strings of different
-     * lengths.
-     *
-     * The separator is escaped as "&amp;" rather than a bare "&" when a query
-     * already exists, because this is HTML attribute content and TYPO3 itself
-     * escapes the query strings it renders the same way: "?a=1&amp;b=2" is
-     * what a multi-parameter src already looks like here, and matching that
-     * convention costs nothing.
-     *
-     * A src carrying a fragment keeps it last, since a "#" is never sent to
-     * the server and a query added after it would be part of the fragment
-     * instead, silently fetching the same cached response the fragment was
-     * supposed to bust.
-     *
-     * @param array{string, int} $src the matched src value and its offset in the body
+     * @return array{0: string, 1: array<string, string|null>}
      */
-    private static function withProvisionalQuery(string $tag, array $src, int $tagOffset): string
-    {
-        [$path, $fragment] = explode('#', $src[0], 2) + [1 => ''];
-        $separator = str_contains($path, '?') ? '&amp;' : '?';
+    private function rewriteSrc(
+        string $tag,
+        array $match,
+        int $offset,
+        string $identifier,
+        array $rendition,
+        bool $previewsEnabled,
+        array $previewByIdentifier,
+    ): array {
+        if (!$previewsEnabled) {
+            return [ProvisionalSrc::withProvisionalQuery($tag, $match[2], $offset), $previewByIdentifier];
+        }
 
-        return substr_replace(
-            $tag,
-            $path.$separator.self::PROVISIONAL_QUERY.('' === $fragment ? '' : '#'.$fragment),
-            $src[1] - $tagOffset,
-            strlen($src[0]),
-        );
+        // array_key_exists rather than ??=, because "there is no preview" is
+        // the answer worth remembering: it is what a freshly synced
+        // installation answers for every tag.
+        if (!array_key_exists($identifier, $previewByIdentifier)) {
+            $previewByIdentifier[$identifier] = $this->storedPreview($rendition['storage'], $identifier);
+        }
+
+        return [ProvisionalSrc::withPreview($tag, $match[1][0], $previewByIdentifier[$identifier], $match[2], $offset), $previewByIdentifier];
     }
 
     /**
-     * Whether the tag takes part in the preview stage at all.
+     * Appended last, once src and srcset have already been substituted at
+     * whatever offsets or patterns they each needed: appended() only ever
+     * writes past the end of what is already there, so nothing about the
+     * order relative to those two substitutions matters except that this
+     * one comes after both.
      *
-     * A stored preview is 32 pixels on its longest edge, while the grey
-     * placeholder is generated at the rendition's own width and height. A tag
-     * that states no size of its own is laid out from whatever its src turns
-     * out to be, so a preview reaching it would collapse it to 32 pixels and
-     * grow it back when the original lands: two layout shifts where the
-     * placeholder alone costs none. That holds however the preview travels,
-     * since the module assigns the very same data URI to src, so such a tag
-     * is left with the placeholder and the original and nothing in between.
-     *
-     * The lookbehind is the one IMAGE_PATTERN uses on src=, for the same
-     * reason: a word boundary also sits between the hyphen and the "w" of
-     * data-width. An empty value states no size either.
+     * The attributes reuse the quote character the tag already uses for its
+     * src. A tag written with single quotes is the one that turns up inside
+     * a double-quoted JavaScript string literal, where injecting a double
+     * quote would end the string and break the whole script block. Neither
+     * value needs escaping: a token is digits, a dot and hex, the srcset
+     * marker is a bare word, and srcset tokens are joined by a comma.
      */
-    private static function declaresItsOwnSize(string $tag): bool
+    private static function withMarkerAttributes(string $tag, string $quote, string $fileSyncValue, ?string $srcsetValue): string
     {
-        return 1 === preg_match('/(?<![-\w])width=(["\'])[^"\']+\1/i', $tag)
-            && 1 === preg_match('/(?<![-\w])height=(["\'])[^"\']+\1/i', $tag);
-    }
+        $attribute = ' '.self::ATTRIBUTE.'='.$quote.$fileSyncValue.$quote;
+        if (null !== $srcsetValue) {
+            $attribute .= ' '.self::SRCSET_ATTRIBUTE.'='.$quote.$srcsetValue.$quote;
+        }
 
-    /**
-     * Whether the browser takes this tag's image from a candidate list
-     * rather than from src, in which case it never reads src at all. The
-     * preview would then be a data URI nothing renders, and the tag would be
-     * marked for the stage on every response: a source rendition downloaded
-     * and a preview stored for a picture no visitor ever sees blurred.
-     *
-     * The same lookbehind as the size guard, for the same reason: a word
-     * boundary also sits between the hyphen and the "s" of data-srcset, which
-     * is a lazy-loading attribute the browser lays nothing out from. An
-     * empty value names no candidate either.
-     */
-    private static function picksFromSrcset(string $tag): bool
-    {
-        return 1 === preg_match('/(?<![-\w])srcset=(["\'])[^"\']+\1/i', $tag);
+        return ProvisionalSrc::appended($tag, $attribute);
     }
 
     /**
@@ -434,24 +405,6 @@ final readonly class DeferredImageMiddleware implements MiddlewareInterface
         } catch (Throwable) {
             return null;
         }
-    }
-
-    /**
-     * Appends in front of the closing ">" and keeps a self-closing tag
-     * self-closing.
-     *
-     * It must only ever change bytes after the src value: withPreview()
-     * replaces that value at the offsets the match reported, and an
-     * insertion anywhere before it would silently shift them.
-     */
-    private static function appended(string $tag, string $attribute): string
-    {
-        $head = rtrim(substr($tag, 0, -1));
-        if (str_ends_with($head, '/')) {
-            return rtrim(substr($head, 0, -1)).$attribute.' />';
-        }
-
-        return $head.$attribute.'>';
     }
 
     /**
