@@ -336,7 +336,7 @@ final class TagRewriterTest extends TestCase
     private function imgMatch(string $tag): array
     {
         if (1 !== preg_match('/(?<![-\w])src=(["\'])([^"\']+)\1/', $tag, $matches, \PREG_OFFSET_CAPTURE)) {
-            throw new RuntimeException('Fixture tag has no src attribute: '.$tag);
+            throw new RuntimeException('Fixture tag has no src attribute: '.$tag, 9215008566);
         }
 
         return [[$tag, 0], $matches[1], $matches[2]];
@@ -348,7 +348,7 @@ final class TagRewriterTest extends TestCase
     private function sourceMatch(string $tag): array
     {
         if (1 !== preg_match('/(?<![-\w])srcset=(["\'])/', $tag, $matches, \PREG_OFFSET_CAPTURE)) {
-            throw new RuntimeException('Fixture tag has no srcset attribute: '.$tag);
+            throw new RuntimeException('Fixture tag has no srcset attribute: '.$tag, 5617722656);
         }
 
         return [[$tag, 0], ['', -1], ['', -1], $matches[1]];

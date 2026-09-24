@@ -41,7 +41,7 @@ final class MaterializeRateLimiterTest extends TestCase
     {
         $cache = $this->createMock(FrontendInterface::class);
         $cache->method('get')->willReturnCallback(fn (string $id): string|false => $this->store[$id] ?? false);
-        $cache->method('set')->willReturnCallback(function (string $id, string $data) {
+        $cache->method('set')->willReturnCallback(function (string $id, string $data): void {
             $this->store[$id] = $data;
         });
 
