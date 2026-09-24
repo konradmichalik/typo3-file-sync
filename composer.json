@@ -74,7 +74,7 @@
 				"providesPackages": {}
 			},
 			"extension-key": "typo3_file_sync",
-			"version": "0.2.2",
+			"version": "0.3.0",
 			"web-dir": "public"
 		}
 	},
