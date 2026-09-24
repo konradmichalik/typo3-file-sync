@@ -29,6 +29,8 @@ final class Configuration
 
     public const EXTCONF_STORAGES = 'storages';
 
+    public const EXTCONF_DEFERRED_STORAGES = 'deferredStorages';
+
     public const FEATURE_DEFERRED_LOADING = 'fileSync.deferredLoading';
 
     public const FEATURE_PREVIEW_IMAGES = 'fileSync.previewImages';

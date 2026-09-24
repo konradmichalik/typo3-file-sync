@@ -23,6 +23,7 @@ use TYPO3\CMS\Core\Resource\Exception\InvalidConfigurationException;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function in_array;
 use function sprintf;
 
 /**
@@ -101,7 +102,7 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
         $this->fetchMode->registerStorage(
             (int) $storageRecord['uid'],
             $this->features->isFeatureEnabled(Configuration::FEATURE_DEFERRED_LOADING)
-                && ($storageRecord[Configuration::FIELD_DEFERRED] ?? 0) > 0,
+                && $this->isStorageDeferred((int) $storageRecord['uid'], $storageRecord),
         );
 
         if ($isRecordEnabled) {
@@ -115,5 +116,25 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
             $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][$storage->getUid()],
             (int) $storageRecord['uid'],
         );
+    }
+
+    /**
+     * The DB checkbox is the editor-facing switch, but it lives on a record that a
+     * database sync from production overwrites back to disabled. An environment that
+     * provisions storages entirely through EXTCONF (see EXTCONF_STORAGES) needs the
+     * same override for this flag, otherwise every sync would silently turn deferred
+     * loading back off until someone re-checks it in the backend.
+     *
+     * @param array<string, mixed> $storageRecord
+     */
+    private function isStorageDeferred(int $storageUid, array $storageRecord): bool
+    {
+        if (($storageRecord[Configuration::FIELD_DEFERRED] ?? 0) > 0) {
+            return true;
+        }
+
+        $deferredStorages = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_DEFERRED_STORAGES] ?? [];
+
+        return in_array($storageUid, $deferredStorages, true);
     }
 }
