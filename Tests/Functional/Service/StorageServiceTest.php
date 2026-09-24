@@ -75,6 +75,19 @@ final class StorageServiceTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function getDeferredStorageUidsIncludesStorageMarkedDeferredViaExtconfEvenWithTheFlagOff(): void
+    {
+        // Storage 3 is switched on via EXTCONF but its own deferred flag is off (see the
+        // fixture). A database sync from production resets that flag; deferredStorages is
+        // the PHP-side override for exactly that gap, the same durability EXTCONF_STORAGES
+        // already gives the enable flag.
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [3 => []];
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['deferredStorages'] = [3];
+
+        self::assertSame([1, 3], $this->get(StorageService::class)->getDeferredStorageUids());
+    }
+
+    #[Test]
     public function getDeferredStorageUidsReturnsEmptyArrayWhenNoStorageDefersLoading(): void
     {
         $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_storage')->truncate('sys_file_storage');

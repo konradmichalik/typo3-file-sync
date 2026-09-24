@@ -77,6 +77,12 @@ final readonly class StorageService
         // storage deferring its render while nothing ever marks its images.
         $configuredStorages = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES] ?? []);
 
+        // Same reasoning for the deferred flag itself: ResourceStorageInitializationEventListener
+        // honours deferredStorages as an alternative to the record flag, so this lookup has to
+        // as well, otherwise a storage deferring its render this way would leave every image
+        // stuck on the placeholder, since nothing would ever mark them for the swap.
+        $deferredStorages = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_DEFERRED_STORAGES] ?? [];
+
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file_storage');
         $expressionBuilder = $queryBuilder->expr();
         $rows = $queryBuilder->select('uid')
@@ -92,9 +98,15 @@ final readonly class StorageService
                         $queryBuilder->createNamedParameter($configuredStorages, ArrayParameterType::INTEGER),
                     ),
                 ),
-                $expressionBuilder->eq(
-                    Configuration::FIELD_DEFERRED,
-                    $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                $expressionBuilder->or(
+                    $expressionBuilder->eq(
+                        Configuration::FIELD_DEFERRED,
+                        $queryBuilder->createNamedParameter(1, ParameterType::INTEGER),
+                    ),
+                    $expressionBuilder->in(
+                        'uid',
+                        $queryBuilder->createNamedParameter($deferredStorages, ArrayParameterType::INTEGER),
+                    ),
                 ),
             )
             ->orderBy('uid')
