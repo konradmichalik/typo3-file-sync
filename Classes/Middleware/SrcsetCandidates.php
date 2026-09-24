@@ -69,7 +69,11 @@ final readonly class SrcsetCandidates
 
         $parts = preg_split('/,\s*/', $value);
         if (false === $parts) {
+            // @codeCoverageIgnoreStart
+            // Unreachable under normal operation: this fixed, backtracking-free
+            // pattern only fails PCRE for a broken PCRE build or configuration.
             return null;
+            // @codeCoverageIgnoreEnd
         }
 
         $candidates = [];

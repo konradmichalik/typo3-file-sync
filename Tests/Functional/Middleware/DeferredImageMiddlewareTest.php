@@ -199,6 +199,37 @@ final class DeferredImageMiddlewareTest extends FunctionalTestCase
     }
 
     #[Test]
+    public function leavesTheBodyUntouchedWhenItCarriesNoImageAtAll(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $body = $this->page('<p>hello</p>');
+
+        self::assertSame($body, $this->processBody($body));
+    }
+
+    #[Test]
+    public function leavesTheBodyUntouchedWhenNoUrlResolvesToAKnownStorage(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $tag = '<img src="https://other-site.example.com/photo.jpg" width="300" height="200">';
+        $body = $this->page($tag);
+
+        self::assertSame($body, $this->processBody($body));
+    }
+
+    #[Test]
+    public function appendsTheSnippetToTheEndWhenTheBodyHasNoClosingBodyTag(): void
+    {
+        $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');
+        $body = '<!DOCTYPE html><html><head><title>t</title></head>'.self::PROVISIONAL_TAG;
+
+        $result = $this->processBody($body);
+
+        self::assertStringEndsWith('</script>', $result);
+        self::assertStringContainsString('data-file-sync=', $result);
+    }
+
+    #[Test]
     public function marksAnImageOnAProvisionalProcessedFile(): void
     {
         $this->importCSVDataSet(__DIR__.'/Fixtures/provisional_images.csv');

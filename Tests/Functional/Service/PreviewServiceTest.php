@@ -21,14 +21,20 @@ use KonradMichalik\Typo3FileSync\Tests\Functional\RemoteInstanceHarness;
 use KonradMichalik\Typo3FileSync\Tests\StoredPreview;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Log\LoggerInterface;
+use TYPO3\CMS\Core\Core\Environment;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\TestingFramework\Core\Functional\FunctionalTestCase;
 
 use function array_filter;
+use function array_map;
 use function array_values;
 use function base64_decode;
 use function base64_encode;
 use function explode;
 use function file_get_contents;
+use function hash;
+use function is_writable;
+use function range;
 use function sprintf;
 use function time;
 
@@ -466,6 +472,60 @@ final class PreviewServiceTest extends FunctionalTestCase
         self::assertSame(['error' => 'unavailable'], $result[$bad]);
         self::assertSame(['error' => 'invalid'], $result['9999.deadbeef']);
         self::assertArrayHasKey('preview', $result[$good]);
+    }
+
+    #[Test]
+    public function moreThanFiftyTokensAreRejectedWholesale(): void
+    {
+        $tokenService = $this->get(DeferredTokenService::class);
+        $tokens = array_map(static fn (int $i): string => $tokenService->create($i), range(1, 51));
+
+        self::assertSame([], $this->get(PreviewService::class)->preview($tokens));
+    }
+
+    /**
+     * The visitor already has the grey placeholder on screen. A store that
+     * cannot be written must cost them nothing more than the preview this
+     * request already built, not the request itself. Modelled on the store's
+     * own test for a failed write: giving up on a writable path is not a
+     * failure of this test, since the store's own contract cannot be modelled
+     * against a user with permission to write anywhere.
+     */
+    #[Test]
+    public function aPreviewThatCannotBeStoredIsStillAnsweredToTheBrowser(): void
+    {
+        // The store shards by the first two characters of the key's own
+        // hash, so that (already existing) subdirectory, not the previews
+        // root, is what has to be locked: mkdir_deep() no-ops on a directory
+        // that is already there regardless of its parent's permissions.
+        $hash = hash('sha256', self::STORAGE.':'.self::REQUESTED_IDENTIFIER);
+        $shard = Environment::getVarPath().'/file-sync/previews/'.substr($hash, 0, 2);
+        GeneralUtility::mkdir_deep($shard);
+        chmod($shard, 0o555);
+
+        try {
+            if (is_writable($shard)) {
+                self::markTestSkipped('The previews shard stayed writable, so a failing write() cannot be modelled here.');
+            }
+
+            $token = $this->get(DeferredTokenService::class)->create(10);
+
+            // fopen() raises a PHP warning of its own on the very failure
+            // under test. Silenced rather than asserted, because it is not
+            // this service's to emit.
+            set_error_handler(static fn (): bool => true);
+
+            try {
+                $result = $this->get(PreviewService::class)->preview([$token]);
+            } finally {
+                restore_error_handler();
+            }
+
+            self::assertArrayHasKey('preview', $result[$token]);
+            self::assertNull((new PreviewStore())->read(self::STORAGE, self::REQUESTED_IDENTIFIER));
+        } finally {
+            chmod($shard, 0o775);
+        }
     }
 
     /**

@@ -276,4 +276,29 @@ final class RemoteInstanceResourceTest extends TestCase
 
         self::assertFalse(is_resource($stream));
     }
+
+    #[Test]
+    public function prefetchDoesNothingWhenGivenNoUsableFilePaths(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects(self::never())->method('sendAsync');
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+
+        $resource->prefetch(['/', '']);
+    }
+
+    #[Test]
+    public function prefetchIgnoresAResponseThatIsNotSuccessful(): void
+    {
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('sendAsync')
+            ->willReturn(Create::promiseFor(new Response(404)));
+
+        $resource = new RemoteInstanceResource('https://example.com', $httpClient);
+        $resource->prefetch(['fileadmin/missing.jpg']);
+
+        $property = new ReflectionProperty($resource, 'prefetched');
+        self::assertSame([], $property->getValue($resource));
+    }
 }

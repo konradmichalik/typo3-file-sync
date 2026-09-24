@@ -266,8 +266,10 @@ final readonly class TagRewriter
             ? ['identifier' => $identifier, 'rendition' => $rendition]
             : $srcset?->firstProvisional;
         if (null === $source) {
+            // @codeCoverageIgnoreStart
             // Unreachable: see the comment above.
             return [null, true, $previewByIdentifier];
+            // @codeCoverageIgnoreEnd
         }
 
         [$preview, $previewByIdentifier] = $this->preview($source, $previewByIdentifier);
@@ -304,9 +306,13 @@ final readonly class TagRewriter
     {
         try {
             return $this->previewStore->read($storageUid, $identifier);
+            // @codeCoverageIgnoreStart
+            // PreviewStore::read() only ever returns null or a string; nothing
+            // it calls raises under normal filesystem conditions.
         } catch (Throwable) {
             return null;
         }
+        // @codeCoverageIgnoreEnd
     }
 
     /**

@@ -264,9 +264,15 @@ final class MaterializationService implements LoggerAwareInterface
             $publicUrl = $processedFile->getPublicUrl();
 
             if (null === $publicUrl) {
+                // @codeCoverageIgnoreStart
+                // Not reproducible against a real image processor: every
+                // corruption tried here made process() fall back to the
+                // original file rather than hand back a ProcessedFile
+                // marked deleted.
                 $stashed?->restore();
 
                 return $this->damp($file);
+                // @codeCoverageIgnoreEnd
             }
 
             $stashed?->discard();
@@ -338,11 +344,17 @@ final class MaterializationService implements LoggerAwareInterface
                 $storage = $file->getStorage();
                 $batches[$storage->getUid()] ??= ['storage' => $storage, 'files' => []];
                 $batches[$storage->getUid()]['files'][] = $file;
+                // @codeCoverageIgnoreStart
+                // Unreachable under normal operation: $file was resolved via
+                // resolveOriginal(), which already means its storage was
+                // resolved too, and AbstractFile::getStorage() only ever
+                // returns that already-resolved value.
             } catch (Throwable $exception) {
                 $this->logger?->warning(
                     sprintf('Storage of file %d is unavailable: %s', $file->getUid(), $exception->getMessage()),
                 );
             }
+            // @codeCoverageIgnoreEnd
         }
 
         $accepted = [];

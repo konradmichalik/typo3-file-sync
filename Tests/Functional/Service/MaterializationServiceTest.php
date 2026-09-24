@@ -18,6 +18,7 @@ use KonradMichalik\Typo3FileSync\Middleware\DeferredImageMiddleware;
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use KonradMichalik\Typo3FileSync\Service\{DeferredTokenService, MaterializationService};
 use KonradMichalik\Typo3FileSync\Tests\Functional\RemoteInstanceHarness;
+use KonradMichalik\Typo3FileSync\Tests\Functional\Service\Fixtures\ThrowingRemoteResource;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\AbstractLogger;
@@ -414,12 +415,200 @@ final class MaterializationServiceTest extends FunctionalTestCase
         self::assertStringContainsString('DeferrableResourceInterface', $warnings[0]);
     }
 
+    /**
+     * A project's own broken handler, not this extension's: neither the
+     * remote instance handler nor the placeholder generator ever throws, so
+     * only a third-party one models what prefetch() and the fetch it guards
+     * both have to survive without losing the batch its answers.
+     */
+    #[Test]
+    public function aHandlerThatThrowsDuringPrefetchOrFetchCostsOnlyItsOwnToken(): void
+    {
+        unlink($this->basePath.'user_upload/provisional.jpg');
+        $this->useOnlyHandler('throwing', ThrowingRemoteResource::class);
+        $token = $this->get(DeferredTokenService::class)->create(10);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+    }
+
+    /**
+     * The extension has nothing to materialize on a storage it never wired
+     * up: prepareStorage() has to answer that with the same baseline every
+     * other unreachable storage gets, not with an exception.
+     */
+    #[Test]
+    public function anOriginalOnAStorageWithoutFileSyncSupportIsReportedAsUnavailable(): void
+    {
+        $connection = $this->get(ConnectionPool::class);
+        $connection->getConnectionForTable('sys_file_storage')->insert('sys_file_storage', [
+            'uid' => 7,
+            'pid' => 0,
+            'name' => 'Plain Storage',
+            'driver' => 'Local',
+            'configuration' => $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_storage')
+                ->select(['configuration'], 'sys_file_storage', ['uid' => 9])->fetchOne(),
+            'is_default' => 0,
+            'is_browsable' => 1,
+            'is_public' => 1,
+            'is_writable' => 1,
+            'is_online' => 1,
+        ]);
+        file_put_contents($this->basePath.'user_upload/plain-storage-file.jpg', 'plain-storage-body');
+        $connection->getConnectionForTable('sys_file')->insert('sys_file', [
+            'uid' => 60,
+            'pid' => 0,
+            'storage' => 7,
+            'identifier' => '/user_upload/plain-storage-file.jpg',
+            'identifier_hash' => 'plain-storage-identifier-hash',
+            'folder_hash' => 'plain-storage-folder-hash',
+            'name' => 'plain-storage-file.jpg',
+            'extension' => 'jpg',
+            'mime_type' => 'image/jpeg',
+            'type' => 2,
+        ]);
+        $connection->getConnectionForTable('sys_file_processedfile')->insert('sys_file_processedfile', [
+            'uid' => 45,
+            'storage' => 7,
+            'original' => 60,
+            'identifier' => '/_processed_/csm_plain_storage.jpg',
+            'name' => 'csm_plain_storage.jpg',
+            'configuration' => 'a:2:{s:5:"width";i:300;s:6:"height";i:200;}',
+            'configurationsha1' => '5bcf4b3ce884cacbb71271b88389cd42775c9c55',
+            'task_type' => 'Image.CropScaleMask',
+        ]);
+        $token = $this->get(DeferredTokenService::class)->create(45);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'unavailable'], $result[$token]);
+        self::assertFileExists($this->basePath.'user_upload/plain-storage-file.jpg');
+    }
+
+    /**
+     * A rendition can be marked provisional in the database while its own
+     * file was never written, e.g. a sync that inserted the row and crashed
+     * before the render that would have created it. Nothing here is
+     * FileSyncDriver's to fetch, since it is the rendition, not the original,
+     * that is missing: stashProvisionalRendition() has to notice there is
+     * nothing to stash rather than fail moving it.
+     */
+    #[Test]
+    public function anOriginalIsRebuiltEvenWhenItsProvisionalRenditionWasNeverWrittenToDisk(): void
+    {
+        $connection = $this->get(ConnectionPool::class);
+        $connection->getConnectionForTable('sys_file_storage')->insert('sys_file_storage', [
+            'uid' => 8,
+            'pid' => 0,
+            'name' => 'Plain Storage Two',
+            'driver' => 'Local',
+            'configuration' => $connection->getConnectionForTable('sys_file_storage')
+                ->select(['configuration'], 'sys_file_storage', ['uid' => 9])->fetchOne(),
+            'is_default' => 0,
+            'is_browsable' => 1,
+            'is_public' => 1,
+            'is_writable' => 1,
+            'is_online' => 1,
+        ]);
+        $image = imagecreatetruecolor(300, 200);
+        $color = imagecolorallocate($image, 200, 120, 40) ?: 0;
+        imagefilledrectangle($image, 0, 0, 299, 199, $color);
+        ob_start();
+        imagejpeg($image, null, 80);
+        file_put_contents($this->basePath.'user_upload/already-synced.jpg', (string) ob_get_clean());
+        $connection->getConnectionForTable('sys_file')->insert('sys_file', [
+            'uid' => 61,
+            'pid' => 0,
+            'storage' => 8,
+            'identifier' => '/user_upload/already-synced.jpg',
+            'identifier_hash' => 'already-synced-identifier-hash',
+            'folder_hash' => 'already-synced-folder-hash',
+            'name' => 'already-synced.jpg',
+            'extension' => 'jpg',
+            'mime_type' => 'image/jpeg',
+            'type' => 2,
+            'tx_typo3_file_sync_identifier' => 'remote_instance',
+        ]);
+        $connection->getConnectionForTable('sys_file_processedfile')->insert('sys_file_processedfile', [
+            'uid' => 46,
+            'storage' => 8,
+            'original' => 61,
+            'identifier' => '/_processed_/csm_never_written.jpg',
+            'name' => 'csm_never_written.jpg',
+            'configuration' => 'a:2:{s:5:"width";i:300;s:6:"height";i:200;}',
+            'configurationsha1' => '5bcf4b3ce884cacbb71271b88389cd42775c9c55',
+            'task_type' => 'Image.CropScaleMask',
+        ]);
+        $token = $this->get(DeferredTokenService::class)->create(46);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertArrayHasKey('url', $result[$token]);
+        self::assertFileExists($this->basePath.'user_upload/already-synced.jpg');
+    }
+
     #[Test]
     public function anInvalidTokenYieldsAnErrorEntryRatherThanAnException(): void
     {
         $result = $this->get(MaterializationService::class)->materialize(['9999.deadbeef']);
 
         self::assertSame(['9999.deadbeef' => ['error' => 'invalid']], $result);
+    }
+
+    /**
+     * A validly signed token still has to name a rendition that actually
+     * exists: one minted before a sync, then discarded by a later one, is the
+     * ordinary way this happens rather than a forged token.
+     */
+    #[Test]
+    public function aTokenForAProcessedFileRowThatNoLongerExistsIsReportedAsInvalid(): void
+    {
+        $token = $this->get(DeferredTokenService::class)->create(999);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'invalid'], $result[$token]);
+    }
+
+    /**
+     * A rendition can outlive the storage its original sat in, e.g. once a
+     * storage record is removed while sys_file rows still reference it.
+     * classify() has only sys_file to go by and lets it through; resolving
+     * the real File object is where this actually fails, and it has to turn
+     * into the same 'invalid' answer rather than an exception reaching the
+     * browser.
+     */
+    #[Test]
+    public function aRenditionWhoseOriginalStorageIsGoneIsReportedAsInvalid(): void
+    {
+        $connection = $this->get(ConnectionPool::class);
+        $connection->getConnectionForTable('sys_file')->insert('sys_file', [
+            'uid' => 50,
+            'storage' => 9999,
+            'identifier' => '/user_upload/orphaned.jpg',
+            'identifier_hash' => 'orphan-identifier-hash',
+            'folder_hash' => 'orphan-folder-hash',
+            'name' => 'orphaned.jpg',
+            'extension' => 'jpg',
+            'mime_type' => 'image/jpeg',
+            'type' => 2,
+        ]);
+        $connection->getConnectionForTable('sys_file_processedfile')->insert('sys_file_processedfile', [
+            'uid' => 40,
+            'storage' => 9,
+            'original' => 50,
+            'identifier' => '/_processed_/csm_orphan.jpg',
+            'name' => 'csm_orphan.jpg',
+            'configuration' => 'a:2:{s:5:"width";i:300;s:6:"height";i:200;}',
+            'configurationsha1' => '5bcf4b3ce884cacbb71271b88389cd42775c9c55',
+            'task_type' => 'Image.CropScaleMask',
+        ]);
+        $token = $this->get(DeferredTokenService::class)->create(40);
+
+        $result = $this->get(MaterializationService::class)->materialize([$token]);
+
+        self::assertSame(['error' => 'invalid'], $result[$token]);
     }
 
     /**
@@ -523,6 +712,26 @@ final class MaterializationServiceTest extends FunctionalTestCase
      * implementation. Registering it through EXTCONF means blanking the
      * record's own resource field, which is what makes that path win.
      */
+    /**
+     * @param class-string $handlerClass
+     */
+    private function useOnlyHandler(string $identifier, string $handlerClass): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER][$identifier] = [
+            'title' => $identifier,
+            'handler' => $handlerClass,
+        ];
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_STORAGES][9] = [
+            ['identifier' => $identifier, 'configuration' => null],
+        ];
+
+        $this->get(ConnectionPool::class)->getConnectionForTable('sys_file_storage')->update(
+            'sys_file_storage',
+            [Configuration::FIELD_RESOURCES => ''],
+            ['uid' => 9],
+        );
+    }
+
     private function registerASecondDeferrableHandler(): void
     {
         $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER]['second_remote'] = [
