@@ -22,6 +22,8 @@ A storage with deferred loading enabled needs a non-deferrable fallback handler,
 
 A placeholder for an image on a storage with deferred loading enabled renders immediately, skipping every network-bound resource handler. The browser fetches the real file once the page has loaded, and a small script swaps it in with a crossfade.
 
+![Placeholder, blurred preview and real image swapping in with a crossfade](img/deferred-image-loading.gif)
+
 With preview images enabled as well, the same image passes three stages:
 
 1. the grey placeholder, rendered with the page
