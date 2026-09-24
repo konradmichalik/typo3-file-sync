@@ -11,7 +11,11 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] = tru
 $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.previewImages'] = true; // optional, requires deferredLoading
 ```
 
-A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required.
+A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required. A storage provisioned entirely through PHP (see [Configuration](configuration.md)) can set this without the checkbox, `deferredStorages` survives a database sync where the checkbox would not:
+
+```php
+$GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['deferredStorages'][] = 1;
+```
 
 A storage with deferred loading enabled needs a non-deferrable fallback handler, such as the placeholder image generator, configured alongside the remote one. Without it the render has nothing left to answer with and produces no file at all rather than a placeholder.
 

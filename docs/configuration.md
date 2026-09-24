@@ -25,3 +25,13 @@ $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'][1] = [
 The array key (`1`) is the UID of the file storage. Handlers are tried in the order listed, so chaining `remote_instance` before `placeholder_image` fetches real assets when available and falls back to a placeholder when they are not.
 
 See [Resource handlers](resource-handlers.md) for the available handler identifiers and their configuration options.
+
+## Deferred loading via PHP
+
+The **Defer remote fetching in the frontend (experimental)** checkbox (see [Deferred image loading](deferred-image-loading.md)) lives on the storage record, so a database sync from production, which does not carry that checkbox, resets it back to off. A storage configured entirely through PHP needs the same override for that flag, otherwise every sync would silently turn deferred loading back off:
+
+```php
+$GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['deferredStorages'][] = 1;
+```
+
+A storage UID listed here is deferred regardless of its own checkbox. It still requires `fileSync.deferredLoading` to be enabled and a non-deferrable fallback handler configured, see [Deferred image loading](deferred-image-loading.md).

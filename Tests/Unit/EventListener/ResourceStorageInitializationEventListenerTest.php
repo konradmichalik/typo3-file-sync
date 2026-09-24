@@ -15,6 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\EventListener;
 
 use Error;
 use KonradMichalik\Ttt\Attribute\WithEnvironment;
+use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\EventListener\ResourceStorageInitializationEventListener;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
@@ -27,8 +28,9 @@ use TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\VariableFrontend;
 use TYPO3\CMS\Core\Configuration\Features;
-use TYPO3\CMS\Core\Core\Environment;
+use TYPO3\CMS\Core\Core\{Environment, SystemEnvironmentBuilder};
 use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Http\ServerRequest;
 use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Resource\Capabilities;
 use TYPO3\CMS\Core\Resource\Driver\LocalDriver;
@@ -47,7 +49,11 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 {
     protected function tearDown(): void
     {
-        unset($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']);
+        unset(
+            $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync'],
+            $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING],
+            $GLOBALS['TYPO3_REQUEST'],
+        );
     }
 
     #[Test]
@@ -168,6 +174,71 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
 
     #[Test]
     #[WithEnvironment(projectPath: 'self')]
+    public function dbFieldAloneStillRegistersTheStorageAsDeferred(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
+            1 => [['identifier' => '']],
+        ];
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+        $fetchMode = new FetchMode();
+
+        $this->invokeListenerWithConfiguredStorage($fetchMode, [
+            'uid' => 1,
+            'driver' => 'Local',
+            'tx_typo3_file_sync_enable' => 0,
+            'tx_typo3_file_sync_resources' => '',
+            'tx_typo3_file_sync_deferred' => 1,
+        ]);
+
+        $this->givenFrontendRequest();
+        self::assertTrue($fetchMode->isDeferred(1));
+    }
+
+    #[Test]
+    #[WithEnvironment(projectPath: 'self')]
+    public function extconfDeferredStoragesRegistersTheStorageAsDeferredWithoutTheDbField(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
+            1 => [['identifier' => '']],
+        ];
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['deferredStorages'] = [1];
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+        $fetchMode = new FetchMode();
+
+        $this->invokeListenerWithConfiguredStorage($fetchMode, [
+            'uid' => 1,
+            'driver' => 'Local',
+            'tx_typo3_file_sync_enable' => 0,
+            'tx_typo3_file_sync_resources' => '',
+        ]);
+
+        $this->givenFrontendRequest();
+        self::assertTrue($fetchMode->isDeferred(1));
+    }
+
+    #[Test]
+    #[WithEnvironment(projectPath: 'self')]
+    public function neitherDbFieldNorExtconfLeavesTheStorageSynchronous(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
+            1 => [['identifier' => '']],
+        ];
+        $GLOBALS['TYPO3_CONF_VARS']['SYS']['features'][Configuration::FEATURE_DEFERRED_LOADING] = true;
+        $fetchMode = new FetchMode();
+
+        $this->invokeListenerWithConfiguredStorage($fetchMode, [
+            'uid' => 1,
+            'driver' => 'Local',
+            'tx_typo3_file_sync_enable' => 0,
+            'tx_typo3_file_sync_resources' => '',
+        ]);
+
+        $this->givenFrontendRequest();
+        self::assertFalse($fetchMode->isDeferred(1));
+    }
+
+    #[Test]
+    #[WithEnvironment(projectPath: 'self')]
     public function listenerBuildsAndAssignsFileSyncDriverWhenRecordIsEnabled(): void
     {
         // GeneralUtility::xml2array() relies on a registered "runtime" cache.
@@ -269,6 +340,50 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         } finally {
             GeneralUtility::purgeInstances();
         }
+    }
+
+    /**
+     * Mirrors listenerBuildsDriverFromConfigurationAndSwallowsInvalidBasePath: a real
+     * LocalDriver as the storage's existing driver lets execution reach
+     * buildRemoteResourceCollection() (and so registerStorage()) instead of erroring
+     * earlier on an uninitialized typed property.
+     *
+     * @param array<string, mixed> $storageRecord
+     */
+    private function invokeListenerWithConfiguredStorage(FetchMode $fetchMode, array $storageRecord): void
+    {
+        $factory = $this->createFactory();
+
+        $basePath = Environment::getProjectPath().'/var/';
+        $originalDriver = new LocalDriver(['basePath' => $basePath]);
+        $originalDriver->processConfiguration();
+        $originalDriver->initialize();
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getStorageRecord')->willReturn($storageRecord);
+        $storage->method('getUid')->willReturn((int) $storageRecord['uid']);
+        $storage->method('getName')->willReturn('Test');
+        $storage->method('getConfiguration')->willReturn(['basePath' => $basePath]);
+        $storage->method('getCapabilities')->willReturn(new Capabilities());
+
+        (new ReflectionClass(ResourceStorage::class))->getProperty('driver')->setValue($storage, $originalDriver);
+
+        $event = new AfterResourceStorageInitializationEvent($storage);
+
+        $listener = new ResourceStorageInitializationEventListener($factory, $fetchMode, new Features());
+        $listener->setLogger(new NullLogger());
+
+        try {
+            $listener($event);
+        } finally {
+            GeneralUtility::purgeInstances();
+        }
+    }
+
+    private function givenFrontendRequest(): void
+    {
+        $GLOBALS['TYPO3_REQUEST'] = (new ServerRequest())
+            ->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_FE);
     }
 
     private function createFactory(): RemoteResourceCollectionFactory

@@ -50,4 +50,10 @@ final class ConfigurationTest extends TestCase
     {
         self::assertSame('tx_typo3_file_sync_deferred', Configuration::FIELD_DEFERRED);
     }
+
+    #[Test]
+    public function extconfDeferredStoragesKeyIsCorrect(): void
+    {
+        self::assertSame('deferredStorages', Configuration::EXTCONF_DEFERRED_STORAGES);
+    }
 }
