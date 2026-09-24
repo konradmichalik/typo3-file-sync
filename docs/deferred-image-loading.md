@@ -11,7 +11,7 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.deferredLoading'] = tru
 $GLOBALS['TYPO3_CONF_VARS']['SYS']['features']['fileSync.previewImages'] = true; // optional, requires deferredLoading
 ```
 
-A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. Both the toggle and the checkbox are required. A storage provisioned entirely through PHP (see [Configuration](configuration.md)) can set this without the checkbox, `deferredStorages` survives a database sync where the checkbox would not:
+A per-storage checkbox, **Defer remote fetching in the frontend (experimental)** (`tx_typo3_file_sync_deferred`), then needs to be set on the **File Storage** record; it only appears in TCA once the toggle above is on. The toggle and either the checkbox or a UID in `deferredStorages` are required, not both: a storage provisioned entirely through PHP (see [Configuration](configuration.md)) can set this without the checkbox, and `deferredStorages` survives a database sync where the checkbox would not:
 
 ```php
 $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['deferredStorages'][] = 1;
