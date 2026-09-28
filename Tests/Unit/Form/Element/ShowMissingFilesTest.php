@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Form\Element;
 
+use KonradMichalik\Ttt\Attribute\WithBackendUser;
 use KonradMichalik\Typo3FileSync\Form\Element\ShowMissingFiles;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Expression\ExpressionBuilder;
 use TYPO3\CMS\Core\Database\Query\QueryBuilder;
@@ -37,6 +37,7 @@ use function defined;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(ShowMissingFiles::class)]
+#[WithBackendUser]
 final class ShowMissingFilesTest extends TestCase
 {
     private ShowMissingFiles $element;
@@ -78,7 +79,6 @@ final class ShowMissingFilesTest extends TestCase
         $languageService = $this->createMock(LanguageService::class);
         $languageService->method('sL')->willReturnArgument(0);
         $GLOBALS['LANG'] = $languageService;
-        $GLOBALS['BE_USER'] = $this->createMock(BackendUserAuthentication::class);
 
         if (!defined('LF')) {
             define('LF', "\n");
@@ -89,7 +89,7 @@ final class ShowMissingFilesTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['LANG'], $GLOBALS['BE_USER']);
+        unset($GLOBALS['LANG']);
     }
 
     #[Test]
