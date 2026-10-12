@@ -15,7 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 
 use GuzzleHttp\{ClientInterface, RequestOptions};
 use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\{Create, Promise};
 use GuzzleHttp\Psr7\{Request, Response};
 use KonradMichalik\Typo3FileSync\Resource\Handler\RemoteInstanceResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
@@ -213,6 +213,31 @@ final class RemoteInstanceResourceTest extends TestCase
             $httpClient,
         );
         $resource->getFile('/test.jpg', 'fileadmin/test.jpg');
+    }
+
+    #[Test]
+    public function prefetchKeepsNoMoreRequestsInFlightThanTheConfiguredConcurrency(): void
+    {
+        $inFlight = 0;
+        $maxInFlight = 0;
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->method('sendAsync')->willReturnCallback(
+            static function () use (&$inFlight, &$maxInFlight): Promise {
+                $maxInFlight = max($maxInFlight, ++$inFlight);
+                $promise = new Promise(static function () use (&$promise, &$inFlight): void {
+                    --$inFlight;
+                    self::assertInstanceOf(Promise::class, $promise);
+                    $promise->resolve(new Response(200, [], 'content'));
+                });
+
+                return $promise;
+            },
+        );
+
+        $resource = new RemoteInstanceResource(['url' => 'https://example.com', 'concurrency' => 2], $httpClient);
+        $resource->prefetch(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg']);
+
+        self::assertSame(2, $maxInFlight);
     }
 
     #[Test]
