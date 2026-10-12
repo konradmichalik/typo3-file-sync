@@ -13,7 +13,7 @@ TYPO3 extension (`typo3_file_sync`) that synchronizes missing files on demand, e
 - `Classes/Resource/` resource interfaces and collection, plus `Driver/` (`FileSyncDriver` storage driver), `Handler/` (remote instance and placeholder image resources) and `Preview/` (preview generation and storage)
 - `Classes/Middleware/` PSR-15 middlewares for deferred image loading and materialization
 - `Classes/Service/` materialization, rate limiting, preview, public URL and storage services
-- `Classes/Command/` CLI commands to reset missing-file flags or delete synced files
+- `Classes/Command/` CLI commands to fetch missing files in bulk, reset missing-file flags or delete synced files
 - `Classes/Controller/`, `Classes/EventListener/`, `Classes/Form/`, `Classes/Repository/`, `Classes/Exception/`
 - `Configuration/` `Commands.php`, `RequestMiddlewares.php`, `ContentSecurityPolicies.php`, `JavaScriptModules.php`, `Services.yaml`, `TCA/`
 - `Resources/` templates, language files, JavaScript and assets

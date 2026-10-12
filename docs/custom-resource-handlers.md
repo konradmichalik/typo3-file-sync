@@ -49,3 +49,5 @@ class MyHandler implements RemoteResourceInterface, BatchRemoteResourceInterface
     }
 }
 ```
+
+A handler that generates a stand-in instead of delivering the real file should implement the marker interface `GeneratingResourceInterface`, like the built-in Placeholder Image handler. [`file-sync:fetch`](cli-commands.md#fetch-missing-files) skips such handlers unless they are named with `--identifier`.

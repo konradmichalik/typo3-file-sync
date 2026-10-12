@@ -17,7 +17,7 @@ use Error;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
-use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, FetchMode, RemoteResourceCollection, RemoteResourceInterface};
+use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, DeferrableResourceInterface, FetchMode, GeneratingResourceInterface, RemoteResourceCollection, RemoteResourceInterface};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -265,6 +265,36 @@ final class RemoteResourceCollectionTest extends TestCase
         // Second call must be served from the negative cache — the handler
         // mock expects exactly one invocation.
         self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
+        self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
+    }
+
+    #[Test]
+    public function clearCachesLetsAFailedFileBeTriedAgain(): void
+    {
+        $handler = $this->createMock(RemoteResourceInterface::class);
+        $handler->expects(self::exactly(2))->method('getFile')->willReturn(false);
+
+        $fileObject = $this->createMock(File::class);
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('isWithinProcessingFolder')->willReturn(false);
+        $storage->method('getFileByIdentifier')->willReturn($fileObject);
+        $storageRepository = $this->createMock(StorageRepository::class);
+        $storageRepository->method('getStorageObject')->willReturn($storage);
+
+        $collection = new RemoteResourceCollection(
+            [['identifier' => 'handler1', 'handler' => $handler]],
+            $storageRepository,
+            (new ReflectionClass(ResourceFactory::class))->newInstanceWithoutConstructor(),
+            (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor(),
+            $this->createMock(ConnectionPool::class),
+            1,
+            new FetchMode(),
+        );
+        $collection->setLogger(new NullLogger());
+
+        self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
+        $collection->clearCaches();
         self::assertNull($collection->get('/test.jpg', 'fileadmin/test.jpg'));
     }
 
@@ -697,6 +727,46 @@ final class RemoteResourceCollectionTest extends TestCase
     }
 
     #[Test]
+    public function getSkipsHandlersTheFetchModeDoesNotAllow(): void
+    {
+        /** @var GeneratingResourceInterface&MockObject&RemoteResourceInterface $generating */
+        $generating = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, GeneratingResourceInterface::class]);
+        $generating->expects(self::never())->method('getFile');
+
+        $remote = $this->createMock(RemoteResourceInterface::class);
+        $remote->method('getFile')->willReturn('remote');
+
+        $fetchMode = new FetchMode();
+        $fetchMode->skipGenerating();
+
+        $subject = $this->createSubject(
+            [
+                ['identifier' => 'placeholder_image', 'handler' => $generating],
+                ['identifier' => 'remote_instance', 'handler' => $remote],
+            ],
+            1,
+            $fetchMode,
+        );
+
+        self::assertSame('remote', $subject->get('/missing.jpg', 'fileadmin/missing.jpg'));
+    }
+
+    #[Test]
+    public function prefetchSkipsHandlersTheFetchModeDoesNotAllow(): void
+    {
+        /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $batchHandler */
+        $batchHandler = $this->createMockForIntersectionOfInterfaces([RemoteResourceInterface::class, BatchRemoteResourceInterface::class]);
+        $batchHandler->expects(self::never())->method('prefetch');
+
+        $fetchMode = new FetchMode();
+        $fetchMode->restrictTo(['other']);
+
+        $subject = $this->createBareSubject([['identifier' => 'batch', 'handler' => $batchHandler]], $fetchMode);
+
+        $subject->prefetch(['fileadmin/a.jpg']);
+    }
+
+    #[Test]
     public function prefetchDelegatesOnlyToBatchCapableHandlers(): void
     {
         /** @var BatchRemoteResourceInterface&MockObject&RemoteResourceInterface $batchHandler */
@@ -750,7 +820,7 @@ final class RemoteResourceCollectionTest extends TestCase
      * database: prefetch(), getBatchHandlers() and getDeferrableIdentifiers()
      * are pure lookups over $resources
      */
-    private function createBareSubject(array $resources): RemoteResourceCollection
+    private function createBareSubject(array $resources, ?FetchMode $fetchMode = null): RemoteResourceCollection
     {
         return new RemoteResourceCollection(
             $resources,
@@ -759,7 +829,7 @@ final class RemoteResourceCollectionTest extends TestCase
             (new ReflectionClass(FileRepository::class))->newInstanceWithoutConstructor(),
             $this->createMock(ConnectionPool::class),
             1,
-            new FetchMode(),
+            $fetchMode ?? new FetchMode(),
         );
     }
 

@@ -84,9 +84,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         );
 
         foreach ($this->resources as $resource) {
-            if ($resource['handler'] instanceof DeferrableResourceInterface
-                && $this->fetchMode->isDeferred($this->storageUid)
-            ) {
+            if ($this->isSkipped($resource)) {
                 continue;
             }
 
@@ -131,10 +129,22 @@ final class RemoteResourceCollection implements LoggerAwareInterface
     public function prefetch(array $filePaths): void
     {
         foreach ($this->resources as $resource) {
-            if ($resource['handler'] instanceof BatchRemoteResourceInterface) {
+            if ($resource['handler'] instanceof BatchRemoteResourceInterface
+                && $this->fetchMode->allows($resource['identifier'], $resource['handler'])
+            ) {
                 $resource['handler']->prefetch($filePaths);
             }
         }
+    }
+
+    /**
+     * For a long-running process: both caches only ever grow, and a file
+     * remembered as failed is never retried, even with other handlers allowed.
+     */
+    public function clearCaches(): void
+    {
+        $this->fileIdentifierCache = [];
+        $this->failedIdentifiers = [];
     }
 
     /**
@@ -174,6 +184,19 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         }
 
         return $identifiers;
+    }
+
+    /**
+     * @param array{identifier: string, handler: RemoteResourceInterface} $resource
+     */
+    private function isSkipped(array $resource): bool
+    {
+        if (!$this->fetchMode->allows($resource['identifier'], $resource['handler'])) {
+            return true;
+        }
+
+        return $resource['handler'] instanceof DeferrableResourceInterface
+            && $this->fetchMode->isDeferred($this->storageUid);
     }
 
     private function resolveFileObject(string $fileIdentifier, string $filePath): void

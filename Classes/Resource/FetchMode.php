@@ -17,6 +17,8 @@ use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\ApplicationType;
 use TYPO3\CMS\Core\SingletonInterface;
 
+use function in_array;
+
 /**
  * FetchMode.
  *
@@ -26,6 +28,13 @@ use TYPO3\CMS\Core\SingletonInterface;
 final class FetchMode implements SingletonInterface
 {
     private bool $synchronousForced = false;
+
+    private bool $generatingSkipped = false;
+
+    /**
+     * @var list<string>|null
+     */
+    private ?array $allowedIdentifiers = null;
 
     /**
      * @var array<int, bool>
@@ -53,6 +62,34 @@ final class FetchMode implements SingletonInterface
     public function forceSynchronous(): void
     {
         $this->synchronousForced = true;
+    }
+
+    /**
+     * @param list<string> $identifiers
+     */
+    public function restrictTo(array $identifiers): void
+    {
+        $this->allowedIdentifiers = $identifiers;
+    }
+
+    public function skipGenerating(): void
+    {
+        $this->generatingSkipped = true;
+    }
+
+    public function clearHandlerRestriction(): void
+    {
+        $this->allowedIdentifiers = null;
+        $this->generatingSkipped = false;
+    }
+
+    public function allows(string $identifier, RemoteResourceInterface $handler): bool
+    {
+        if (null !== $this->allowedIdentifiers) {
+            return in_array($identifier, $this->allowedIdentifiers, true);
+        }
+
+        return !($this->generatingSkipped && $handler instanceof GeneratingResourceInterface);
     }
 
     private function isFrontendRequest(): bool

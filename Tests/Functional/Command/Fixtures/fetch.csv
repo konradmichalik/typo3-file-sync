@@ -1,0 +1,11 @@
+"sys_file_storage"
+,"uid","pid","name","driver","configuration","is_default","is_browsable","is_public","is_writable","is_online","tx_typo3_file_sync_enable","tx_typo3_file_sync_deferred","tx_typo3_file_sync_resources"
+,1,0,"Synced Storage","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>fileadmin/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,0,0,""
+,2,0,"Enabled Without Resources","Local","<T3FlexForms><data><sheet index='sDEF'><language index='lDEF'><field index='basePath'><value index='vDEF'>unsynced/</value></field><field index='pathType'><value index='vDEF'>relative</value></field><field index='caseSensitive'><value index='vDEF'>1</value></field></language></sheet></data></T3FlexForms>",0,1,1,1,1,1,0,""
+"sys_file"
+,"uid","pid","storage","identifier","identifier_hash","folder_hash","name","extension","mime_type","type","size","missing","tx_typo3_file_sync_identifier","tx_typo3_file_sync_tstamp"
+,1,0,1,"/user_upload/remote.jpg","7d4575b9fe11ad87befafbf6382b3e58d6f0ab12","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","remote.jpg","jpg","image/jpeg",2,100,0,"",0
+,2,0,1,"/user_upload/unavailable.jpg","895a726071d270b8140ad3e33e61b0711115a21c","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","unavailable.jpg","jpg","image/jpeg",2,200,0,"",0
+,3,0,1,"/user_upload/local.jpg","3dfdb76ac76672db4920b8749177e216f2d1fc4e","85b130b44ae1a7dae9348a42b3d4a68e5450fc44","local.jpg","jpg","image/jpeg",2,300,0,"",0
+,4,0,1,"/other/remote.jpg","84e2e893db591f41c06ddcf2b484634edf6ab08d","0e553f40d39e2b69db94672654087775cf9e7891","remote.jpg","jpg","image/jpeg",2,400,0,"",0
+,5,0,1,"/broken/boom.jpg","a016e95558148841f276e33f4fce70772111357f","bda8a9c2f06d257e6986be3291ee326d10f095ce","boom.jpg","jpg","image/jpeg",2,500,0,"",0

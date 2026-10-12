@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Repository;
 
 use Doctrine\DBAL\{ArrayParameterType, ParameterType};
+use Generator;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
@@ -129,6 +130,37 @@ final readonly class FileRepository
             'identifier' => (string) ($row[Configuration::FIELD_IDENTIFIER] ?? ''),
             'tstamp' => (int) ($row[Configuration::FIELD_TSTAMP] ?? 0),
         ];
+    }
+
+    /**
+     * Streamed rather than fetched at once: a production storage can hold
+     * hundreds of thousands of files and the caller usually stops early.
+     *
+     * @return Generator<int, array{identifier: string, size: int}>
+     */
+    public function findByPathPrefix(int $storageUid, string $pathPrefix): Generator
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $expressionBuilder = $queryBuilder->expr();
+        $rows = $queryBuilder->select('identifier', 'size')
+            ->from('sys_file')
+            ->where(
+                $expressionBuilder->eq(
+                    'storage',
+                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER),
+                ),
+                $expressionBuilder->like(
+                    'identifier',
+                    $queryBuilder->createNamedParameter($queryBuilder->escapeLikeWildcards($pathPrefix).'%'),
+                ),
+            )
+            ->orderBy('uid')
+            ->executeQuery()
+            ->iterateAssociative();
+
+        foreach ($rows as $row) {
+            yield ['identifier' => (string) $row['identifier'], 'size' => (int) $row['size']];
+        }
     }
 
     public function updateIdentifier(File $file, string $identifier): void
