@@ -230,16 +230,7 @@ final readonly class FileRepository
                     continue;
                 }
 
-                foreach ($this->processedFileRepository->findAllByOriginalFile($file) as $processedFile) {
-                    if ($processedFile->exists()) {
-                        $processedFile->delete(true);
-                    }
-                }
-
-                $absolutePath = $file->getForLocalProcessing(false);
-                if (is_file($absolutePath) && unlink($absolutePath)) {
-                    $this->updateIdentifier($file, '');
-                }
+                $this->deleteFile($file);
             } catch (InvalidArgumentException) {
                 continue;
             }
@@ -486,6 +477,20 @@ final readonly class FileRepository
             ->addOrderBy('uid', 'ASC');
 
         return self::narrowestPerOriginal($queryBuilder->executeQuery()->fetchAllAssociative());
+    }
+
+    private function deleteFile(File $file): void
+    {
+        foreach ($this->processedFileRepository->findAllByOriginalFile($file) as $processedFile) {
+            if ($processedFile->exists()) {
+                $processedFile->delete(true);
+            }
+        }
+
+        $absolutePath = $file->getForLocalProcessing(false);
+        if (is_file($absolutePath) && unlink($absolutePath)) {
+            $this->updateIdentifier($file, '');
+        }
     }
 
     /**

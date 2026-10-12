@@ -100,20 +100,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
                 );
                 continue;
             }
-            if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
-                throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
-            }
-
-            if ($file instanceof File) {
-                $this->fileRepository->updateIdentifier($file, $resource['identifier']);
-            }
-            $this->logger?->debug(
-                sprintf('Resource "%s" found file', $resource['identifier']),
-                [
-                    'fileIdentifier' => $fileIdentifier,
-                    'filePath' => $filePath,
-                ],
-            );
+            $this->accept($fileContent, $file, $resource['identifier'], $fileIdentifier, $filePath);
 
             return $fileContent;
         }
@@ -184,6 +171,27 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         }
 
         return $identifiers;
+    }
+
+    /**
+     * @param resource|string $fileContent
+     */
+    private function accept(mixed $fileContent, ?AbstractFile $file, string $resourceIdentifier, string $fileIdentifier, string $filePath): void
+    {
+        if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
+            throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
+        }
+
+        if ($file instanceof File) {
+            $this->fileRepository->updateIdentifier($file, $resourceIdentifier);
+        }
+        $this->logger?->debug(
+            sprintf('Resource "%s" found file', $resourceIdentifier),
+            [
+                'fileIdentifier' => $fileIdentifier,
+                'filePath' => $filePath,
+            ],
+        );
     }
 
     /**

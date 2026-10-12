@@ -175,13 +175,10 @@ final class MaterializationService implements LoggerAwareInterface
         // renditions of one picture on a page, and fetching per rendition
         // would delete a real file this batch just paid to download.
         $accepted = $this->prepareStorages($originals, $syncData);
-        $failures = [];
-        foreach ($originals as $fileUid => $file) {
-            $failure = $this->refetchOriginal($file, $accepted[$file->getStorage()->getUid()] ?? []);
-            if (null !== $failure) {
-                $failures[$fileUid] = $failure;
-            }
-        }
+        $failures = array_filter(array_map(
+            fn (File $file): ?array => $this->refetchOriginal($file, $accepted[$file->getStorage()->getUid()] ?? []),
+            $originals,
+        ));
 
         foreach ($files as $token => $file) {
             $results[$token] = $failures[$file->getUid()] ?? $this->rebuildRendition($file, $pending[$token]);

@@ -142,26 +142,35 @@ final class FetchCommand extends Command
             $driver = StorageDriver::extract($this->storageRepository->getStorageObject(max(0, $storageRow['uid'])));
             if (!$driver instanceof FileSyncDriver) {
                 $output->writeln(sprintf('%s: no resource handler configured, skipped', $label));
-                if (null !== $input->getOption('storage')) {
-                    return Command::FAILURE;
-                }
+                // Only a storage asked for by name makes the run fail.
+                $failed += (int) (null !== $input->getOption('storage'));
                 continue;
             }
 
             $missing = new LimitIterator($this->missingFiles($driver, $storageRow['uid'], $pathPrefix), 0, $remaining);
-
-            if (true === $input->getOption('dry-run')) {
-                $remaining -= $this->reportMissing($missing, $label, $output);
-                continue;
-            }
-
-            $counts = $this->fetchFiles($driver, $missing, (int) $input->getOption('pause'), $output);
-            $remaining -= array_sum($counts);
-            $failed += $counts['failed'];
-            $output->writeln(sprintf('%s: %d fetched, %d unavailable, %d failed', $label, $counts['fetched'], $counts['unavailable'], $counts['failed']));
+            $result = $this->processStorage($driver, $missing, $label, $input, $output);
+            $remaining -= $result['processed'];
+            $failed += $result['failed'];
         }
 
         return $failed > 0 ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * @param iterable<array{identifier: non-empty-string, size: int}> $missing
+     *
+     * @return array{processed: int, failed: int}
+     */
+    private function processStorage(FileSyncDriver $driver, iterable $missing, string $label, InputInterface $input, OutputInterface $output): array
+    {
+        if (true === $input->getOption('dry-run')) {
+            return ['processed' => $this->reportMissing($missing, $label, $output), 'failed' => 0];
+        }
+
+        $counts = $this->fetchFiles($driver, $missing, (int) $input->getOption('pause'), $output);
+        $output->writeln(sprintf('%s: %d fetched, %d unavailable, %d failed', $label, $counts['fetched'], $counts['unavailable'], $counts['failed']));
+
+        return ['processed' => array_sum($counts), 'failed' => $counts['failed']];
     }
 
     /**
