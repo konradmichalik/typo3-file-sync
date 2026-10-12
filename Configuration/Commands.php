@@ -15,6 +15,9 @@ return [
     'file-sync:delete' => [
         'class' => KonradMichalik\Typo3FileSync\Command\DeleteCommand::class,
     ],
+    'file-sync:fetch' => [
+        'class' => KonradMichalik\Typo3FileSync\Command\FetchCommand::class,
+    ],
     'file-sync:reset' => [
         'class' => KonradMichalik\Typo3FileSync\Command\ResetCommand::class,
     ],

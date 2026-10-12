@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Repository;
 
 use Doctrine\DBAL\{ArrayParameterType, ParameterType};
+use Generator;
 use InvalidArgumentException;
 use KonradMichalik\Typo3FileSync\Configuration;
 use KonradMichalik\Typo3FileSync\Resource\ResourceIdentifier;
@@ -131,6 +132,37 @@ final readonly class FileRepository
         ];
     }
 
+    /**
+     * Streamed rather than fetched at once: a production storage can hold
+     * hundreds of thousands of files and the caller usually stops early.
+     *
+     * @return Generator<int, array{identifier: string, size: int}>
+     */
+    public function findByPathPrefix(int $storageUid, string $pathPrefix): Generator
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
+        $expressionBuilder = $queryBuilder->expr();
+        $rows = $queryBuilder->select('identifier', 'size')
+            ->from('sys_file')
+            ->where(
+                $expressionBuilder->eq(
+                    'storage',
+                    $queryBuilder->createNamedParameter($storageUid, ParameterType::INTEGER),
+                ),
+                $expressionBuilder->like(
+                    'identifier',
+                    $queryBuilder->createNamedParameter($queryBuilder->escapeLikeWildcards($pathPrefix).'%'),
+                ),
+            )
+            ->orderBy('uid')
+            ->executeQuery()
+            ->iterateAssociative();
+
+        foreach ($rows as $row) {
+            yield ['identifier' => (string) $row['identifier'], 'size' => (int) $row['size']];
+        }
+    }
+
     public function updateIdentifier(File $file, string $identifier): void
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_file');
@@ -198,16 +230,7 @@ final readonly class FileRepository
                     continue;
                 }
 
-                foreach ($this->processedFileRepository->findAllByOriginalFile($file) as $processedFile) {
-                    if ($processedFile->exists()) {
-                        $processedFile->delete(true);
-                    }
-                }
-
-                $absolutePath = $file->getForLocalProcessing(false);
-                if (is_file($absolutePath) && unlink($absolutePath)) {
-                    $this->updateIdentifier($file, '');
-                }
+                $this->deleteFile($file);
             } catch (InvalidArgumentException) {
                 continue;
             }
@@ -454,6 +477,20 @@ final readonly class FileRepository
             ->addOrderBy('uid', 'ASC');
 
         return self::narrowestPerOriginal($queryBuilder->executeQuery()->fetchAllAssociative());
+    }
+
+    private function deleteFile(File $file): void
+    {
+        foreach ($this->processedFileRepository->findAllByOriginalFile($file) as $processedFile) {
+            if ($processedFile->exists()) {
+                $processedFile->delete(true);
+            }
+        }
+
+        $absolutePath = $file->getForLocalProcessing(false);
+        if (is_file($absolutePath) && unlink($absolutePath)) {
+            $this->updateIdentifier($file, '');
+        }
     }
 
     /**

@@ -41,6 +41,18 @@ Requests use a connect timeout of `5` seconds and a request timeout of `15` seco
 ],
 ```
 
+### Concurrency
+
+When several files are needed at once (deferred image loading, `file-sync:fetch`), the handler downloads up to `8` of them in parallel. Lower this to reduce the load on the remote instance:
+
+```php
+'identifier' => 'remote_instance',
+'configuration' => [
+    'url' => 'https://production.example.com',
+    'concurrency' => 2,
+],
+```
+
 ## Placeholder Image
 
 Generates local placeholder images with configurable colors. Supports GD-based formats (`jpg`, `png`, `gif`, `webp`, `avif`) and `svg`.

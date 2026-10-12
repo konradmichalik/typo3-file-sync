@@ -22,7 +22,7 @@ A lightweight TYPO3 extension that synchronizes missing files on demand: either 
 
 - [**Remote instance fetching**](docs/resource-handlers.md): pull missing files from a remote TYPO3 instance on demand
 - [**Placeholder image generation**](docs/resource-handlers.md): generate local placeholder images (GD and SVG) when no remote instance is configured or reachable
-- [**CLI commands**](docs/cli-commands.md): reset missing-file flags or delete previously synced files
+- [**CLI commands**](docs/cli-commands.md): fetch missing files in bulk, reset missing-file flags or delete previously synced files
 - [**Deferred image loading**](docs/deferred-image-loading.md) *(experimental)*: render a placeholder immediately and swap in the real file after page load, with an optional blurred preview stage
 - [**Custom resource handlers**](docs/custom-resource-handlers.md): implement your own remote source
 
@@ -80,10 +80,10 @@ The array key (`1`) is the UID of the file storage. See [Configuration](docs/con
 | Page | What's inside |
 | --- | --- |
 | [Configuration](docs/configuration.md) | Backend UI setup, the full PHP option set, and chaining handlers |
-| [Resource handlers](docs/resource-handlers.md) | The built-in Remote Instance and Placeholder Image handlers, Basic Auth, and timeouts |
-| [CLI commands](docs/cli-commands.md) | Resetting missing-file flags and deleting synced files |
+| [Resource handlers](docs/resource-handlers.md) | The built-in Remote Instance and Placeholder Image handlers, Basic Auth, timeouts, and concurrency |
+| [CLI commands](docs/cli-commands.md) | Fetching missing files in bulk, resetting missing-file flags and deleting synced files |
 | [Deferred image loading](docs/deferred-image-loading.md) | The experimental three-stage pipeline, preview image generation internals, known limitations, and database-sync behavior |
-| [Custom resource handlers](docs/custom-resource-handlers.md) | Implementing `RemoteResourceInterface` and the optional batch-fetch extension point |
+| [Custom resource handlers](docs/custom-resource-handlers.md) | Implementing `RemoteResourceInterface`, the optional batch-fetch extension point and the generating-handler marker |
 
 ## 💎 Credits
 

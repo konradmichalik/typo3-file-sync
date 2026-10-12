@@ -56,6 +56,7 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
 
     private readonly ClientInterface $httpClient;
     private readonly string $url;
+    private readonly int $concurrency;
     /** @var array<string, mixed> */
     private array $requestOptions;
 
@@ -81,6 +82,7 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
         $this->url = rtrim($this->buildUrl($urlParts), '/').'/';
 
         $options = is_array($configuration) ? $configuration : [];
+        $this->concurrency = max(1, (int) ($options['concurrency'] ?? self::DEFAULT_CONCURRENCY));
         $this->requestOptions = [
             RequestOptions::CONNECT_TIMEOUT => (float) ($options['connect_timeout'] ?? self::DEFAULT_CONNECT_TIMEOUT),
             RequestOptions::TIMEOUT => (float) ($options['timeout'] ?? self::DEFAULT_TIMEOUT),
@@ -129,7 +131,7 @@ final class RemoteInstanceResource implements BatchRemoteResourceInterface, Defe
 
         try {
             $pool = new Pool($this->httpClient, $requests(), [
-                'concurrency' => self::DEFAULT_CONCURRENCY,
+                'concurrency' => $this->concurrency,
                 'options' => $this->requestOptions,
                 'fulfilled' => function (ResponseInterface $response, string $filePath): void {
                     if (200 !== $response->getStatusCode()) {

@@ -62,6 +62,14 @@ services:
             - name: 'console.command'
               command: 'file-sync:delete'
 
+    KonradMichalik\Typo3FileSync\Command\FetchCommand:
+        public: true
+        arguments:
+            $runtimeCache: '@cache.runtime'
+        tags:
+            - name: 'console.command'
+              command: 'file-sync:fetch'
+
     KonradMichalik\Typo3FileSync\Command\ResetCommand:
         tags:
             - name: 'console.command'

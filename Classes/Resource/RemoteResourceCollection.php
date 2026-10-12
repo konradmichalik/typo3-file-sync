@@ -84,9 +84,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         );
 
         foreach ($this->resources as $resource) {
-            if ($resource['handler'] instanceof DeferrableResourceInterface
-                && $this->fetchMode->isDeferred($this->storageUid)
-            ) {
+            if ($this->isSkipped($resource)) {
                 continue;
             }
 
@@ -102,20 +100,7 @@ final class RemoteResourceCollection implements LoggerAwareInterface
                 );
                 continue;
             }
-            if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
-                throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
-            }
-
-            if ($file instanceof File) {
-                $this->fileRepository->updateIdentifier($file, $resource['identifier']);
-            }
-            $this->logger?->debug(
-                sprintf('Resource "%s" found file', $resource['identifier']),
-                [
-                    'fileIdentifier' => $fileIdentifier,
-                    'filePath' => $filePath,
-                ],
-            );
+            $this->accept($fileContent, $file, $resource['identifier'], $fileIdentifier, $filePath);
 
             return $fileContent;
         }
@@ -131,10 +116,22 @@ final class RemoteResourceCollection implements LoggerAwareInterface
     public function prefetch(array $filePaths): void
     {
         foreach ($this->resources as $resource) {
-            if ($resource['handler'] instanceof BatchRemoteResourceInterface) {
+            if ($resource['handler'] instanceof BatchRemoteResourceInterface
+                && $this->fetchMode->allows($resource['identifier'], $resource['handler'])
+            ) {
                 $resource['handler']->prefetch($filePaths);
             }
         }
+    }
+
+    /**
+     * For a long-running process: both caches only ever grow, and a file
+     * remembered as failed is never retried, even with other handlers allowed.
+     */
+    public function clearCaches(): void
+    {
+        $this->fileIdentifierCache = [];
+        $this->failedIdentifiers = [];
     }
 
     /**
@@ -174,6 +171,40 @@ final class RemoteResourceCollection implements LoggerAwareInterface
         }
 
         return $identifiers;
+    }
+
+    /**
+     * @param resource|string $fileContent
+     */
+    private function accept(mixed $fileContent, ?AbstractFile $file, string $resourceIdentifier, string $fileIdentifier, string $filePath): void
+    {
+        if (is_resource($fileContent) && 'stream' !== get_resource_type($fileContent)) {
+            throw new UnknownResourceException('Cannot handle resource type "'.get_resource_type($fileContent).'" as file content', 1583421958);
+        }
+
+        if ($file instanceof File) {
+            $this->fileRepository->updateIdentifier($file, $resourceIdentifier);
+        }
+        $this->logger?->debug(
+            sprintf('Resource "%s" found file', $resourceIdentifier),
+            [
+                'fileIdentifier' => $fileIdentifier,
+                'filePath' => $filePath,
+            ],
+        );
+    }
+
+    /**
+     * @param array{identifier: string, handler: RemoteResourceInterface} $resource
+     */
+    private function isSkipped(array $resource): bool
+    {
+        if (!$this->fetchMode->allows($resource['identifier'], $resource['handler'])) {
+            return true;
+        }
+
+        return $resource['handler'] instanceof DeferrableResourceInterface
+            && $this->fetchMode->isDeferred($this->storageUid);
     }
 
     private function resolveFileObject(string $fileIdentifier, string $filePath): void

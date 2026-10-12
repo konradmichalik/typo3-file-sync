@@ -47,6 +47,21 @@ final class FileSyncDriver extends LocalDriver
         return $this->originalDriverObject->fileExists($fileIdentifier);
     }
 
+    /**
+     * Asks the original driver, so that checking a file never fetches it.
+     *
+     * @param non-empty-string $fileIdentifier
+     */
+    public function existsLocally(string $fileIdentifier): bool
+    {
+        return $this->originalDriverObject->fileExists($fileIdentifier);
+    }
+
+    public function clearCaches(): void
+    {
+        $this->remoteResourceCollection->clearCaches();
+    }
+
     public function folderExists(string $folderIdentifier): bool
     {
         if ($this->originalDriverObject->folderExists($folderIdentifier)) {

@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
 use GdImage;
-use KonradMichalik\Typo3FileSync\Resource\RemoteResourceInterface;
+use KonradMichalik\Typo3FileSync\Resource\{GeneratingResourceInterface, RemoteResourceInterface};
 use TYPO3\CMS\Core\Resource\FileInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -30,7 +30,7 @@ use function strlen;
  * @author Konrad Michalik <hej@konradmichalik.dev>
  * @license GPL-2.0-or-later
  */
-final class PlaceholderImageResource implements RemoteResourceInterface
+final class PlaceholderImageResource implements GeneratingResourceInterface, RemoteResourceInterface
 {
     private const DEFAULT_BACKGROUND_COLOR = '#CCCCCC';
     private const DEFAULT_TEXT_COLOR = '#969696';
