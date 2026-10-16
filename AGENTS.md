@@ -18,7 +18,7 @@ TYPO3 extension (`typo3_file_sync`) that synchronizes missing files on demand, e
 - `Configuration/` `Commands.php`, `RequestMiddlewares.php`, `ContentSecurityPolicies.php`, `JavaScriptModules.php`, `Services.yaml`, `TCA/`
 - `Resources/` templates, language files, JavaScript and assets
 - `Tests/Unit/` and `Tests/Functional/` PHPUnit tests, mirror `Classes/`
-- `Tests/CGL/` separate Composer project with code style, static analysis and migration tooling
+- `Tests/CGL/` separate Composer project with code style, static analysis and migration tooling. Its `composer.lock` is committed and updated by Renovate, so tool releases only reach CI through a Renovate PR
 - `docs/` user documentation (CLI commands, configuration, resource handlers, deferred image loading)
 - `.ddev/` DDEV setup, including a fake remote server and commands to install TYPO3 13 and 14 test instances
 
