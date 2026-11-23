@@ -31,7 +31,7 @@ A lightweight TYPO3 extension that synchronizes missing files on demand: either 
 ### Requirements
 
 * TYPO3 13.4 LTS or 14.3 LTS
-* PHP 8.2 to 8.5
+* PHP 8.2 to 8.6
 * PHP extension `ext-gd` (for placeholder and preview image generation; previews additionally need a GD build with WebP support)
 
 ### Composer

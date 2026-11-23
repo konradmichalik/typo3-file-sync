@@ -5,7 +5,7 @@
 TYPO3 extension (`typo3_file_sync`) that synchronizes missing files on demand, either by fetching them from a remote TYPO3 instance or by generating local placeholder images. Typical use: staging or local systems refreshed from production without copying the full file storage.
 
 - Package: `konradmichalik/typo3-file-sync`, namespace `KonradMichalik\Typo3FileSync` (PSR-4, `Classes/`)
-- Requirements: PHP 8.2 to 8.5, TYPO3 13.4 and 14.x, `ext-gd`
+- Requirements: PHP 8.2 to 8.6, TYPO3 13.4 and 14.x, `ext-gd`
 - Conflicts with `ichhabrecht/filefill`
 
 ## Structure
@@ -59,7 +59,7 @@ ddev composer test:coverage     # both suites with XDEBUG_MODE=coverage, merged 
 ddev exec vendor/bin/phpunit --filter testMethodName
 ```
 
-CI runs the shared `tests-typo3` workflow on TYPO3 13.4 and 14.3, PHP 8.2 to 8.5, with `highest` and `lowest` dependencies. The CGL workflow runs the linters on every push.
+CI runs the shared `tests-typo3` workflow on TYPO3 13.4 and 14.3, PHP 8.2 to 8.6, with `highest` and `lowest` dependencies. The CGL workflow runs the linters on every push.
 
 ## Code style and static analysis
 
