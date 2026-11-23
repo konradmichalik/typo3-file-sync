@@ -102,6 +102,17 @@ final class RemoteResourceCollectionFactoryTest extends TestCase
     }
 
     #[Test]
+    #[WithTypo3ConfVars(['EXTCONF' => []])]
+    public function createFromConfigurationResolvesDefaultHandlersWithoutExtconf(): void
+    {
+        $collection = $this->createFactory()->createFromConfiguration([
+            ['identifier' => 'placeholder_image', 'configuration' => '#CCCCCC, #969696'],
+        ], 1);
+
+        self::assertInstanceOf(\KonradMichalik\Typo3FileSync\Resource\RemoteResourceCollection::class, $collection);
+    }
+
+    #[Test]
     public function createFromConfigurationThrowsOnUnknownResource(): void
     {
         $factory = $this->createFactory();

@@ -36,7 +36,7 @@ final class FlexFormDataStructureParsedEventListener
         $dataStructure = $event->getDataStructure();
         $dataStructure['sheets']['sDEF']['ROOT']['el']['resources']['el'] = [];
 
-        foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? [] as $resource => $configuration) {
+        foreach (Configuration::getResourceHandlers() as $resource => $configuration) {
             if (($configuration['title'] ?? '') === ''
                 || !isset($configuration['config'])
                 || ($configuration['handler'] ?? '') === ''

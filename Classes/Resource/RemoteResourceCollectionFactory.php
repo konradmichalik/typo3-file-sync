@@ -57,7 +57,7 @@ final readonly class RemoteResourceCollectionFactory
                 continue;
             }
 
-            $extConf = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? [];
+            $extConf = Configuration::getResourceHandlers();
             if (!isset($extConf[$resource['identifier']]['handler'])) {
                 throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$resource['identifier'].'"', 1519788775);
             }
@@ -105,7 +105,7 @@ final readonly class RemoteResourceCollectionFactory
             }
 
             $identifier = key($resource);
-            $extConf = $GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? [];
+            $extConf = Configuration::getResourceHandlers();
 
             if (!isset($extConf[$identifier])) {
                 throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$identifier.'"', 1528326468);

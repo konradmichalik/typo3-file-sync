@@ -13,7 +13,9 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Resource\Handler\{PlaceholderImageResource, RemoteInstanceResource};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
 
@@ -55,5 +57,30 @@ final class ConfigurationTest extends TestCase
     public function extconfDeferredStoragesKeyIsCorrect(): void
     {
         self::assertSame('deferredStorages', Configuration::EXTCONF_DEFERRED_STORAGES);
+    }
+
+    #[Test]
+    #[WithTypo3ConfVars(['EXTCONF' => []])]
+    public function getResourceHandlersProvidesDefaultsWithoutExtconf(): void
+    {
+        $handlers = Configuration::getResourceHandlers();
+
+        self::assertSame(['remote_instance', 'placeholder_image'], array_keys($handlers));
+        self::assertSame(RemoteInstanceResource::class, $handlers['remote_instance']['handler']);
+        self::assertSame(PlaceholderImageResource::class, $handlers['placeholder_image']['handler']);
+    }
+
+    #[Test]
+    #[WithTypo3ConfVars(['EXTCONF' => ['typo3_file_sync' => ['resourceHandler' => [
+        'custom' => ['title' => 'Custom', 'handler' => 'CustomHandler'],
+        'remote_instance' => ['title' => 'Overridden', 'handler' => 'OtherHandler'],
+    ]]]])]
+    public function getResourceHandlersMergesExtconfOverDefaults(): void
+    {
+        $handlers = Configuration::getResourceHandlers();
+
+        self::assertSame('CustomHandler', $handlers['custom']['handler']);
+        self::assertSame('OtherHandler', $handlers['remote_instance']['handler']);
+        self::assertArrayHasKey('placeholder_image', $handlers);
     }
 }
