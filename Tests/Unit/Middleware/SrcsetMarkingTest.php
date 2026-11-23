@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Middleware;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Middleware\SrcsetMarking;
 use KonradMichalik\Typo3FileSync\Service\DeferredTokenService;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
@@ -30,13 +31,13 @@ use function range;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(SrcsetMarking::class)]
+#[WithTypo3ConfVars(['SYS' => ['encryptionKey' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']])]
 final class SrcsetMarkingTest extends TestCase
 {
     private DeferredTokenService $deferredTokenService;
 
     protected function setUp(): void
     {
-        $GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] = str_repeat('a', 96);
         $this->deferredTokenService = new DeferredTokenService(new HashService());
     }
 

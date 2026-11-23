@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Resource\StorageDriver;
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
@@ -27,6 +28,7 @@ use TYPO3\CMS\Core\Resource\ResourceStorage;
  * @license GPL-2.0-or-later
  */
 #[CoversClass(StorageDriver::class)]
+#[WithTypo3ConfVars(['SYS' => ['fal' => ['defaultFilterCallbacks' => []]]])]
 final class StorageDriverTest extends TestCase
 {
     #[Test]

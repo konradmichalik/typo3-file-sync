@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Preview;
 
+use KonradMichalik\Ttt\Attribute\WithTypo3ConfVars;
 use KonradMichalik\Typo3FileSync\Repository\FileRepository;
 use KonradMichalik\Typo3FileSync\Resource\{BatchRemoteResourceInterface, FetchMode, RemoteResourceCollection, RemoteResourceInterface};
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
@@ -35,13 +36,9 @@ use TYPO3\CMS\Core\Resource\{ResourceFactory, ResourceStorage, StorageRepository
  * @license GPL-2.0-or-later
  */
 #[CoversClass(PreviewSourceReader::class)]
+#[WithTypo3ConfVars(['SYS' => ['fal' => ['defaultFilterCallbacks' => []]]])]
 final class PreviewSourceReaderTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        $GLOBALS['TYPO3_CONF_VARS']['SYS']['fal']['defaultFilterCallbacks'] = [];
-    }
-
     #[Test]
     public function readIsNullForALocationWhoseStorageIsNotSyncEnabled(): void
     {
