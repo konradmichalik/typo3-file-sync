@@ -16,7 +16,7 @@ namespace KonradMichalik\Typo3FileSync\Tests\Unit\Resource\Handler;
 use KonradMichalik\Typo3FileSync\Resource\Handler\PlaceholderImageResource;
 use PHPUnit\Framework\Attributes\{CoversClass, DataProvider, Test};
 use PHPUnit\Framework\TestCase;
-use TYPO3\CMS\Core\Resource\FileInterface;
+use TYPO3\CMS\Core\Resource\{FileInterface, ProcessedFile};
 
 use function function_exists;
 
@@ -41,6 +41,16 @@ final class PlaceholderImageResourceTest extends TestCase
 
         $resource = new PlaceholderImageResource('#CCCCCC, #969696');
         self::assertIsString($resource->getFile('/test.svg', 'fileadmin/test.svg', $fileObject));
+    }
+
+    #[Test]
+    public function getFileReturnsFalseForProcessedFile(): void
+    {
+        $processedFile = $this->createMock(ProcessedFile::class);
+        $processedFile->method('getExtension')->willReturn('jpg');
+
+        $resource = new PlaceholderImageResource('#CCCCCC, #969696');
+        self::assertFalse($resource->getFile('/_processed_/a/b/csm_test.jpg', 'fileadmin/_processed_/a/b/csm_test.jpg', $processedFile));
     }
 
     #[Test]
