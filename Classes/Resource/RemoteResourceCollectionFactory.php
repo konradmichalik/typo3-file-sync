@@ -51,13 +51,13 @@ final readonly class RemoteResourceCollectionFactory
         }
 
         $remoteResources = [];
+        $extConf = Configuration::getResourceHandlers();
 
         foreach ($configuration as $resource) {
             if (($resource['identifier'] ?? '') === '') {
                 continue;
             }
 
-            $extConf = Configuration::getResourceHandlers();
             if (!isset($extConf[$resource['identifier']]['handler'])) {
                 throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$resource['identifier'].'"', 1519788775);
             }
@@ -97,6 +97,7 @@ final readonly class RemoteResourceCollectionFactory
     public function createFromFlexForm(string $flexForm, int $storageUid): RemoteResourceCollection
     {
         $configuration = [];
+        $extConf = Configuration::getResourceHandlers();
         $resourcesConfiguration = GeneralUtility::xml2array($flexForm);
 
         foreach ((array) ($resourcesConfiguration['data']['sDEF']['lDEF']['resources']['el'] ?? []) as $resource) {
@@ -105,7 +106,6 @@ final readonly class RemoteResourceCollectionFactory
             }
 
             $identifier = key($resource);
-            $extConf = Configuration::getResourceHandlers();
 
             if (!isset($extConf[$identifier])) {
                 throw new UnknownResourceException('Unexpected File Sync Resource configuration "'.$identifier.'"', 1528326468);
