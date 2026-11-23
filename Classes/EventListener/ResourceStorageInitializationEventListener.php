@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\Typo3FileSync\EventListener;
 
 use KonradMichalik\Typo3FileSync\Configuration;
+use KonradMichalik\Typo3FileSync\Exception\UnknownResourceException;
 use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollection, RemoteResourceCollectionFactory, StorageDriver};
 use Psr\Log\{LoggerAwareInterface, LoggerAwareTrait};
@@ -73,7 +74,17 @@ final class ResourceStorageInitializationEventListener implements LoggerAwareInt
             return;
         }
 
-        $remoteResourceCollection = $this->buildRemoteResourceCollection($storage, $storageRecord, $isRecordEnabled);
+        // A misconfigured handler must not break unrelated FAL access, such as
+        // a logo resolved while the Install Tool sends its test mail.
+        try {
+            $remoteResourceCollection = $this->buildRemoteResourceCollection($storage, $storageRecord, $isRecordEnabled);
+        } catch (UnknownResourceException $exception) {
+            $this->logger?->warning(
+                sprintf('File sync disabled for storage %s (%d): %s', $storage->getName(), $storage->getUid(), $exception->getMessage()),
+            );
+
+            return;
+        }
 
         /** @var FileSyncDriver $driverObject */
         $driverObject = GeneralUtility::makeInstance(

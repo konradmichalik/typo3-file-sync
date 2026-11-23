@@ -117,7 +117,7 @@ final class FetchCommand extends Command
             return 'Limit and pause must not be negative.';
         }
 
-        $registered = array_keys($GLOBALS['TYPO3_CONF_VARS']['EXTCONF'][Configuration::EXT_KEY][Configuration::EXTCONF_RESOURCE_HANDLER] ?? []);
+        $registered = array_keys(Configuration::getResourceHandlers());
         $unknown = array_diff($identifiers, $registered);
 
         return [] === $unknown ? null : sprintf('Unknown resource handler(s): %s', implode(', ', $unknown));
