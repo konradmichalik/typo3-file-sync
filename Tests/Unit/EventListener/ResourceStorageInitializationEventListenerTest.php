@@ -22,7 +22,7 @@ use KonradMichalik\Typo3FileSync\Resource\Driver\FileSyncDriver;
 use KonradMichalik\Typo3FileSync\Resource\{FetchMode, RemoteResourceCollectionFactory};
 use PHPUnit\Framework\Attributes\{CoversClass, Test};
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Psr\Log\{LoggerInterface, NullLogger};
 use ReflectionClass;
 use TYPO3\CMS\Core\Cache\Backend\TransientMemoryBackend;
 use TYPO3\CMS\Core\Cache\CacheManager;
@@ -126,6 +126,35 @@ final class ResourceStorageInitializationEventListenerTest extends TestCase
         $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
         $listener->setLogger(new NullLogger());
         $listener($event);
+    }
+
+    #[Test]
+    public function listenerKeepsOriginalDriverAndLogsWhenResourceHandlerIsUnknown(): void
+    {
+        $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['typo3_file_sync']['storages'] = [
+            1 => [['identifier' => 'unregistered_handler', 'configuration' => null]],
+        ];
+
+        $factory = (new ReflectionClass(RemoteResourceCollectionFactory::class))->newInstanceWithoutConstructor();
+
+        $storage = $this->createMock(ResourceStorage::class);
+        $storage->method('getStorageRecord')->willReturn([
+            'uid' => 1,
+            'driver' => 'Local',
+            'tx_typo3_file_sync_enable' => 0,
+            'tx_typo3_file_sync_resources' => '',
+        ]);
+        $storage->method('getUid')->willReturn(1);
+        $storage->method('getName')->willReturn('Test');
+        $storage->expects(self::never())->method('setDriver');
+        (new ReflectionClass(ResourceStorage::class))->getProperty('driver')->setValue($storage, $this->createMock(LocalDriver::class));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('warning');
+
+        $listener = new ResourceStorageInitializationEventListener($factory, new FetchMode(), new Features());
+        $listener->setLogger($logger);
+        $listener(new AfterResourceStorageInitializationEvent($storage));
     }
 
     #[Test]
