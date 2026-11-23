@@ -15,7 +15,7 @@ namespace KonradMichalik\Typo3FileSync\Resource\Handler;
 
 use GdImage;
 use KonradMichalik\Typo3FileSync\Resource\{GeneratingResourceInterface, RemoteResourceInterface};
-use TYPO3\CMS\Core\Resource\FileInterface;
+use TYPO3\CMS\Core\Resource\{FileInterface, ProcessedFile};
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 use function function_exists;
@@ -80,7 +80,10 @@ final class PlaceholderImageResource implements GeneratingResourceInterface, Rem
      */
     public function getFile(string $fileIdentifier, string $filePath, ?FileInterface $fileObject = null): mixed
     {
+        // A placeholder would be written to the target path and make TYPO3
+        // skip processing, so a missing variant is left to local processing.
         if (!$fileObject instanceof FileInterface
+            || $fileObject instanceof ProcessedFile
             || !in_array($fileObject->getExtension(), $this->allowedFileExtensions, true)
         ) {
             return false;
